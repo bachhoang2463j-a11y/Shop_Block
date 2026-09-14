@@ -123,7 +123,7 @@
 | 商店 → 聊天变量 | `$shops`（以店名为键，中文键直存，含好感度） |
 | 商店 → MMS | 直写 `stat_data`（现金/物品）+ 事件 `mms:status-updated` + `$shop_deal_result`（含 lock 硬锁清单）+ `$shop_sync` 幂等台账（二次扣除锁） |
 | MMS → 商店 | `stat_data`（在场团队/现金/头像）、`$mms_roster`（固定角色）、`AVATAR_MAP`（头像） |
-| 副导演 → 商店 | `$ad_world.winds`（风声）、正文 `<Newday>`（报纸），作独立 LLM 上下文 |
+| 副导演 → 商店 | `$ad_world.winds`（风声）、正文 `<Newday>`（报纸），作独立 LLM 上下文。**弱耦合可选源**：副导演未启用时自动降级为空，商店完全可用 |
 
 ---
 
