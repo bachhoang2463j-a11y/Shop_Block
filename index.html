@@ -1687,6 +1687,58 @@
     </div>
 
     <!-- ====================================================
+         弹窗：砍价拉条 (M5: 砍价模式下点商品弹出)
+    ==================================================== -->
+    <div class="inspect-modal-backdrop" id="bargainModal">
+        <div class="parchment-card" style="width: 440px;">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div style="font-size: 32px;">💰</div>
+                    <div>
+                        <div class="modal-item-name" id="bargainModalName">商品名</div>
+                        <div class="modal-item-tier">BARGAIN · 讨价还价</div>
+                    </div>
+                </div>
+                <button class="modal-close-btn" id="bargainCloseBtn">&times;</button>
+            </div>
+
+            <div class="quantity-dialog-box">
+                <div class="quantity-item-info">
+                    <div class="qty-info-left">
+                        <div class="qty-item-sub">原价：<strong style="color: #dfb06c;" id="bargainOrigPrice">$0.00</strong></div>
+                    </div>
+                    <div class="qty-stock-display">砍价幅度：<strong style="color: #c0605a;" id="bargainPctText">10%</strong></div>
+                </div>
+
+                <div class="slider-row">
+                    <input type="range" class="qty-slider" id="bargainSlider" min="5" max="30" step="5" value="10">
+                </div>
+
+                <div class="quick-qty-pills">
+                    <button class="qty-preset-btn" data-bp="5">5%</button>
+                    <button class="qty-preset-btn" data-bp="10">10%</button>
+                    <button class="qty-preset-btn" data-bp="20">20%</button>
+                    <button class="qty-preset-btn" data-bp="30">30%</button>
+                </div>
+
+                <div class="qty-total-row">
+                    <div>
+                        <div style="font-size: 11px; color: #8c7360;">砍价后价格 DEAL PRICE</div>
+                        <div style="font-family: var(--font-title); font-size: 24px; font-weight: 900; color: #7a9a5a;" id="bargainNewPrice">$0.00</div>
+                    </div>
+                    <div style="font-size: 11px; color: #8c7360; max-width: 200px; text-align: right;">
+                        好感度越高越容易成功<br>同一商品最多砍两次
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+                <button class="buy-btn" id="bargainConfirmBtn">提出砍价</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================
          弹窗 4：Shop_block 手动导入 (M1c: 粘贴含 <Shop_block> 的正文或裸 YAML)
     ==================================================== -->
     <div class="inspect-modal-backdrop" id="importBlockModal">
@@ -2171,6 +2223,7 @@
             if (scene === 'enter') return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue，队友可插话。无玩家台词，省略affection。]`;
             if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度），队友可插话，affection按玩家爽快程度判定。]`;
             if (scene === 'chat') return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应，队友可插话，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。]`;
+            if (scene === 'bargain') return `${base}\n\n[系统指令：${extra}]`;
             return base;
         }
 
@@ -2257,6 +2310,102 @@
             bossSpeechBubble.classList.add('show');
             clearTimeout(bubbleTimer);
             bubbleTimer = setTimeout(() => bossSpeechBubble.classList.remove('show'), 6000);
+        }
+
+        // ====================================================
+        // 讲价（SPEC 第六节：砍价模式 + 投骰判定 + 两次限制 + 四分支 + 折后价回写）
+        // ====================================================
+        let bargainMode = false;        // 砍价选品模式
+        let pendingBargain = null;      // { itemName, discount } 斜体宣言已填入输入框待发送
+
+        // 生效价：砍价锁定价优先
+        function effPrice(item) {
+            return item.dealPrice != null ? item.dealPrice : item.price;
+        }
+
+        // 投骰判定纯函数（monkey-patch Math.random 可测）
+        // 返回 { branch: success|fail1|fail2|greedy|exhausted, rolled?, target?, success, penalty }
+        function resolveBargain(item, d, affection) {
+            const count = item.bargainCount || 0;
+            if (count >= 2) return { branch: 'exhausted', success: false, penalty: 0, noRoll: true };
+            if (count === 1 && d >= (item.lastBargainD || 0)) {
+                return { branch: 'greedy', success: false, penalty: -2, noRoll: true };
+            }
+            const rolled = 1 + Math.floor(Math.random() * 100);
+            const target = 40 + d * 2;
+            const success = rolled + affection * 0.5 >= target;
+            const ceil = Math.ceil(d / 10);
+            const penalty = success ? 0 : -(count === 0 ? ceil : ceil * 2);
+            return { branch: success ? 'success' : (count === 0 ? 'fail1' : 'fail2'), rolled, target, success, penalty };
+        }
+
+        // 四分支内置回退文案（LLM 不可用时）
+        const BARGAIN_FALLBACK = {
+            success: (k, d) => `（${k}咂了咂嘴）“……行吧，${d}%就${d}%，就当交个朋友。下不为例。”`,
+            fail1: (k) => `（${k}摇了摇头）“这价我可做不了主。货是真金白银进回来的，您再看看？”`,
+            fail2: (k) => `（${k}把抹布往柜台上一摔）“又来？我这是铺子不是慈善堂！要买就按标签价，不买请便！”`,
+            greedy: (k) => `（${k}眯起眼睛）“刚才的价你不肯，现在还想砍得更狠？当我好糊弄？”`,
+            exhausted: (k) => `（${k}摆了摆手）“这价谈过了，不磨嘴皮子了。”`
+        };
+
+        // 四分支 LLM 指令文本
+        function bargainBranchInstruction(branch, keeper, itemName, d, newPrice, extraLines) {
+            const note = extraLines ? `\n玩家还补了话："${extraLines}"` : '';
+            const map = {
+                success: `玩家把「${itemName}」砍价 ${d}% 到 $${newPrice.toFixed(2)}——投骰成功，你（按人设爽快或肉疼地）答应了这桩买卖。`,
+                fail1: `玩家想把「${itemName}」砍价 ${d}% 到 $${newPrice.toFixed(2)}——投骰失败，你拒绝了，维持原价。`,
+                fail2: `玩家第二次想砍「${itemName}」到 $${newPrice.toFixed(2)}（${d}% off）——又失败了。你已经明显不耐烦，按人设表现出恼火（冷嘲/下逐客令/拍柜台，随人设）。`,
+                greedy: `玩家第二次砍「${itemName}」，幅度 ${d}% 比上次更大——你直接拒绝，玩家得寸进尺让你很不痛快，态度转冷。`,
+                exhausted: `玩家还想继续磨「${itemName}」的价格，但砍价次数已用完，你拒绝再谈价。`
+            };
+            return map[branch] + note + `\n以${keeper}的口吻回应（1~2条dialogue，队友可插话），affection按玩家言辞整体判定（含本次砍价态度）。`;
+        }
+
+        // 砍价发送流：从 handleSendMessage 检出斜体宣言后调用
+        async function handleBargainSend(itemName, discount, extraLines) {
+            const all = activeItems();
+            const item = all.find(i => i.name === itemName) || (pendingBargain && all.find(i => i.name === pendingBargain.itemName));
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            if (!item) { showKeeperDialogue(keeper, BARGAIN_FALLBACK.fail1(keeper), true); return; }
+
+            const aff = (window.__shopAffection != null) ? window.__shopAffection : 30;
+            const res = resolveBargain(item, discount, aff);
+
+            // 会话状态更新
+            item.bargainCount = (item.bargainCount || 0) + 1;
+            item.lastBargainD = discount;
+            if (res.success) {
+                item.dealPrice = Math.round(item.price * (1 - discount / 100) * 100) / 100;
+                item.dealBy = activeSpeaker.name;
+            }
+            pendingBargain = null;
+            renderCabinet();
+            updateCartUI();
+
+            // 程序贪婪惩罚落地（LLM 言辞判定由 applyLLMResult 叠加）
+            if (res.penalty && shopState) {
+                try {
+                    const nv = await updateShopAffection(shopState.shopName, res.penalty);
+                    if (nv != null) window.__shopAffection = nv;
+                } catch (e) { console.warn('[ShopBlock] 砍价惩罚落地失败:', e); }
+            }
+
+            // LLM 四分支回应，失败回退内置文案
+            let result = null;
+            if (llmConfig.apiKey) {
+                for (let attempt = 0; attempt < 2 && !result; attempt++) {
+                    try {
+                        result = await callShopLLM('bargain',
+                            bargainBranchInstruction(res.branch, keeper, item.name, discount, effPrice(item), extraLines));
+                    } catch (e) { console.warn(`[ShopBlock] 砍价 LLM 第${attempt + 1}次失败:`, e.message); }
+                }
+            }
+            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
+                await applyLLMResult(result);
+            } else {
+                showKeeperDialogue(keeper, BARGAIN_FALLBACK[res.branch](keeper, discount), true);
+                dialogueText.innerHTML = `<span style="color:#7a9a8a;">【${activeSpeaker.name}】尝试砍价「${item.name}」${discount}%……</span><br><span style="color:#c9a86a;">${BARGAIN_FALLBACK[res.branch](keeper, discount)}</span>`;
+            }
         }
 
         // 入口：接收正文文本（或手动粘贴），解析成功 → 建立商店会话并重渲染
@@ -2655,7 +2804,15 @@
 
                 // 数量标识
                 const stockBadge = item.isStackable ? `<span class="shelf-stock-badge">库存:${item.stock}${item.unit}</span>` : '';
-                const priceText = item.isStackable ? `$${item.price.toFixed(2)}/${item.unit}` : `$${item.price.toFixed(2)}`;
+                // 价格：砍价锁定后显示划线原价 + 折后价 + 砍价者角标（SPEC 第六节，会话内存态）
+                let priceHtml;
+                if (item.dealPrice != null) {
+                    const orig = item.isStackable ? `$${item.price.toFixed(2)}/${item.unit}` : `$${item.price.toFixed(2)}`;
+                    const now = item.isStackable ? `$${item.dealPrice.toFixed(2)}/${item.unit}` : `$${item.dealPrice.toFixed(2)}`;
+                    priceHtml = `<span style="text-decoration:line-through;opacity:.5;">${orig}</span> <span style="color:#8fb573;font-weight:700;">${now}</span> <span style="font-size:10px;color:#8fb573;border:1px solid #4a6b3a;border-radius:3px;padding:0 3px;">💰${item.dealBy || ''}</span>`;
+                } else {
+                    priceHtml = item.isStackable ? `$${item.price.toFixed(2)}/${item.unit}` : `$${item.price.toFixed(2)}`;
+                }
 
                 cell.innerHTML = `
                     <span class="shelf-num">#${(index + 1).toString().padStart(2, '0')}</span>
@@ -2663,17 +2820,19 @@
                     <div class="item-icon-box">${item.emoji}</div>
                     <div class="item-meta">
                         <span class="item-name" title="${item.name}">${item.name}</span>
-                        <span class="item-price">${priceText}</span>
+                        <span class="item-price">${priceHtml}</span>
                     </div>
                     ${item.sold ? '<div class="sold-stamp">SOLD</div>' : ''}
                 `;
 
-                // 点击逻辑：单个商品直接加入购物车；多个商品弹出数量拉条
+                // 点击逻辑：砍价模式弹砍价拉条；正常模式单个直入/复数拉条
                 cell.addEventListener('click', () => {
                     if (item.sold) return;
                     sound.playWoodClick();
 
-                    if (item.isStackable) {
+                    if (bargainMode) {
+                        openBargainModal(item);
+                    } else if (item.isStackable) {
                         openQuantityModal(item);
                     } else {
                         // 单个商品直接加入购物车！
@@ -2735,7 +2894,7 @@
             playerState.currentStackItem = item;
             qtyModalEmoji.textContent = item.emoji;
             qtyModalName.textContent = item.name;
-            qtyUnitPrice.textContent = `$${item.price.toFixed(2)}`;
+            qtyUnitPrice.textContent = `$${effPrice(item).toFixed(2)}`;
             qtyMaxStock.textContent = `${item.stock} ${item.unit}`;
 
             const defaultQty = Math.min(10, item.stock);
@@ -2762,7 +2921,7 @@
             const item = playerState.currentStackItem;
             if (!item) return;
             const qty = parseInt(qtyNumberInput.value, 10) || 1;
-            const subtotal = qty * item.price;
+            const subtotal = qty * effPrice(item);
             qtySubtotalDisplay.textContent = `$${subtotal.toFixed(2)}`;
         }
 
@@ -2819,6 +2978,63 @@
         });
 
         // ====================================================
+        // 砍价拉条弹窗 (M5)
+        // ====================================================
+        const bargainModal = document.getElementById('bargainModal');
+        const bargainCloseBtn = document.getElementById('bargainCloseBtn');
+        const bargainSlider = document.getElementById('bargainSlider');
+        const bargainPctText = document.getElementById('bargainPctText');
+        const bargainOrigPrice = document.getElementById('bargainOrigPrice');
+        const bargainNewPrice = document.getElementById('bargainNewPrice');
+        const bargainModalName = document.getElementById('bargainModalName');
+        const bargainConfirmBtn = document.getElementById('bargainConfirmBtn');
+        let bargainTargetItem = null;
+
+        function openBargainModal(item) {
+            bargainTargetItem = item;
+            bargainModalName.textContent = item.name;
+            bargainOrigPrice.textContent = `$${effPrice(item).toFixed(2)}${item.isStackable ? '/' + item.unit : ''}`;
+            bargainSlider.value = 10;
+            updateBargainPreview();
+            bargainModal.classList.add('show');
+        }
+
+        function updateBargainPreview() {
+            if (!bargainTargetItem) return;
+            const d = parseInt(bargainSlider.value, 10);
+            const base = effPrice(bargainTargetItem);
+            bargainPctText.textContent = `${d}%`;
+            bargainNewPrice.textContent = `$${(base * (1 - d / 100)).toFixed(2)}${bargainTargetItem.isStackable ? '/' + bargainTargetItem.unit : ''}`;
+        }
+
+        bargainSlider.addEventListener('input', updateBargainPreview);
+        document.querySelectorAll('[data-bp]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                bargainSlider.value = btn.dataset.bp;
+                updateBargainPreview();
+                sound.playWoodClick();
+            });
+        });
+        bargainCloseBtn.addEventListener('click', () => bargainModal.classList.remove('show'));
+        bargainModal.addEventListener('click', (e) => { if (e.target === bargainModal) bargainModal.classList.remove('show'); });
+
+        bargainConfirmBtn.addEventListener('click', () => {
+            if (!bargainTargetItem) return;
+            const d = parseInt(bargainSlider.value, 10);
+            const base = effPrice(bargainTargetItem);
+            const newPrice = (base * (1 - d / 100)).toFixed(2);
+            // 斜体宣言填入输入框，玩家可补写台词后发送（SPEC 第六节）
+            pendingBargain = { itemName: bargainTargetItem.name, discount: d };
+            chatInput.value = `*${activeSpeaker.name}尝试砍价，砍价后价格为${newPrice}美元。*`;
+            chatInput.focus();
+            bargainModal.classList.remove('show');
+            bargainMode = false;          // 退出砍价模式
+            btnBargain.classList.remove('active');
+            chatInput.placeholder = `补写台词或直接发送，向${shopState ? shopState.keeper : '店主'}提出砍价...`;
+            sound.playWoodClick();
+        });
+
+        // ====================================================
         // 购物车缩略展示 (只显示图标和数量)
         // ====================================================
         function updateCartUI() {
@@ -2826,7 +3042,7 @@
             let totalCount = 0;
 
             playerState.cart.forEach(entry => {
-                total += entry.item.price * entry.quantity;
+                total += effPrice(entry.item) * entry.quantity;
                 totalCount += entry.quantity;
             });
 
@@ -2902,7 +3118,7 @@
             }
 
             playerState.cart.forEach(entry => {
-                const itemTotal = entry.item.price * entry.quantity;
+                const itemTotal = effPrice(entry.item) * entry.quantity;
                 total += itemTotal;
 
                 const tr = document.createElement('tr');
@@ -2911,7 +3127,7 @@
                         <span style="font-size: 18px; margin-right: 6px;">${entry.item.emoji}</span>
                         <strong style="color: #e5d7c3;">${entry.item.name}</strong>
                     </td>
-                    <td style="color: #dfb06c;">$${entry.item.price.toFixed(2)}</td>
+                    <td style="color: #dfb06c;">$${effPrice(entry.item).toFixed(2)}${entry.item.dealPrice != null ? ' <span style="font-size:10px;color:#8fb573;">(已砍价)</span>' : ''}</td>
                     <td>
                         <div class="item-qty-stepper">
                             <button class="stepper-btn btn-minus">-</button>
@@ -3122,9 +3338,16 @@
             sound.playWoodClick();
         });
 
+        // 砍价模式开关：点按钮进入，再点退出
         btnBargain.addEventListener('click', () => {
-            chatInput.value = "“看在退伍老兵的份上，这批军火价格能打个九折吗，老板？”";
-            handleSendMessage();
+            bargainMode = !bargainMode;
+            btnBargain.classList.toggle('active', bargainMode);
+            sound.playWoodClick();
+            if (bargainMode) {
+                chatInput.placeholder = `砍价模式：点击货架上的商品，为【${activeSpeaker.name}】砍价...`;
+            } else {
+                chatInput.placeholder = `以【${activeSpeaker.name}】的身份向${shopState ? shopState.keeper : '老布莱克伍德'}交谈或砍价... (Enter 发送)`;
+            }
         });
 
         btnSendChat.addEventListener('click', handleSendMessage);
@@ -3133,45 +3356,51 @@
         });
 
         async function handleSendMessage() {
-            const text = chatInput.value.trim();
+            let text = chatInput.value.trim();
             if (!text) return;
             chatInput.value = '';
             sound.playWoodClick();
 
-            let speakerPrefix = playerState.narratorEnabled 
-                ? `【${activeSpeaker.name}】：“${text}”<br>` 
-                : '';
-
-            dialogueText.innerHTML = speakerPrefix + `<span style="color:#a38c75;">（老布莱克伍德正在沉吟……）</span>`;
-
-            if (llmConfig.apiKey) {
-                try {
-                    const response = await fetch(`${llmConfig.apiBase}/chat/completions`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${llmConfig.apiKey}`
-                        },
-                        body: JSON.stringify({
-                            model: llmConfig.model,
-                            messages: [
-                                { role: "system", content: llmConfig.systemPrompt },
-                                { role: "user", content: `我是${activeSpeaker.name}（${activeSpeaker.role}）。我对你说：${text}` }
-                            ],
-                            temperature: 0.7,
-                            max_tokens: 120
-                        })
-                    });
-                    const data = await response.json();
-                    if (data.choices && data.choices[0]) {
-                        dialogueText.innerHTML = speakerPrefix + `“${data.choices[0].message.content.trim()}”`;
-                        return;
-                    }
-                } catch(err) {
-                    console.warn("LLM 调用失败，切回本地规则库:", err);
+            // 斜体砍价宣言检测：*角色名尝试砍价，砍价后价格为XX。* （可附玩家补写台词）
+            if (pendingBargain && text.startsWith('*')) {
+                const m = text.match(/^\*【?(.+?)】?尝试砍价[，,]砍价后价格为[^*。]*。?\*(.*)$/s);
+                if (m && pendingBargain) {
+                    const extra = m[2].trim().replace(/^["“]|["”]$/g, '');
+                    const speakerPrefix = playerState.narratorEnabled
+                        ? `【${activeSpeaker.name}】：<em>${text.split('*')[1]}*</em><br>`
+                        : '';
+                    dialogueText.innerHTML = speakerPrefix + `<span style="color:#a38c75;">（正在与店主周旋……）</span>`;
+                    await handleBargainSend(pendingBargain.itemName, pendingBargain.discount, extra);
+                    return;
                 }
             }
+            // 未声明砍价但有 pendingBargain 时发送普通消息 → 取消挂起的砍价
+            pendingBargain = null;
 
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            let speakerPrefix = playerState.narratorEnabled
+                ? `【${activeSpeaker.name}】：“${text}”<br>`
+                : '';
+
+            dialogueText.innerHTML = speakerPrefix + `<span style="color:#a38c75;">（${keeper}正在沉吟……）</span>`;
+
+            // M4 通道：自由对话场景（chat），失败回退旧 demo 关键词库
+            let result = null;
+            if (llmConfig.apiKey) {
+                for (let attempt = 0; attempt < 2 && !result; attempt++) {
+                    try { result = await callShopLLM('chat', text); }
+                    catch (e) { console.warn(`[ShopBlock] 对话 LLM 第${attempt + 1}次失败:`, e.message); }
+                }
+            }
+            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
+                const savedNarrator = playerState.narratorEnabled;
+                playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
+                await applyLLMResult(result);
+                playerState.narratorEnabled = savedNarrator;
+                return;
+            }
+
+            // 旧 demo 关键词回退（LLM 不可用）
             setTimeout(() => {
                 let reply = "";
                 if (text.includes("折") || text.includes("便宜") || text.includes("讲价") || text.includes("砍价")) {
