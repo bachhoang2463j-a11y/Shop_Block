@@ -1450,10 +1450,10 @@
             </div>
 
             <div class="portrait-wrapper">
-                <img id="blacksmithImg" class="blacksmith-img" 
-                     src="resources/blacksmith/blacksmith.character.png" 
-                     alt="军械店老板 / 铁匠"
-                     title="点击与老板交谈">
+                <img id="blacksmithImg" class="blacksmith-img"
+                     src="" data-fallback-used=""
+                     alt="店主立绘"
+                     title="点击与店主交谈">
             </div>
         </section>
 
@@ -1795,6 +1795,11 @@
             </div>
 
             <div class="form-group">
+                <label class="form-label">立绘服务器根 URL (Portrait Base URL):</label>
+                <input type="text" class="form-input" id="llmPortraitBase" placeholder="http://127.0.0.1:18924/shop_resources（指向含10张店主立绘的目录）">
+            </div>
+
+            <div class="form-group">
                 <label class="form-label">老板系统人设 (System Persona):</label>
                 <textarea class="form-textarea" id="llmSystemPrompt" rows="3">你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，你都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。</textarea>
             </div>
@@ -1962,6 +1967,7 @@
                 ? `${shopState.keeper} · ${shopState.portrait}`
                 : `${shopState.keeper} · ${shopState.portrait}`;
             bubbleTitleName.textContent = shopState.keeper;
+            loadKeeperPortrait(shopState.portrait);
             buildCategoryTabs();
             renderCabinet();
             updateCartUI();
@@ -2126,6 +2132,7 @@
             apiBase: "https://api.openai.com/v1",
             apiKey: "",
             model: "gpt-4o-mini",
+            portraitBase: "",
             systemPrompt: "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。客人向你询问武器、讲价或打探黑道情报时，以暗黑地牢/洛夫克拉夫特式的语气简明回答，字数在60字以内。"
         };
 
@@ -2243,6 +2250,7 @@
         const llmSystemPrompt = document.getElementById('llmSystemPrompt');
         const llmSaveBtn = document.getElementById('llmSaveBtn');
         const llmResetBtn = document.getElementById('llmResetBtn');
+        const llmPortraitBase = document.getElementById('llmPortraitBase');
 
         // 底栏输入
         const partyDeck = document.getElementById('partyDeck');
@@ -2252,16 +2260,37 @@
         const btnBargain = document.getElementById('btnBargain');
         const btnNarratorToggle = document.getElementById('btnNarratorToggle');
 
-        // 背景图与立绘容错
-        const bgFallback = "resources/02_城镇设施_Facilities/铁匠铺_Blacksmith/blacksmith.character_background.png";
-        const bgImg = new Image();
-        bgImg.src = "resources/blacksmith/blacksmith.character_background.png";
-        bgImg.onload = () => { stageBg.style.backgroundImage = "url('resources/blacksmith/blacksmith.character_background.png')"; };
-        bgImg.onerror = () => { stageBg.style.backgroundImage = `url('${bgFallback}')`; };
+        // 立绘 URL：根URL可配置（SPEC 第二节），拼枚举文件名；失败回退占卜商妇
+        function portraitUrl(enumName) {
+            const base = (llmConfig.portraitBase || '').trim().replace(/\/+$/, '');
+            const file = PORTRAIT_ENUM[enumName] || PORTRAIT_ENUM['占卜商妇'];
+            return base ? `${base}/${file}` : `shop_resources/${file}`;
+        }
 
-        blacksmithImg.onerror = function() {
-            this.src = "resources/02_城镇设施_Facilities/铁匠铺_Blacksmith/blacksmith.character.png";
-        };
+        // 立绘加载：枚举名 → img src；new Image() 预探测成功才上屏，
+        // 失败/超时回退占卜商妇（IAB 等不可见环境中 img.onerror 可能不派发，必须代码层兜底）
+        function loadKeeperPortrait(enumName) {
+            const target = portraitUrl(enumName);
+            const fallback = portraitUrl('占卜商妇');
+            let settled = false;
+            const apply = (url) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                blacksmithImg.src = url;
+            };
+            const probe = new Image();
+            const timer = setTimeout(() => apply(fallback), 4000);
+            probe.onload = () => apply(target);
+            probe.onerror = () => {
+                // 目标失败 → 探测回退图；回退图也失败 → 空串（显示 alt 占位）
+                const fb = new Image();
+                fb.onload = () => apply(fallback);
+                fb.onerror = () => { settled = true; clearTimeout(timer); blacksmithImg.removeAttribute('src'); };
+                fb.src = fallback;
+            };
+            probe.src = target;
+        }
 
         // ====================================================
         // 渲染方案2 实木托盘柜
@@ -2691,6 +2720,7 @@
             llmApiBase.value = llmConfig.apiBase;
             llmApiKey.value = llmConfig.apiKey;
             llmModel.value = llmConfig.model;
+            llmPortraitBase.value = llmConfig.portraitBase;
             llmSystemPrompt.value = llmConfig.systemPrompt;
             llmModal.classList.add('show');
         });
@@ -2701,10 +2731,13 @@
             llmConfig.apiBase = llmApiBase.value.trim() || "https://api.openai.com/v1";
             llmConfig.apiKey = llmApiKey.value.trim();
             llmConfig.model = llmModel.value.trim() || "gpt-4o-mini";
+            llmConfig.portraitBase = llmPortraitBase.value.trim();
             llmConfig.systemPrompt = llmSystemPrompt.value.trim();
             localStorage.setItem('dd_llm_config', JSON.stringify(llmConfig));
             sound.playWoodClick();
             llmModal.classList.remove('show');
+            // 根 URL 变更后按当前商店刷新立绘
+            loadKeeperPortrait(shopState ? shopState.portrait : '铁匠机械师');
             dialogueText.textContent = "老布莱克伍德扶了扶帽檐：“LLM 智脑配置已更新。随时可以向我打探黑市情报。”";
         });
 
@@ -2712,6 +2745,7 @@
             llmApiBase.value = "https://api.openai.com/v1";
             llmApiKey.value = "";
             llmModel.value = "gpt-4o-mini";
+            llmPortraitBase.value = "";
             llmSystemPrompt.value = "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，你都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。";
         });
 
@@ -2878,6 +2912,7 @@
 
         // 初始化
         buildCategoryTabs();
+        loadKeeperPortrait('铁匠机械师'); // demo 模式默认店主
         renderCabinet();
         updateUI();
         updateCartUI();
