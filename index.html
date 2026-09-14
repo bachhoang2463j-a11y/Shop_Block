@@ -633,7 +633,6 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
             box-shadow: 0 4px 10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.08);
             transition: all 0.22s ease;
         }
@@ -667,7 +666,9 @@
 
         .party-avatar-img {
             width: 100%;
-            height: 66px;
+            height: 100%;
+            flex: 1;
+            min-height: 0;
             object-fit: cover;
             object-position: center top;
             filter: contrast(105%) brightness(95%);
@@ -676,26 +677,6 @@
 
         .party-card:hover .party-avatar-img {
             transform: scale(1.06);
-        }
-
-        .party-name-tag {
-            background: linear-gradient(180deg, #1c130e 0%, #0c0806 100%);
-            border-top: 1px solid #382417;
-            padding: 1px 2px 2px 2px;
-            text-align: center;
-            flex: 0 0 auto;
-        }
-
-        .party-name-text {
-            font-family: var(--font-title);
-            font-size: 9px;         /* 名字字体缩小（原 11px） */
-            font-weight: 700;
-            color: #d8c7b5;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: block;
-            line-height: 1.2;
         }
 
         /* 购物车区域：缩略仅显示图标与数量 + 展开按钮 */
@@ -1499,34 +1480,22 @@
     ==================================================== -->
     <footer class="bottom-console">
         <div class="console-upper-row">
-            <!-- 左侧：至多四个我方角色的头像（无需属性栏） -->
+            <!-- 左侧：至多四个我方角色的头像（纯头像卡，无文字底框；名字悬浮提示） -->
             <div class="party-deck" id="partyDeck">
-                <div class="party-card active" data-index="0" data-name="埃利奥特" data-role="私家侦探">
+                <div class="party-card active" data-index="0" data-name="埃利奥特" data-role="私家侦探" title="埃利奥特 · 私家侦探">
                     <img class="party-avatar-img" data-avatar="Eil.png" alt="埃利奥特">
-                    <div class="party-name-tag">
-                        <span class="party-name-text">埃利奥特</span>
-                    </div>
                 </div>
 
-                <div class="party-card" data-index="1" data-name="弗兰克" data-role="一战老兵">
+                <div class="party-card" data-index="1" data-name="弗兰克" data-role="一战老兵" title="弗兰克 · 一战老兵">
                     <img class="party-avatar-img" data-avatar="Frank.png" alt="弗兰克">
-                    <div class="party-name-tag">
-                        <span class="party-name-text">弗兰克</span>
-                    </div>
                 </div>
 
-                <div class="party-card" data-index="2" data-name="玛德琳" data-role="密大调查员">
+                <div class="party-card" data-index="2" data-name="玛德琳" data-role="密大调查员" title="玛德琳 · 密大调查员">
                     <img class="party-avatar-img" data-avatar="chen.png" alt="玛德琳">
-                    <div class="party-name-tag">
-                        <span class="party-name-text">玛德琳</span>
-                    </div>
                 </div>
 
-                <div class="party-card" data-index="3" data-name="索恩" data-role="秘术顾问">
+                <div class="party-card" data-index="3" data-name="索恩" data-role="秘术顾问" title="索恩 · 秘术顾问">
                     <img class="party-avatar-img" data-avatar="suoen_compressed.png" alt="索恩">
-                    <div class="party-name-tag">
-                        <span class="party-name-text">索恩</span>
-                    </div>
                 </div>
             </div>
 
