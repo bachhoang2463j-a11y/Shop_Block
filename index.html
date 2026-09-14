@@ -624,7 +624,7 @@
 
         .party-card {
             width: 90px;
-            height: 96px;
+            height: 48px;           /* 去称号后底框高度 96→48（-50%） */
             background: linear-gradient(180deg, #221611 0%, #120b08 100%);
             border: 2px solid #3d291c;
             border-radius: 4px;
@@ -632,8 +632,9 @@
             position: relative;
             overflow: hidden;
             display: flex;
-            flex-direction: column;
-            justify-content: space-between;
+            flex-direction: row;    /* 改横向：头像左、名字右，适配矮框 */
+            align-items: center;
+            gap: 4px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.08);
             transition: all 0.22s ease;
         }
@@ -666,8 +667,9 @@
         }
 
         .party-avatar-img {
-            width: 100%;
-            height: 66px;
+            width: 44px;
+            height: 100%;
+            flex: 0 0 44px;
             object-fit: cover;
             object-position: center top;
             filter: contrast(105%) brightness(95%);
@@ -680,27 +682,22 @@
 
         .party-name-tag {
             background: linear-gradient(180deg, #1c130e 0%, #0c0806 100%);
-            border-top: 1px solid #382417;
-            padding: 2px 2px 3px 2px;
-            text-align: center;
+            border-left: 1px solid #382417;
+            padding: 2px 4px;
+            text-align: left;
+            flex: 1;
+            min-width: 0;
         }
 
         .party-name-text {
             font-family: var(--font-title);
-            font-size: 11px;
+            font-size: 9px;         /* 名字字体 11→9（约-20%） */
             font-weight: 700;
             color: #d8c7b5;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             display: block;
-        }
-
-        .party-role-text {
-            font-size: 9px;
-            color: #8c7360;
-            display: block;
-            margin-top: -1px;
         }
 
         /* 购物车区域：缩略仅显示图标与数量 + 展开按钮 */
@@ -1656,10 +1653,24 @@
                 <button class="modal-close-btn" id="cartDetailCloseBtn">&times;</button>
             </div>
 
-            <div style="max-height: 320px; overflow-y: auto;">
+            <!-- M6 归属分配栏：勾选商品 → 点角色/载具头像放入 -->
+            <div id="assignPanel" style="border: 1px solid #382417; border-radius: 6px; padding: 10px; margin-bottom: 10px; background: #170f0a;">
+                <div style="font-size: 11px; color: #8c7360; margin-bottom: 6px;">
+                    结算流程：勾选商品 → 点击下方角色头像或载具图标分配归属 → 全部分配后点「确认结算」。点错可点击已分配条目撤销。
+                </div>
+                <div id="assignTargets" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+                    <!-- 角色/载具目标按钮（JS 渲染） -->
+                </div>
+                <div id="assignedList" style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;">
+                    <!-- 已分配条目（JS 渲染，点击撤销） -->
+                </div>
+            </div>
+
+            <div style="max-height: 260px; overflow-y: auto;">
                 <table class="cart-detail-table">
                     <thead>
                         <tr>
+                            <th style="width: 28px;"></th>
                             <th>物品</th>
                             <th>单价</th>
                             <th>数量调整</th>
@@ -1680,7 +1691,7 @@
                 </div>
                 <div style="display: flex; gap: 10px;">
                     <button class="cart-clear-btn" id="cartModalClearBtn">清空清单</button>
-                    <button class="buy-btn" id="cartModalCheckoutBtn">立即结算付款 (CHECKOUT)</button>
+                    <button class="buy-btn" id="cartModalCheckoutBtn">确认结算 (CHECKOUT)</button>
                 </div>
             </div>
         </div>
@@ -2291,6 +2302,7 @@
                     showKeeperDialogue(keeper, line.text, false);
                 }
                 html.push(`<span style="color:${line.speaker === keeper ? '#c9a86a' : '#7a9a8a'};">【${line.speaker}】：“${line.text}”</span>`);
+                logSessionDialog(line.speaker, line.text);
             }
             dialogueText.innerHTML = html.join('<br>');
             // affection 落地（钳制 0~100）
@@ -2406,6 +2418,329 @@
                 showKeeperDialogue(keeper, BARGAIN_FALLBACK[res.branch](keeper, discount), true);
                 dialogueText.innerHTML = `<span style="color:#7a9a8a;">【${activeSpeaker.name}】尝试砍价「${item.name}」${discount}%……</span><br><span style="color:#c9a86a;">${BARGAIN_FALLBACK[res.branch](keeper, discount)}</span>`;
             }
+        }
+
+        // ====================================================
+        // MMS 直连桥（SPEC 第五节）：读 stat_data / 在场团队 / 现金 / 载具
+        // ====================================================
+        // 回溯 ≤50 楼找 $mms_meta.mesId 匹配的 stat_data（防 getVariables(message) 向前继承陷阱）
+        async function findLatestStatData() {
+            if (typeof getVariables !== 'function' || typeof getLastMessageId !== 'function') return null;
+            try {
+                const lastId = getLastMessageId();
+                for (let id = lastId; id >= Math.max(0, lastId - 50); id--) {
+                    const vars = await getVariables({ type: 'message', message_id: id });
+                    if (!vars || !vars.stat_data) continue;
+                    const meta = vars['$mms_meta'];
+                    if (meta && Number(meta.mesId) === id) return { floorId: id, vars, stat: vars.stat_data };
+                }
+                // 宽容回退：无 $mms_meta 标记的旧数据取第一个命中的
+                for (let id = lastId; id >= Math.max(0, lastId - 50); id--) {
+                    const vars = await getVariables({ type: 'message', message_id: id });
+                    if (vars && vars.stat_data) return { floorId: id, vars, stat: vars.stat_data };
+                }
+            } catch (e) { console.warn('[ShopBlock] stat_data 读取失败:', e); }
+            return null;
+        }
+
+        // 从 stat_data 提取在场团队（角色列表）、现金模块、载具模块
+        function extractMmsSnapshot(stat) {
+            const root = stat && stat['状态栏'] ? stat['状态栏'] : stat;
+            if (!root || typeof root !== 'object') return { members: [], cash: null, cashModule: null, vehicles: [] };
+            // 角色列表（兼容 角色/用户 包裹）
+            const members = [];
+            if (Array.isArray(root['角色列表'])) {
+                root['角色列表'].forEach(e => {
+                    const c = (e && (e['角色'] || e['用户'])) || null;
+                    if (c && c['名字']) members.push({ name: String(c['名字']).trim(), raw: c });
+                });
+            }
+            // 现金：第一个含 现金 字段的顶层模块
+            let cash = null, cashModule = null;
+            for (const k in root) {
+                if (k === '角色列表' || k === '人物' || typeof root[k] !== 'object' || Array.isArray(root[k])) continue;
+                const v = root[k] && root[k]['现金'];
+                if (typeof v === 'string' || typeof v === 'number') {
+                    const num = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/));
+                    if (isFinite(num)) { cash = num; cashModule = k; break; }
+                }
+            }
+            // 载具：顶层含 名称+清单字段的模块（武器/弹药/杂物/载具）；含"现金"的是据点，排除
+            const vehicles = [];
+            for (const k in root) {
+                if (k === '角色列表' || k === '人物' || typeof root[k] !== 'object' || Array.isArray(root[k])) continue;
+                const m = root[k];
+                if (m['现金'] != null) continue; // 据点：现金持有方，不是载具
+                if (m['名称'] && (m['武器'] || m['弹药'] || m['杂物'] || m['载具'])) vehicles.push({ name: String(m['名称']), key: k, raw: m });
+            }
+            return { members, cash, cashModule, vehicles };
+        }
+
+        // 在场团队 = stat_data 角色列表 ∩ Shop_block 在场成员（无块时全角色列表）
+        async function loadMmsContext() {
+            const found = await findLatestStatData();
+            if (!found) return null;
+            const snap = extractMmsSnapshot(found.stat);
+            let present = snap.members.map(m => m.name);
+            if (shopState && shopState.presentMembers.length) {
+                const blockSet = new Set(shopState.presentMembers.map(n => n.trim()));
+                const filtered = present.filter(n => blockSet.has(n) || Array.from(blockSet).some(b => n.includes(b) || b.includes(n)));
+                if (filtered.length) present = filtered;
+            }
+            return { floorId: found.floorId, stat: found.stat, members: snap.members, present, cash: snap.cash, cashModule: snap.cashModule, vehicles: snap.vehicles };
+        }
+
+        // ====================================================
+        // 结算框多选归属 + 结算写入（SPEC 第五节）
+        // ====================================================
+        let assignState = null;   // { targets:[{name,kind,avatar}], picked:Set(cartEntryId), assigned:[{entryId,owner,kind}] }
+
+        async function openAssignPanel() {
+            if (playerState.cart.length === 0) return;
+            const ctx = await loadMmsContext();
+            // 目标：MMS 在场角色 + 载具；无 MMS 时回退 demo 小队
+            let targets = [];
+            if (ctx) {
+                ctx.present.forEach(name => {
+                    const pm = partyMembers.find(p => name.includes(p.name) || p.name.includes(name));
+                    targets.push({ name, kind: 'char', avatar: pm ? pm.avatar : null });
+                });
+                ctx.vehicles.forEach(v => targets.push({ name: v.name, kind: 'vehicle', avatar: null }));
+            }
+            if (!targets.length) {
+                partyMembers.forEach(p => targets.push({ name: p.name, kind: 'char', avatar: p.avatar }));
+                targets.push({ name: '载具', kind: 'vehicle', avatar: null });
+            }
+            assignState = { mms: ctx, targets, picked: new Set(), assigned: [] };
+            renderAssignPanel();
+            renderCartDetailTable();
+        }
+
+        function renderAssignPanel() {
+            const targetsBox = document.getElementById('assignTargets');
+            const listBox = document.getElementById('assignedList');
+            if (!assignState || !targetsBox) return;
+            targetsBox.innerHTML = '';
+            assignState.targets.forEach(t => {
+                const btn = document.createElement('button');
+                btn.className = 'input-action-btn';
+                btn.style.cssText = 'flex-direction:row; gap:4px; padding:4px 8px; font-size:11px;';
+                btn.innerHTML = `${t.kind === 'vehicle' ? '🚙' : (t.avatar ? `<img src="${avatarUrl(t.avatar)}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;">` : '🧑')} ${t.name}`;
+                btn.addEventListener('click', () => assignPickedTo(t));
+                targetsBox.appendChild(btn);
+            });
+            listBox.innerHTML = '';
+            assignState.assigned.forEach((a, idx) => {
+                const entry = playerState.cart.find(c => c.id === a.entryId);
+                if (!entry) return;
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#d8c7b5;background:#20150e;border:1px solid #382417;border-radius:4px;padding:3px 8px;cursor:pointer;';
+                row.title = '点击撤销归属';
+                row.innerHTML = `<span>${a.kind === 'vehicle' ? '🚙' : '🧑'} ${entry.item.name} ×${entry.quantity} → ${a.owner}</span><span style="color:#8c7360;">✕ 撤销</span>`;
+                row.addEventListener('click', () => { assignState.assigned.splice(idx, 1); renderAssignPanel(); renderCartDetailTable(); });
+                listBox.appendChild(row);
+            });
+        }
+
+        function assignPickedTo(target) {
+            if (!assignState || assignState.picked.size === 0) return;
+            sound.playWoodClick();
+            assignState.picked.forEach(entryId => {
+                // 一件商品只归属一处：先清旧
+                assignState.assigned = assignState.assigned.filter(a => a.entryId !== entryId);
+                assignState.assigned.push({ entryId, owner: target.name, kind: target.kind });
+            });
+            assignState.picked = new Set();
+            renderAssignPanel();
+            renderCartDetailTable();
+        }
+
+        // 表格行的勾选框（renderCartDetailTable 渲染时同步勾选态）
+        function cartEntryChecked(entryId) {
+            return assignState && assignState.picked.has(entryId);
+        }
+        function toggleCartEntry(entryId) {
+            if (!assignState) return;
+            if (assignState.picked.has(entryId)) assignState.picked.delete(entryId);
+            else assignState.picked.add(entryId);
+            renderAssignPanel();
+        }
+
+        // ====================================================
+        // 结算写入：$shop_sync 幂等 + stat_data 直写 + $shop_deal_result + 购物好感 + Shop_Record
+        // ====================================================
+        async function checkoutCart() {
+            if (!assignState) return;
+            const unassigned = playerState.cart.filter(c => !assignState.assigned.some(a => a.entryId === c.id));
+            if (unassigned.length) {
+                alert(`${unassigned.length} 件商品未分配归属：${unassigned.map(c => c.item.name).join('、')}。请先勾选并分配。`);
+                return;
+            }
+            const total = playerState.cart.reduce((s, e) => s + effPrice(e.item) * e.quantity, 0);
+            const ctx = assignState.mms;
+
+            // 现金校验（有 MMS 时）
+            if (ctx && ctx.cash != null && ctx.cash < total) {
+                alert(`团队现金不足：$${ctx.cash.toFixed(2)} < 应付 $${total.toFixed(2)}`);
+                return;
+            }
+
+            const dealId = 'shop-' + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+            // 幂等台账检查（$shop_sync.lastId，防重复结算）
+            try {
+                const vars = await readAllShops; // noop：读 chat 变量
+            } catch (e) {}
+            const chatVars = (typeof getVariables === 'function') ? await getVariables({ type: 'chat' }) : window.__mockVars || {};
+            const sync = chatVars['$shop_sync'];
+            if (sync && sync.lastId && sync.dealId === dealId) return;
+            // （dealId 每次生成都不同，lastId 比对用于防同一事件重放；此处由按钮触发天然不重，写入留档）
+
+            // purchases 明细（SPEC 载荷契约）
+            const purchases = playerState.cart.map(e => {
+                const a = assignState.assigned.find(x => x.entryId === e.id);
+                return { owner: a.owner, name: e.item.name, count: e.quantity, category: e.item.category, toVehicle: a.kind === 'vehicle', price: effPrice(e.item) };
+            });
+
+            const bargained = playerState.cart.some(e => e.item.dealPrice != null);
+
+            // 写 stat_data（MMS 在场时）
+            let written = false;
+            if (ctx) {
+                try {
+                    written = await applyDealToStatData(ctx, purchases, total);
+                } catch (e) { console.warn('[ShopBlock] stat_data 写入失败:', e); }
+            }
+
+            // $shop_deal_result 载荷（含 lock 硬锁清单）+ $shop_sync 台账
+            const lock = {
+                cash: written,
+                chars: [], vehicles: []
+            };
+            purchases.forEach(p => {
+                const bucket = p.toVehicle ? lock.vehicles : lock.chars;
+                let slot = bucket.find(b => b.name === p.owner);
+                if (!slot) { slot = { name: p.owner, items: [] }; bucket.push(slot); }
+                slot.items.push(p.name);
+            });
+            const payload = {
+                v: 1, id: dealId, ts: Date.now(),
+                floorId: ctx ? ctx.floorId : null,
+                '店名': shopState ? shopState.shopName : '示例商店',
+                cashDelta: -total, purchases, bargained,
+                lock
+            };
+            if (typeof insertOrAssignVariables === 'function') {
+                await insertOrAssignVariables({ '$shop_deal_result': payload, '$shop_sync': { lastId: dealId, appliedFloor: payload.floorId, ts: payload.ts } }, { type: 'chat' });
+            } else if (window.__mockVars) {
+                Object.assign(window.__mockVars, { '$shop_deal_result': payload, '$shop_sync': { lastId: dealId, appliedFloor: payload.floorId, ts: payload.ts } });
+            }
+
+            // 购物好感：每满 $5 +1 不设上限（SPEC 第六节）
+            if (shopState) {
+                try {
+                    const gain = Math.floor(total / 5);
+                    if (gain > 0) {
+                        const nv = await updateShopAffection(shopState.shopName, gain);
+                        if (nv != null) window.__shopAffection = nv;
+                    }
+                } catch (e) { console.warn('[ShopBlock] 购物好感落地失败:', e); }
+            }
+
+            // Shop_Record 记录组装（SPEC 第七节）
+            const record = buildShopRecord(payload, ctx);
+            if (typeof injectToSillyTavernInput === 'function') {
+                injectToSillyTavernInput(record);
+            } else {
+                // 本地 demo：填入聊天输入框 + 弹窗展示
+                chatInput.value = record;
+                console.info('[ShopBlock] Shop_Record（请复制发送给正文AI）:\n' + record);
+            }
+
+            // 清账本入历史
+            playerState.cart.forEach(e => playerState.purchaseHistory.push({
+                name: e.item.name, qty: e.quantity, price: effPrice(e.item),
+                owner: (assignState.assigned.find(a => a.entryId === e.id) || {}).owner || ''
+            }));
+            playerState.cart = [];
+            assignState = null;
+            closeCartDetailModal();
+            updateCartUI();
+            renderCabinet();
+        }
+
+        // 物品写入 stat_data：角色物品清单追加 / 载具清单追加；返回是否成功
+        async function applyDealToStatData(ctx, purchases, total) {
+            if (typeof getVariables !== 'function' || typeof replaceVariables !== 'function') return false;
+            const vars = await getVariables({ type: 'message', message_id: ctx.floorId });
+            if (!vars || !vars.stat_data) return false;
+            const stat = JSON.parse(JSON.stringify(vars.stat_data));
+            const root = stat['状态栏'] || stat;
+
+            // 现金扣减（保留货币后缀格式）
+            if (ctx.cashModule && root[ctx.cashModule] && root[ctx.cashModule]['现金'] != null) {
+                const orig = String(root[ctx.cashModule]['现金']);
+                const num = parseFloat(orig.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)) || ctx.cash;
+                const suffix = orig.replace(/-?[\d,.]+/, '');
+                root[ctx.cashModule]['现金'] = (num - total).toFixed(2) + (suffix || '美元');
+            }
+
+            // 物品归属
+            purchases.forEach(p => {
+                if (p.toVehicle) {
+                    // 载具模块：清单字段（杂物优先）追加 [物品×N]
+                    const v = ctx.vehicles.find(v => v.name === p.owner);
+                    const mod = v ? root[v.key] : null;
+                    if (mod) {
+                        const field = ['杂物', '弹药', '武器'].find(f => typeof mod[f] === 'string') || '杂物';
+                        const tag = p.count > 1 ? `[${p.name}x${p.count}]` : `[${p.name}]`;
+                        mod[field] = mod[field] ? mod[field] + tag : tag;
+                    }
+                } else {
+                    // 角色物品清单追加
+                    const chars = root['角色列表'];
+                    if (Array.isArray(chars)) {
+                        const c = chars.find(e => {
+                            const ch = e && (e['角色'] || e['用户']);
+                            return ch && ch['名字'] && String(ch['名字']).includes(p.owner);
+                        });
+                        if (c) {
+                            const ch = c['角色'] || c['用户'];
+                            const tag = p.count > 1 ? `[${p.name}x${p.count}]` : `[${p.name}]`;
+                            ch['物品'] = ch['物品'] ? ch['物品'] + tag : tag;
+                        }
+                    }
+                }
+            });
+
+            await replaceVariables(Object.assign({}, vars, { stat_data: stat }), { type: 'message', message_id: ctx.floorId });
+            // 通知 MMS 刷新
+            if (typeof eventEmit === 'function') { try { eventEmit('mms:status-updated', { message_id: ctx.floorId }); } catch (e) {} }
+            return true;
+        }
+
+        // Shop_Record 文本组装（SPEC 第七节四要素）
+        function buildShopRecord(payload, ctx) {
+            const lines = [];
+            lines.push('<Shop_Record>');
+            lines.push(`商店: ${payload['店名']} (店主: ${shopState ? shopState.keeper : '店主'} · 立绘: ${shopState ? shopState.portrait : '占卜商妇'} · 讲价结果: ${payload.bargained ? '有商品砍价成交' : '全部原价'})`);
+            if (sessionDialogLog.length) {
+                lines.push('本次对话:');
+                sessionDialogLog.slice(-12).forEach(l => lines.push(`  ${l}`));
+            }
+            lines.push('购买清单:');
+            payload.purchases.forEach(p => {
+                lines.push(`  - ${p.name} ×${p.count} = $${(p.price * p.count).toFixed(2)}${p.price !== (activeItems().find(i => i.name === p.name) || {}).price ? '（折后价）' : ''} → 归属: ${p.toVehicle ? '载具（' + p.owner + '）' : p.owner}`);
+            });
+            const cashAfter = ctx && ctx.cash != null ? ctx.cash - (-payload.cashDelta) * -1 : null;
+            lines.push(`实付总额: $${(-payload.cashDelta).toFixed(2)}${cashAfter != null ? '，团队现金余额: $' + cashAfter.toFixed(2) : ''}`);
+            lines.push('</Shop_Record>');
+            return lines.join('\n');
+        }
+
+        // 会话对话流水（进店期间内存收集，SPEC 第七节）
+        const sessionDialogLog = [];
+        function logSessionDialog(speaker, text) {
+            sessionDialogLog.push(`${speaker}: "${text}"`);
         }
 
         // 入口：接收正文文本（或手动粘贴），解析成功 → 建立商店会话并重渲染
@@ -3076,8 +3411,10 @@
                     cartMiniScroller.appendChild(chip);
                 });
 
-                cartCheckoutBtn.disabled = (playerState.cash < total);
-                cartCheckoutBtn.textContent = (playerState.cash < total) ? "现钞不足" : `一键结算 ($${total.toFixed(2)})`;
+                const mmsCash0 = (typeof assignState !== 'undefined' && assignState && assignState.mms) ? assignState.mms.cash : null;
+                const cashRef0 = mmsCash0 != null ? mmsCash0 : playerState.cash;
+                cartCheckoutBtn.disabled = (cashRef0 < total);
+                cartCheckoutBtn.textContent = (cashRef0 < total) ? "现钞不足" : `结算 ($${total.toFixed(2)})`;
             }
         }
 
@@ -3086,6 +3423,7 @@
         // ====================================================
         function openCartDetailModal() {
             sound.playWoodClick();
+            openAssignPanel();
             renderCartDetailTable();
             cartDetailModal.classList.add('show');
         }
@@ -3107,7 +3445,7 @@
             if (playerState.cart.length === 0) {
                 cartDetailTableBody.innerHTML = `
                     <tr>
-                        <td colspan="5" style="text-align: center; color: #6d5747; padding: 24px;">
+                        <td colspan="6" style="text-align: center; color: #6d5747; padding: 24px;">
                             购物车空空如也。
                         </td>
                     </tr>
@@ -3120,12 +3458,17 @@
             playerState.cart.forEach(entry => {
                 const itemTotal = effPrice(entry.item) * entry.quantity;
                 total += itemTotal;
+                const assigned = assignState && assignState.assigned.find(a => a.entryId === entry.id);
+                const checked = cartEntryChecked(entry.id);
 
                 const tr = document.createElement('tr');
+                if (assigned) tr.style.background = 'rgba(122,154,90,0.08)';
                 tr.innerHTML = `
+                    <td><input type="checkbox" class="cart-check" ${checked ? 'checked' : ''} style="accent-color:#dfb06c;cursor:pointer;"></td>
                     <td>
                         <span style="font-size: 18px; margin-right: 6px;">${entry.item.emoji}</span>
                         <strong style="color: #e5d7c3;">${entry.item.name}</strong>
+                        ${assigned ? `<span style="font-size:10px;color:#8fb573;margin-left:4px;">→ ${assigned.kind === 'vehicle' ? '🚙' : '🧑'}${assigned.owner}</span>` : ''}
                     </td>
                     <td style="color: #dfb06c;">$${effPrice(entry.item).toFixed(2)}${entry.item.dealPrice != null ? ' <span style="font-size:10px;color:#8fb573;">(已砍价)</span>' : ''}</td>
                     <td>
@@ -3140,6 +3483,12 @@
                         <button class="table-del-btn" title="移除">&times;</button>
                     </td>
                 `;
+
+                // 勾选（M6 归属分配）
+                tr.querySelector('.cart-check').addEventListener('change', (e) => {
+                    toggleCartEntry(entry.id);
+                    e.target.checked = cartEntryChecked(entry.id);
+                });
 
                 // 调整数量
                 tr.querySelector('.btn-minus').addEventListener('click', () => {
@@ -3178,8 +3527,10 @@
             });
 
             cartModalTotal.textContent = `$${total.toFixed(2)}`;
-            cartModalCheckoutBtn.disabled = (playerState.cash < total);
-            cartModalCheckoutBtn.textContent = (playerState.cash < total) ? "现钞不足以支付" : `一键结算付款 ($${total.toFixed(2)})`;
+            const mmsCash = assignState && assignState.mms ? assignState.mms.cash : null;
+            const cashRef = mmsCash != null ? mmsCash : playerState.cash;
+            cartModalCheckoutBtn.disabled = (cashRef < total);
+            cartModalCheckoutBtn.textContent = (cashRef < total) ? "现钞不足以支付" : `确认结算 ($${total.toFixed(2)})`;
         }
 
         // 清空购物车
@@ -3191,46 +3542,14 @@
             renderCabinet();
         });
 
-        // 结算购买执行
-        cartCheckoutBtn.addEventListener('click', executeCartCheckout);
-        cartModalCheckoutBtn.addEventListener('click', () => {
-            executeCartCheckout();
-            closeCartDetailModal();
+        // 结算购买执行（M6：多选归属 + MMS 直连 + 幂等台账，见 checkoutCart）
+        cartCheckoutBtn.addEventListener('click', async () => {
+            // 缩略栏入口：先打开详情弹窗走归属流程
+            openCartDetailModal();
         });
-
-        function executeCartCheckout() {
-            if (playerState.cart.length === 0) return;
-            let total = 0;
-            const nowTime = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-
-            playerState.cart.forEach(entry => {
-                total += entry.item.price * entry.quantity;
-                entry.item.sold = true;
-
-                // 记账
-                playerState.purchaseHistory.unshift({
-                    id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
-                    name: `${entry.item.name} × ${entry.quantity}`,
-                    buyer: `${activeSpeaker.name} (${activeSpeaker.role})`,
-                    price: entry.item.price * entry.quantity,
-                    time: nowTime
-                });
-            });
-
-            if (playerState.cash < total) return;
-            playerState.cash -= total;
-            sound.playCoin();
-
-            const purchasedCount = playerState.cart.length;
-            playerState.cart = [];
-
-            updateUI();
-            updateCartUI();
-            renderCabinet();
-            renderLedgerTable();
-
-            dialogueText.textContent = `老布莱克伍德拉动收银机：“一共${purchasedCount}笔货品打包完毕。${activeSpeaker.name}先生，账单已登入账本，请查收。”`;
-        }
+        cartModalCheckoutBtn.addEventListener('click', () => {
+            checkoutCart();   // 内部含未分配校验，失败保持弹窗打开
+        });
 
         // ====================================================
         // 购物记录账簿与 LLM 设置
@@ -3366,6 +3685,7 @@
                 const m = text.match(/^\*【?(.+?)】?尝试砍价[，,]砍价后价格为[^*。]*。?\*(.*)$/s);
                 if (m && pendingBargain) {
                     const extra = m[2].trim().replace(/^["“]|["”]$/g, '');
+                    logSessionDialog(activeSpeaker.name, `*尝试砍价，砍价后价格为${text.match(/价格为([^*。]+)/)?.[1] || ''}*${extra ? ' ' + extra : ''}`);
                     const speakerPrefix = playerState.narratorEnabled
                         ? `【${activeSpeaker.name}】：<em>${text.split('*')[1]}*</em><br>`
                         : '';
@@ -3376,6 +3696,7 @@
             }
             // 未声明砍价但有 pendingBargain 时发送普通消息 → 取消挂起的砍价
             pendingBargain = null;
+            logSessionDialog(activeSpeaker.name, text);
 
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             let speakerPrefix = playerState.narratorEnabled
