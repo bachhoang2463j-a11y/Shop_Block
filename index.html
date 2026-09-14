@@ -1463,8 +1463,11 @@
                         <span class="cat-badge" id="catCountExclusive">4</span>
                     </button>
                 </div>
-                <div class="cabinet-tip">
+                <div class="cabinet-tip" style="display:flex;align-items:center;gap:10px;">
                     <span>单件直入清单 · 复数拉条调整</span>
+                    <button class="top-pill-btn" id="btnRegroup" style="padding:2px 8px;font-size:11px;" title="由店主AI重新归类商品，合并二次进店产生的重复类目">
+                        <span>🗂️</span><span>重排商品</span>
+                    </button>
                 </div>
             </div>
 
@@ -2234,6 +2237,72 @@
             return extractJsonLoose(text);
         }
 
+        // ====================================================
+        // 重排商品（SPEC 第三节：独立 LLM 归类 + 确认框可撤销）
+        // ====================================================
+        async function handleRegroup() {
+            if (!shopState || !llmConfig.apiKey) {
+                alert('重排需要商店数据与 LLM 配置（无 LLM 时请手动重新导入块）。');
+                return;
+            }
+            const goods = shopState.items.filter(i => i.category !== '独家私藏');
+            if (goods.length === 0) return;
+            // 输入：类目→商品名清单
+            const catMap = {};
+            goods.forEach(i => { (catMap[i.category] = catMap[i.category] || []).push(i.name); });
+            const keeper = shopState.keeper;
+            const sys = `你是商店整理员。任务：把商品重新归类，合并同义或重复的类目（如"枪械"与"武器"合并为"武器"）。规则：只输出 JSON 本体 {"regroup":{"新类目名":["商品名",...]}}；每个商品必须且只能出现一次；类目名简洁（2~4字）；不确定归属的保持原类目。`;
+            const user = `店主：${keeper}（立绘类型：${shopState.portrait}）\n当前类目结构：\n${
+                Object.entries(catMap).map(([c, names]) => `- ${c}: ${names.join('、')}`).join('\n')
+            }\n\n请输出合并归类后的 regroup JSON。`;
+
+            let regroup = null;
+            for (let attempt = 0; attempt < 2 && !regroup; attempt++) {
+                try {
+                    const response = await fetch(`${llmConfig.apiBase.replace(/\/+$/, '')}/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...(llmConfig.apiKey ? { 'Authorization': `Bearer ${llmConfig.apiKey}` } : {}) },
+                        body: JSON.stringify({ model: llmConfig.model, messages: [{ role: 'system', content: sys }, { role: 'user', content: user }], temperature: 0.3, max_tokens: 400 })
+                    });
+                    const data = await response.json();
+                    const text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+                    const parsed = extractJsonLoose(text);
+                    if (parsed && parsed.regroup && typeof parsed.regroup === 'object') regroup = parsed.regroup;
+                } catch (e) { console.warn(`[ShopBlock] regroup LLM 第${attempt + 1}次失败:`, e.message); }
+            }
+            if (!regroup) { alert('重排失败：LLM 未返回有效归类。商品保持不变。'); return; }
+
+            // 应用：按名字搬家；未出现在输出中的商品原地不动；私藏不参与
+            const snapshot = JSON.parse(JSON.stringify({ cats: shopState.categories, items: shopState.items.map(i => ({ id: i.id, cat: i.category })) }));
+            const moved = [];
+            const newCats = [];
+            for (const cat in regroup) {
+                if (!newCats.includes(cat)) newCats.push(cat);
+                regroup[cat].forEach(name => {
+                    const it = shopState.items.find(i => i.name === String(name) && i.category !== '独家私藏');
+                    if (it && it.category !== cat) { moved.push(`${it.name}: ${it.category}→${cat}`); it.category = cat; }
+                });
+            }
+            if (!moved.length) { alert('重排完成：类目已是最优，无需调整。'); return; }
+            // 重建 categories（保持 regroup 顺序 + 未提及的旧类目）
+            shopState.categories = newCats.filter(c => shopState.items.some(i => i.category === c));
+            shopState.items.forEach(i => { if (i.category !== '独家私藏' && !shopState.categories.includes(i.category)) shopState.categories.push(i.category); });
+            currentCategory = 'all';
+            buildCategoryTabs();
+            renderCabinet();
+
+            // 确认框可撤销
+            const undo = confirm(`重排完成，共调整 ${moved.length} 件：\n${moved.slice(0, 8).join('\n')}${moved.length > 8 ? '\n…' : ''}\n\n确定保留？点「取消」撤销恢复原类目。`);
+            if (!undo) {
+                const catById = new Map(snapshot.items.map(s => [s.id, s.cat]));
+                shopState.items.forEach(i => { if (catById.has(i.id)) i.category = catById.get(i.id); });
+                shopState.categories = snapshot.cats;
+                currentCategory = 'all';
+                buildCategoryTabs();
+                renderCabinet();
+            }
+        }
+
         // 进店反应：LLM 失败回退内置文案
         async function triggerEnterReaction() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
@@ -2249,6 +2318,22 @@
             } else {
                 // 内置文案回退
                 showKeeperDialogue(keeper, '（ Built-in 通用迎宾词 ）欢迎光临。看看有什么合用的，尽管开口。', true);
+            }
+        }
+
+        // 购买回应（buy 场景，M7）：LLM 失败静默不回退（购买结果已由 Shop_Record 承载）
+        async function triggerBuyReaction(buySummary) {
+            if (!llmConfig.apiKey) return;
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            let result = null;
+            for (let attempt = 0; attempt < 2 && !result; attempt++) {
+                try { result = await callShopLLM('buy', buySummary); }
+                catch (e) { console.warn(`[ShopBlock] 购买回应 LLM 第${attempt + 1}次失败:`, e.message); }
+            }
+            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
+                await applyLLMResult(result);
+            } else {
+                showKeeperDialogue(keeper, '（ Built-in 成交词 ）货款两讫，欢迎下次再来。', true);
             }
         }
 
@@ -2280,6 +2365,12 @@
                     if (nv != null) window.__shopAffection = nv;
                 } catch (e) { console.warn('[ShopBlock] 好感落地失败:', e); }
             }
+            // add 命令：四重限制校验后上架（SPEC 第三节）
+            if (Array.isArray(result.commands)) {
+                for (const cmd of result.commands) {
+                    try { applyAddCommand(cmd); } catch (e) { console.warn('[ShopBlock] add 命令处理失败:', e); }
+                }
+            }
         }
 
         // 店主台词上气泡
@@ -2289,6 +2380,89 @@
             bossSpeechBubble.classList.add('show');
             clearTimeout(bubbleTimer);
             bubbleTimer = setTimeout(() => bossSpeechBubble.classList.remove('show'), 6000);
+        }
+
+        // ====================================================
+        // add 功能命令（SPEC 第三节四重限制，反许愿机）
+        // ====================================================
+        // 立绘类型的货品锚点：add 的 category 必须落在锚点范围内（程序侧硬校验）
+        const PORTRAIT_ANCHOR = {
+            '铁匠机械师': ['武器', '弹药', '工具', '五金', '防具', '器械', '修理'],
+            '黑市贩子': ['军火', '违禁', '走私', '赃物', '黑市', '武器', '弹药', '情报'],
+            '古籍书商': ['书籍', '地图', '文献', '情报', '文具', '古书'],
+            '酒馆老板': ['酒水', '食物', '餐食', '情报', '杂货'],
+            '荒野猎人': ['猎具', '皮毛', '陷阱', '弹药', '野外', '补给'],
+            '奢品商人': ['珠宝', '古董', '钟表', '服饰', '奢侈品', '拍卖'],
+            '秘石商人': ['水晶', '矿石', '护符', '法器', '神秘', '异物'],
+            '药剂修女': ['药品', '医疗', '绷带', '针剂', '消毒', '补给'],
+            '布道神父': ['圣物', '经书', '蜡烛', '宗教', '净化'],
+            '占卜商妇': ['杂货', '日用品', '香料', '首饰', '占卜', '补给', '食物']
+        };
+
+        let addLandedThisSession = 0; // 每次进店会话 add 落地 ≤1 条
+
+        // add 命令处理：四重限制全过才上架；返回 true 表示落地
+        function applyAddCommand(cmd) {
+            if (!cmd || cmd.cmd !== 'add' || !shopState) return false;
+            const name = String(cmd.name || '').trim();
+            const category = String(cmd.category || '').trim();
+            if (!name || !category) return false;
+
+            // 限制2：锚点校验——category 必须命中该店立绘的货品锚点
+            const anchors = PORTRAIT_ANCHOR[shopState.portrait] || PORTRAIT_ANCHOR['占卜商妇'];
+            const anchorOk = anchors.some(a => category.includes(a) || a.includes(category));
+            if (!anchorOk) { console.info(`[ShopBlock] add 锚点拦截：${category} 不在 ${shopState.portrait} 的货品范围`); return false; }
+
+            // 限制：禁止写入独家私藏
+            if (category.includes('私藏')) return false;
+
+            // 限制3：频率——每次进店会话只落地 1 条
+            if (addLandedThisSession >= 1) { console.info('[ShopBlock] add 频率拦截：本次会话已用'); return false; }
+
+            // 去重：已存在同名商品则更新（不重复添加）
+            const existing = shopState.items.find(i => i.name === name);
+            const price = parsePriceString(cmd.price);
+            if (existing) {
+                if (isFinite(price) && price > 0) existing.price = price;
+                if (cmd.desc) existing.quote = String(cmd.desc).trim();
+                existing.category = category; // 允许 add 顺手挪类目
+                addLandedThisSession++;
+                renderCabinet();
+                updateCartUI();
+                return true;
+            }
+
+            // 限制4：价格约束——参照同类定价，免费/象征性收费拒绝
+            if (!isFinite(price) || price <= 0) { console.info('[ShopBlock] add 价格拦截'); return false; }
+            const sameCat = shopState.items.filter(i => i.category === category);
+            if (sameCat.length) {
+                const avg = sameCat.reduce((s, i) => s + i.price, 0) / sameCat.length;
+                if (price < avg * 0.05) { console.info(`[ShopBlock] add 象征性收费拦截：$${price} vs 类目均价 $${avg.toFixed(2)}`); return false; }
+            }
+
+            // 上架：构造内部 item 形状
+            const count = parseInt(cmd.count, 10);
+            const maxId = shopState.items.reduce((m, i) => Math.max(m, i.id), 0);
+            shopState.items.push({
+                id: maxId + 1,
+                name: name,
+                category: category,
+                price: price,
+                priceText: String(cmd.price || `${price.toFixed(2)}美元`),
+                emoji: '🆕',
+                isStackable: isFinite(count) && count > 1,
+                stock: isFinite(count) && count > 0 ? count : 1,
+                unit: String(cmd.unit || '件').trim(),
+                tier: 'shop',
+                tierText: String(cmd.tag || '').trim() || (category + ' · ' + name.slice(0, 8)),
+                quote: String(cmd.desc || '（店主从柜台下翻出了一件货。）').trim(),
+                _raw: { '名字': name, '价格': String(cmd.price || `${price.toFixed(2)}美元`), '标签': String(cmd.tag || ''), '介绍': String(cmd.desc || ''), ...(isFinite(count) && count > 1 ? { '数量': count, '单位': String(cmd.unit || '件') } : {}) }
+            });
+            if (!shopState.categories.includes(category)) shopState.categories.push(category);
+            addLandedThisSession++;
+            renderCabinet();
+            updateCartUI();
+            return true;
         }
 
         // ====================================================
@@ -2623,6 +2797,11 @@
                 console.info('[ShopBlock] Shop_Record（请复制发送给正文AI）:\n' + record);
             }
 
+            // M7：购买回应（buy 场景 LLM，失败静默——店主台词主渠道已由记录填入）
+            const buySummary = purchases.map(p => `${p.name}×${p.count}($${(p.price * p.count).toFixed(2)})→${p.toVehicle ? '载具' : p.owner}`).join('、')
+                + `，共$${total.toFixed(2)}${payload.bargained ? '（含砍价成交）' : ''}`;
+            triggerBuyReaction(buySummary);
+
             // 清账本入历史
             playerState.cart.forEach(e => playerState.purchaseHistory.push({
                 name: e.item.name, qty: e.quantity, price: effPrice(e.item),
@@ -2718,6 +2897,8 @@
             if (!parsed) return false;
             shopState = parsed;
             playerState.cart = [];        // 换店/换块清空购物车
+            addLandedThisSession = 0;     // 新会话重置 add 频率限制
+            sessionDialogLog.length = 0;  // 新会话清空对话流水
             applyShopToUI();
             try {
                 const all = await readAllShops();
@@ -3772,6 +3953,8 @@
         buildCategoryTabs();
         loadKeeperPortrait('铁匠机械师'); // demo 模式默认店主
         refreshPartyAvatars();
+        const btnRegroup = document.getElementById('btnRegroup');
+        btnRegroup.addEventListener('click', handleRegroup);
         renderCabinet();
         updateUI();
         updateCartUI();
