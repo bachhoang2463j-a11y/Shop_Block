@@ -2110,10 +2110,10 @@
         // ====================================================
         // 独立 LLM 通道（SPEC 第三节：英文键 JSON、四场景触发器、代言白名单）
         // ====================================================
-        // 副导演同款 extractJson：剥 ```json 围栏 → 括号字符串感知配对切片 → JSON.parse
+        // 副导演同款 extractJson：剥 \u0060\u0060\u0060json 围栏（防围栏配对污染，见 SPEC 组件围栏纪律）→ 括号字符串感知配对切片 → JSON.parse
         function extractJsonLoose(text) {
             if (!text || typeof text !== 'string') return null;
-            let s = text.replace(/^[\s\S]*?```(?:json)?\s*\n?/, '').replace(/\n?```\s*[\s\S]*$/, '').trim();
+            let s = text.replace(/^[\s\S]*?\u0060\u0060\u0060(?:json)?\s*\n?/, '').replace(/\n?\u0060\u0060\u0060\s*[\s\S]*$/, '').trim();
             const start = s.search(/[[{]/);
             if (start === -1) return null;
             const open = s[start];
