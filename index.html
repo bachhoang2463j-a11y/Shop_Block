@@ -1483,24 +1483,8 @@
     ==================================================== -->
     <footer class="bottom-console">
         <div class="console-upper-row">
-            <!-- 左侧：至多四个我方角色的头像（纯头像卡，无文字底框；名字悬浮提示） -->
-            <div class="party-deck" id="partyDeck">
-                <div class="party-card active" data-index="0" data-name="埃利奥特" data-role="私家侦探" title="埃利奥特 · 私家侦探">
-                    <img class="party-avatar-img" data-avatar="Eil.png" alt="埃利奥特">
-                </div>
-
-                <div class="party-card" data-index="1" data-name="弗兰克" data-role="一战老兵" title="弗兰克 · 一战老兵">
-                    <img class="party-avatar-img" data-avatar="Frank.png" alt="弗兰克">
-                </div>
-
-                <div class="party-card" data-index="2" data-name="玛德琳" data-role="密大调查员" title="玛德琳 · 密大调查员">
-                    <img class="party-avatar-img" data-avatar="chen.png" alt="玛德琳">
-                </div>
-
-                <div class="party-card" data-index="3" data-name="索恩" data-role="秘术顾问" title="索恩 · 秘术顾问">
-                    <img class="party-avatar-img" data-avatar="suoen_compressed.png" alt="索恩">
-                </div>
-            </div>
+            <!-- 左侧：我方角色头像卡（JS 动态渲染：MMS stat_data 角色列表 → 默认四人） -->
+            <div class="party-deck" id="partyDeck"></div>
 
             <!-- 右侧：购物车缩略 (只显示图标和数量 + 展开按钮) -->
             <div class="cart-panel">
@@ -2959,6 +2943,7 @@
                 console.warn('[ShopBlock] $shops 持久化失败（非阻塞）:', e);
             }
             triggerEnterReaction();       // 进店反应（M4：LLM 失败回退内置文案）
+            syncPartyFromMms();           // 在场成员可能随块变化，重同步底栏
             return true;
         }
 
@@ -3119,7 +3104,7 @@
             }
         ];
 
-        // 玩家与小队（头像走 my_assets 服务器，头像根URL可配置；M6 将改为 MMS AVATAR_MAP 三路取值）
+        // 玩家与小队：默认四人（MMS 在场时由 stat_data 角色列表动态覆盖，见 syncPartyFromMms）
         let partyMembers = [
             { id: 0, name: "埃利奥特", role: "私家侦探", avatar: "Eil.png" },
             { id: 1, name: "弗兰克", role: "一战老兵", avatar: "Frank.png" },
@@ -3127,18 +3112,103 @@
             { id: 3, name: "索恩", role: "秘术顾问", avatar: "suoen_compressed.png" }
         ];
 
-        // 头像 URL：avatarBase 根URL（默认 my_assets 服务器 /头像 目录）+ 文件名
+        // MMS 头像表：与 MMS 同源共享 localStorage（LLM 版的 mms_img_data_llm_v1 快照，
+        // 完整版移植该方案后同 key 生效）。快照损坏静默回退空表 → 本地 my_assets 兜底。
+        const MMS_IMG_STORE_KEY = 'mms_img_data_llm_v1';
+        let mmsAvatarMap = null;
+        function loadMmsAvatarMap() {
+            try {
+                const stored = JSON.parse(localStorage.getItem(MMS_IMG_STORE_KEY));
+                if (stored && typeof stored === 'object' && stored.avatar) mmsAvatarMap = stored.avatar;
+                else mmsAvatarMap = null;
+            } catch (e) { mmsAvatarMap = null; }
+        }
+        loadMmsAvatarMap();
+
+        // 名字 → 头像 URL 三路取值（SPEC 第五节）：
+        // ① MMS 头像表（localStorage 快照，含用户增删改）② 名册/聊天变量 avatar 字段直连
+        // ③ 本地 my_assets 兜底（avatarBase + 已知文件名映射）
+        const LOCAL_AVATAR_FALLBACK = { '埃利奥特': 'Eil.png', '弗兰克': 'Frank.png', '玛德琳': 'chen.png', '索恩': 'suoen_compressed.png' };
+        function mmsAvatarLookup(name) {
+            if (!mmsAvatarMap || !name) return null;
+            const plain = String(name).replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').trim(); // 去emoji前缀
+            const keys = Object.keys(mmsAvatarMap);
+            const hit = keys.find(k => k === plain) || keys.find(k => plain.includes(k) || k.includes(plain));
+            return hit ? mmsAvatarMap[hit] : null;
+        }
+
+        // 旧接口保留：完整 URL 直通，否则本地兜底根 URL 拼接
         function avatarUrl(file) {
             const base = (llmConfig.avatarBase || 'http://127.0.0.1:8766/头像').trim().replace(/\/+$/, '');
             return file && /^https?:\/\//.test(file) ? file : `${base}/${file}`;
         }
 
-        // 刷新底栏角色头像 + 输入栏当前发言人头像
-        function refreshPartyAvatars() {
-            partyDeck.querySelectorAll('.party-avatar-img').forEach(img => {
-                img.src = avatarUrl(img.dataset.avatar);
+        // 角色（可能带 emoji 前缀名）→ 最终头像 URL：MMS 表 → 名册值 → 本地映射 → 首字 emoji 占位
+        function resolveMemberAvatar(member) {
+            return mmsAvatarLookup(member.name)
+                || (member.avatar ? avatarUrl(member.avatar) : null)
+                || (LOCAL_AVATAR_FALLBACK[member.name.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '')] ? avatarUrl(LOCAL_AVATAR_FALLBACK[member.name.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '')]) : null)
+                || null; // null = 首字 emoji 占位（渲染层处理）
+        }
+
+        // 底栏角色卡由成员列表动态渲染（MMS stat_data 角色列表覆盖写死的四人）
+        function renderPartyDeck(members) {
+            partyMembers = members.map((m, i) => ({ id: i, name: m.name, role: m.role || '', avatar: m.avatar || '' }));
+            if (!partyMembers.some(p => p === activeSpeaker)) activeSpeaker = partyMembers[0];
+            partyDeck.innerHTML = '';
+            partyMembers.forEach((m, i) => {
+                const card = document.createElement('div');
+                card.className = 'party-card' + (m === activeSpeaker ? ' active' : '');
+                card.dataset.index = i;
+                card.dataset.name = m.name;
+                card.title = m.name + (m.role ? ' · ' + m.role : '');
+                const url = resolveMemberAvatar(m);
+                const avatarHtml = url
+                    ? `<img class="party-avatar-img" src="${url}" alt="${m.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">`
+                    : '';
+                const emojiHtml = `<div class="party-avatar-img" style="display:${url ? 'none' : 'flex'};align-items:center;justify-content:center;font-size:28px;background:#1c130e;">${(m.name.match(/[\u4e00-\u9fa5A-Za-z]/) || ['🧑'])[0]}</div>`;
+                card.innerHTML = avatarHtml + emojiHtml;
+                card.addEventListener('click', () => {
+                    partyDeck.querySelectorAll('.party-card').forEach(c => c.classList.remove('active'));
+                    card.classList.add('active');
+                    activeSpeaker = partyMembers[i];
+                    const u = resolveMemberAvatar(activeSpeaker);
+                    if (u) currentHeroAvatar.src = u;
+                    sound.playWoodClick();
+                    chatInput.placeholder = `以【${activeSpeaker.name}】的身份向${shopState ? shopState.keeper : '店主'}交谈或砍价... (Enter 发送)`;
+                });
+                partyDeck.appendChild(card);
             });
-            currentHeroAvatar.src = avatarUrl(activeSpeaker.avatar);
+            const u0 = resolveMemberAvatar(activeSpeaker);
+            if (u0) currentHeroAvatar.src = u0;
+        }
+
+        // MMS 在场角色 → 底栏（从 stat_data 读，含名册 avatar 字段合并）
+        async function syncPartyFromMms() {
+            loadMmsAvatarMap(); // 每次同步重读快照（MMS 侧用户改图后无需刷新商店）
+            const ctx = await loadMmsContext();
+            if (!ctx || !ctx.present.length) { renderPartyDeck(partyMembers); return; }
+            // 名册 avatar 字段（$mms_roster.characters[].avatar：可能是 URL 或表键名）
+            let rosterAvatars = {};
+            try {
+                if (typeof getVariables === 'function') {
+                    const vars = await getVariables({ type: 'chat' });
+                    const chars = vars && vars['$mms_roster'] && vars['$mms_roster'].characters;
+                    if (Array.isArray(chars)) chars.forEach(c => { if (c && c.name && c.avatar) rosterAvatars[String(c.name).trim()] = String(c.avatar); });
+                }
+            } catch (e) { /* 降级：无名字册 */ }
+            const members = ctx.present.map(name => {
+                const plain = name.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '');
+                const full = ctx.members.find(m => m.name === name);
+                return { name: name, role: '', avatar: rosterAvatars[plain] || rosterAvatars[name] || '' , _full: full };
+            });
+            renderPartyDeck(members);
+        }
+
+        // 刷新底栏角色头像 + 输入栏当前发言人头像（配置变更后调用）
+        function refreshPartyAvatars() {
+            loadMmsAvatarMap();
+            renderPartyDeck(partyMembers);
         }
 
         let activeSpeaker = partyMembers[0];
@@ -4018,7 +4088,8 @@
         // 初始化
         buildCategoryTabs();
         loadKeeperPortrait('铁匠机械师'); // demo 模式默认店主
-        refreshPartyAvatars();
+        renderPartyDeck(partyMembers);    // 默认四人（MMS 可用时由 syncPartyFromMms 覆盖）
+        syncPartyFromMms();               // 异步：MMS stat_data 角色列表在场覆盖
         const btnRegroup = document.getElementById('btnRegroup');
         btnRegroup.addEventListener('click', handleRegroup);
         renderCabinet();
