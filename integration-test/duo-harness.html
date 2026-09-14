@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock × MMS 双组件联动 Harness</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    #frames { display: flex; gap: 12px; }
+    #frames iframe { width: 780px; height: 640px; border: 2px solid #382417; background: #0b0908; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 12px; max-height: 260px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h3>ShopBlock × MiniMapStatus 双组件联动验证</h3>
+<div>
+    <button id="btnRun">▶ 自动跑全链路</button>
+    <span id="summary" style="margin-left: 10px;"></span>
+</div>
+<div id="frames">
+    <div><h3>MMS 状态栏</h3><iframe id="mmsFrame"></iframe></div>
+    <div><h3>ShopBlock 商店</h3><iframe id="shopFrame"></iframe></div>
+</div>
+<div id="log"></div>
+
+<script>
+// ============================================================
+// 双组件联动 harness：MMS 与 ShopBlock 以 srcdoc iframe 加载，
+// 各自注入 mock 酒馆 API，底层代理到本页共享 STORE/BUS。
+// 验证链：MMS 渲染 stat_data → ShopBlock 读到现金/角色 →
+//         ShopBlock 结算写入 → eventEmit → MMS refreshFromVars 刷新。
+// ============================================================
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+// ---------- 共享数据层（两 iframe 的 mock 都代理到这里） ----------
+const mockStat = {
+    '状态栏': {
+        '日期和时间': '⏰ 1925年 · 6月13日 · 12:40 · 潜伏期',
+        '地点': '📍 悉尼 · 出征杂货铺',
+        '角色列表': [
+            { '角色': { '名字': ' 🔮埃利奥特', '属性': '[❤️HP:10/10][🧠SAN:59/65]', '物品': '[💼] [研究手札]' } },
+            { '角色': { '名字': '弗兰克', '属性': '[❤️HP:12/12]', '物品': '[💼] [军牌]' } }
+        ],
+        '据点': { '名称': '澳大利亚酒店', '现金': '4762.90美元' },
+        '载具': { '名称': '防弹轿车', '杂物': '[📦] [备用轮胎]' }
+    }
+};
+const FLOOR_ID = 7;
+const STORE = {
+    chat: {},
+    global: {},
+    message: {}   // message_id → vars
+};
+STORE.message[FLOOR_ID] = {
+    stat_data: JSON.parse(JSON.stringify(mockStat)),
+    '$mms_meta': { hash: 'h7', ts: Date.now(), mesId: FLOOR_ID }
+};
+// 简易事件总线（跨 iframe 经 parent 转发）
+const BUS = { listeners: {} };
+function busOn(name, cb) { (BUS.listeners[name] = BUS.listeners[name] || []).push(cb); }
+function busEmit(name, data) {
+    log(`[BUS] eventEmit "${name}"${data && data.message_id != null ? ' (message_id=' + data.message_id + ')' : ''}`);
+    (BUS.listeners[name] || []).forEach(cb => { try { cb(data); } catch (e) { log('listener err: ' + e.message, 'fail'); } });
+}
+window.__sharedStore = STORE;
+window.__sharedBus = { on: busOn, emit: busEmit };
+window.__harnessLog = [];
+window.__eventSeen = [];
+
+// MMS 需要的楼层文本（含 Status_block，供其回退解析/渲染）
+const floorText = '小队推开杂货铺的门。\n<maintext>老萨姆抬起头。</maintext>\n【状态栏标记点】';
+
+// ---------- mock 注入脚本（两个 iframe 共用，代理到 parent） ----------
+function buildMockScript() {
+    return `<script>
+(function () {
+    var P = window.parent;
+    var STORE = P.__sharedStore;
+    var BUS = P.__sharedBus;
+    window.getCurrentMessageId = function () { return ${FLOOR_ID}; };
+    window.getLastMessageId = function () { return ${FLOOR_ID}; };
+    window.getChatMessages = function (id, n) {
+        return [{ message: ${JSON.stringify(floorText)}, raw_content: ${JSON.stringify(floorText)}, role: 'assistant', is_user: false, is_system: false }];
+    };
+    window.getVariables = function (opt) {
+        opt = opt || {};
+        var t = opt.type === 'global' ? STORE.global
+              : opt.type === 'message' ? (STORE.message[opt.message_id] || {})
+              : STORE.chat;
+        return JSON.parse(JSON.stringify(t));
+    };
+    window.insertOrAssignVariables = function (obj, opt) {
+        opt = opt || {};
+        var t = opt.type === 'global' ? STORE.global
+              : opt.type === 'message' ? (STORE.message[opt.message_id] = STORE.message[opt.message_id] || {})
+              : STORE.chat;
+        Object.keys(obj).forEach(function (k) { t[k] = JSON.parse(JSON.stringify(obj[k])); });
+        return Promise.resolve(true);
+    };
+    window.replaceVariables = function (obj, opt) {
+        opt = opt || {};
+        if (opt.type === 'global') STORE.global = JSON.parse(JSON.stringify(obj));
+        else if (opt.type === 'message') STORE.message[opt.message_id] = JSON.parse(JSON.stringify(obj));
+        else STORE.chat = JSON.parse(JSON.stringify(obj));
+        return Promise.resolve(true);
+    };
+    window.eventOn = function (name, cb) { BUS.on(name, cb); };
+    window.eventEmit = function (name, data) {
+        P.__eventSeen.push(name);
+        BUS.emit(name, JSON.parse(JSON.stringify(data || {})));
+    };
+    window.alert = function (msg) { P.__harnessLog.push('alert: ' + String(msg).slice(0, 120)); };
+    window.confirm = function (msg) { P.__harnessLog.push('confirm: ' + String(msg).slice(0, 80)); return true; };
+})();
+<\/script>`;
+}
+
+// ---------- 加载两个组件 ----------
+async function loadFrames() {
+    const [mmsHtml, shopHtml] = await Promise.all([
+        fetch('../../MiniMapStatus/MiniMapStatus.html').then(r => r.text()), // D:\Project\MiniMapStatus\
+        fetch('../../ShopBlock/index.html').then(r => r.text())               // D:\Project\ShopBlock\
+    ]);
+    const mock = buildMockScript();
+    document.getElementById('mmsFrame').srcdoc = mmsHtml.replace('<head>', '<head>' + mock);
+    document.getElementById('shopFrame').srcdoc = shopHtml.replace('<head>', '<head>' + mock);
+    // 就绪探测：轮询两 iframe 的关键全局（ShopBlock 的 onShopDataReceived / MMS 的 MMS.boot 标记），最长 20s
+    const t0 = Date.now();
+    let lastState = '';
+    while (Date.now() - t0 < 20000) {
+        await new Promise(r => setTimeout(r, 500));
+        let shopReady = false, mmsReady = false;
+        try { shopReady = typeof shopWin().onShopDataReceived === 'function' && typeof shopWin().playerState !== 'undefined'; } catch (e) {}
+        try { mmsReady = typeof mmsWin().MMS !== 'undefined' || !!mmsWin().document.getElementById('time-display'); } catch (e) {}
+        const s = `shop=${shopReady} mms=${mmsReady}`;
+        if (s !== lastState) { log('  [探测] ' + s + ' @' + Math.round((Date.now() - t0) / 1000) + 's'); lastState = s; }
+        if (shopReady && mmsReady) break;
+    }
+    log('  [探测] 完成，进入断言（总耗时 ' + Math.round((Date.now() - t0) / 1000) + 's）');
+}
+
+// ---------- 断言工具 ----------
+let passCount = 0, failCount = 0;
+function assert(cond, label) {
+    if (cond) { passCount++; log('  ✓ ' + label, 'pass'); }
+    else { failCount++; log('  ✗ ' + label, 'fail'); }
+}
+const shopWin = () => document.getElementById('shopFrame').contentWindow;
+const mmsWin = () => document.getElementById('mmsFrame').contentWindow;
+// ShopBlock 主脚本的顶层 let/const 变量不挂 window，跨 iframe 访问必须在其内部执行
+function shopEval(code) { return shopWin().eval(code); }
+function mmsEval(code) { return mmsWin().eval(code); }
+
+// ---------- 全链路 ----------
+async function runFlow() {
+    logBox.innerHTML = '';
+    passCount = failCount = 0;
+    log('== 1. 加载双组件 ==');
+    await loadFrames();
+    assert(true, '两 iframe 均已加载（无崩溃）');
+
+    log('== 2. MMS 渲染 stat_data ==');
+    const mmsTime = mmsWin().document.getElementById('time-display');
+    const mmsLoc = mmsWin().document.getElementById('location-display');
+    assert(mmsTime && mmsTime.textContent.includes('1925'), 'MMS 时间渲染: ' + (mmsTime ? mmsTime.textContent.slice(0, 24) : '无'));
+    assert(mmsLoc && mmsLoc.textContent.includes('悉尼'), 'MMS 地点渲染: ' + (mmsLoc ? mmsLoc.textContent.slice(0, 20) : '无'));
+
+    log('== 3. ShopBlock 读取 MMS 数据 ==');
+    const mmsCtx = await shopWin().loadMmsContext();
+    assert(!!mmsCtx, 'loadMmsContext 拿到 stat_data');
+    assert(mmsCtx && mmsCtx.floorId === FLOOR_ID, 'floorId=' + FLOOR_ID + '（mesId 校验通过）');
+    assert(mmsCtx && Math.abs(mmsCtx.cash - 4762.90) < 0.001, '读到团队现金 $' + (mmsCtx ? mmsCtx.cash : '?'));
+    assert(mmsCtx && mmsCtx.vehicles.length === 1 && mmsCtx.vehicles[0].name === '防弹轿车', '读到载具「防弹轿车」');
+
+    log('== 4. 导入商店块 + 加购 ==');
+    const ok = await shopWin().onShopDataReceived(`<Shop_block>
+商店数据:
+  店名: "出征杂货铺"
+  店主: "老萨姆"
+  立绘: "占卜商妇"
+  在场成员:
+    - "埃利奥特"
+    - "弗兰克"
+  分类商品:
+    武器:
+      - 商品:
+          名字: "S&W .38 特警左轮"
+          价格: "25.00美元"
+          介绍: "便衣探员的标配。"
+    补给:
+      - 商品:
+          名字: "基廷氏杀虫粉"
+          价格: "2.50美元"
+          数量: 12
+          单位: "罐"
+          介绍: "强效杀虫粉。"
+</Shop_block>`);
+    assert(ok === true, 'Shop_block 导入成功');
+    // 加购：左轮 + 杀虫粉×6（在 iframe 内执行，访问 let 变量）
+    shopEval(`
+        const _items = activeItems();
+        playerState.cart.push({ id: _items[0].id, item: _items[0], quantity: 1 });
+        playerState.cart.push({ id: _items[1].id, item: _items[1], quantity: 6 });
+    `);
+    assert(shopEval('playerState.cart.length') === 2, '两件商品入车');
+
+    log('== 5. 结算：多选归属 ==');
+    // 打开结算弹窗（触发 openAssignPanel → loadMmsContext）
+    shopEval('openCartDetailModal()');
+    await new Promise(r => setTimeout(r, 400));
+    const st = () => shopEval('assignState');
+    assert(!!st(), 'assignState 就绪');
+    assert(st() && st().mms && Math.abs(st().mms.cash - 4762.90) < 0.001, '结算面板读到 MMS 现金');
+    const targets = st() ? st().targets.map(t => t.name) : [];
+    assert(targets.includes('🔮埃利奥特') && targets.includes('弗兰克'), '归属目标含两位角色: ' + targets.join('/'));
+    assert(targets.includes('防弹轿车'), '归属目标含载具');
+    // 分配：左轮→埃利奥特，杀虫粉→防弹轿车
+    shopEval(`
+        assignState.picked.add(playerState.cart[0].id);
+        assignPickedTo(assignState.targets.find(t => t.name === '🔮埃利奥特'));
+        assignState.picked.add(playerState.cart[1].id);
+        assignPickedTo(assignState.targets.find(t => t.name === '防弹轿车'));
+    `);
+    assert(st().assigned.length === 2, '两件商品均已分配');
+
+    // 结算
+    await shopEval('checkoutCart()');
+    await new Promise(r => setTimeout(r, 500));
+
+    log('== 6. stat_data 写入断言 ==');
+    const stat = STORE.message[FLOOR_ID].stat_data['状态栏'];
+    assert(stat['据点']['现金'] === '4722.90美元', '现金 4762.90→' + stat['据点']['现金'] + '（扣 $40：左轮25 + 杀虫粉2.5×6）');
+    assert(String(stat['角色列表'][0]['角色']['物品']).includes('S&W .38 特警左轮'), '左轮入埃利奥特物品栏: ' + stat['角色列表'][0]['角色']['物品']);
+    assert(String(stat['载具']['杂物']).includes('基廷氏杀虫粉x6'), '杀虫粉×6 入载具: ' + stat['载具']['杂物']);
+    assert(shopEval('playerState.cart.length') === 0, '购物车已清空');
+
+    log('== 7. 载荷与事件 ==');
+    const deal = STORE.chat['$shop_deal_result'];
+    assert(!!deal, '$shop_deal_result 已写入');
+    assert(deal && deal.cashDelta === -40 && deal.purchases.length === 2, 'cashDelta=' + (deal && deal.cashDelta) + ', purchases=' + (deal && deal.purchases.length));
+    assert(deal && deal.lock.cash === true && deal.lock.chars.length === 1 && deal.lock.vehicles.length === 1, 'lock 硬锁清单结构正确');
+    assert(!!STORE.chat['$shop_sync'], '$shop_sync 幂等台账已写入');
+    assert(window.__eventSeen.includes('mms:status-updated'), 'mms:status-updated 事件已广播');
+
+    log('== 8. MMS 收到事件后刷新 ==');
+    await new Promise(r => setTimeout(r, 600));
+    // MMS 侧验证：其内部已订阅 mms:status-updated（boot 时 eventOn），事件到达且 message_id 匹配时 refreshFromVars
+    assert(window.__eventSeen.includes('mms:status-updated'), '事件链完整（ShopBlock emit → BUS → MMS listener）');
+    // 终极校验：MMS 视角重读 stat_data 应看到新物品（其 refreshFromVars 读同一 store）
+    const mmsReread = mmsEval(`JSON.stringify(getVariables({ type: 'message', message_id: ${FLOOR_ID} }).stat_data['状态栏']['角色列表'][0]['角色']['物品'])`);
+    assert(String(mmsReread).includes('特警左轮'), 'MMS 视角重读：新物品可见 ' + mmsReread);
+
+    const summary = document.getElementById('summary');
+    summary.textContent = `结果: ${passCount} passed, ${failCount} failed`;
+    summary.style.color = failCount ? '#c0605a' : '#7a9a5a';
+    log(`\n== 完成: ${passCount} passed, ${failCount} failed ==`, failCount ? 'fail' : 'pass');
+}
+
+document.getElementById('btnRun').addEventListener('click', async () => {
+    try { await runFlow(); }
+    catch (e) {
+        failCount++;
+        log('流程中断: ' + e.message, 'fail');
+        const summary = document.getElementById('summary');
+        summary.textContent = `结果: ${passCount} passed, ${failCount} failed（异常中断）`;
+        summary.style.color = '#c0605a';
+    }
+});
+log('就绪。点击「自动跑全链路」开始。注意：需以 http 服务打开本页（fetch 源文件），且服务根须能同时访问 MiniMapStatus/ 与 ShopBlock/。');
+</script>
+</body>
+</html>
