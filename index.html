@@ -1507,7 +1507,7 @@
             <!-- 左侧：至多四个我方角色的头像（无需属性栏） -->
             <div class="party-deck" id="partyDeck">
                 <div class="party-card active" data-index="0" data-name="埃利奥特" data-role="私家侦探">
-                    <img class="party-avatar-img" src="resources/party/hero_elliot.png" alt="埃利奥特">
+                    <img class="party-avatar-img" data-avatar="Eil.png" alt="埃利奥特">
                     <div class="party-name-tag">
                         <span class="party-name-text">埃利奥特</span>
                         <span class="party-role-text">私家侦探</span>
@@ -1515,7 +1515,7 @@
                 </div>
 
                 <div class="party-card" data-index="1" data-name="弗兰克" data-role="一战老兵">
-                    <img class="party-avatar-img" src="resources/party/hero_frank.png" alt="弗兰克">
+                    <img class="party-avatar-img" data-avatar="Frank.png" alt="弗兰克">
                     <div class="party-name-tag">
                         <span class="party-name-text">弗兰克</span>
                         <span class="party-role-text">一战老兵</span>
@@ -1523,7 +1523,7 @@
                 </div>
 
                 <div class="party-card" data-index="2" data-name="玛德琳" data-role="密大调查员">
-                    <img class="party-avatar-img" src="resources/party/hero_madeleine.png" alt="玛德琳">
+                    <img class="party-avatar-img" data-avatar="chen.png" alt="玛德琳">
                     <div class="party-name-tag">
                         <span class="party-name-text">玛德琳</span>
                         <span class="party-role-text">密大调查员</span>
@@ -1531,7 +1531,7 @@
                 </div>
 
                 <div class="party-card" data-index="3" data-name="索恩" data-role="秘术顾问">
-                    <img class="party-avatar-img" src="resources/party/hero_thorne.png" alt="索恩">
+                    <img class="party-avatar-img" data-avatar="suoen_compressed.png" alt="索恩">
                     <div class="party-name-tag">
                         <span class="party-name-text">索恩</span>
                         <span class="party-role-text">秘术顾问</span>
@@ -1577,7 +1577,7 @@
 
         <!-- 最下方：输入栏 -->
         <div class="chat-input-bar">
-            <img class="current-hero-avatar" id="currentHeroAvatar" src="resources/party/hero_elliot.png" alt="发言人">
+            <img class="current-hero-avatar" id="currentHeroAvatar" src="" alt="发言人">
             <input type="text" class="chat-text-input" id="chatInput" 
                    placeholder="说点什么... 向老布莱克伍德询问武器性能、讨价还价或打探芝加哥黑市情报 (Enter 发送)">
             <button class="input-action-btn active" id="btnNarratorToggle">
@@ -1796,7 +1796,12 @@
 
             <div class="form-group">
                 <label class="form-label">立绘服务器根 URL (Portrait Base URL):</label>
-                <input type="text" class="form-input" id="llmPortraitBase" placeholder="http://127.0.0.1:18924/shop_resources（指向含10张店主立绘的目录）">
+                <input type="text" class="form-input" id="llmPortraitBase" placeholder="http://127.0.0.1:8766/shop_resources（指向含10张店主立绘的目录）">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">头像服务器根 URL (Avatar Base URL):</label>
+                <input type="text" class="form-input" id="llmAvatarBase" placeholder="http://127.0.0.1:8766/头像（调查员头像目录，默认 my_assets 服务器）">
             </div>
 
             <div class="form-group">
@@ -2239,13 +2244,27 @@
             }
         ];
 
-        // 玩家与小队
+        // 玩家与小队（头像走 my_assets 服务器，头像根URL可配置；M6 将改为 MMS AVATAR_MAP 三路取值）
         let partyMembers = [
-            { id: 0, name: "埃利奥特", role: "私家侦探", avatar: "resources/party/hero_elliot.png" },
-            { id: 1, name: "弗兰克", role: "一战老兵", avatar: "resources/party/hero_frank.png" },
-            { id: 2, name: "玛德琳", role: "密大调查员", avatar: "resources/party/hero_madeleine.png" },
-            { id: 3, name: "索恩", role: "秘术顾问", avatar: "resources/party/hero_thorne.png" }
+            { id: 0, name: "埃利奥特", role: "私家侦探", avatar: "Eil.png" },
+            { id: 1, name: "弗兰克", role: "一战老兵", avatar: "Frank.png" },
+            { id: 2, name: "玛德琳", role: "密大调查员", avatar: "chen.png" },
+            { id: 3, name: "索恩", role: "秘术顾问", avatar: "suoen_compressed.png" }
         ];
+
+        // 头像 URL：avatarBase 根URL（默认 my_assets 服务器 /头像 目录）+ 文件名
+        function avatarUrl(file) {
+            const base = (llmConfig.avatarBase || 'http://127.0.0.1:8766/头像').trim().replace(/\/+$/, '');
+            return file && /^https?:\/\//.test(file) ? file : `${base}/${file}`;
+        }
+
+        // 刷新底栏角色头像 + 输入栏当前发言人头像
+        function refreshPartyAvatars() {
+            partyDeck.querySelectorAll('.party-avatar-img').forEach(img => {
+                img.src = avatarUrl(img.dataset.avatar);
+            });
+            currentHeroAvatar.src = avatarUrl(activeSpeaker.avatar);
+        }
 
         let activeSpeaker = partyMembers[0];
 
@@ -2264,6 +2283,7 @@
             apiKey: "",
             model: "gpt-4o-mini",
             portraitBase: "",
+            avatarBase: "",
             systemPrompt: "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。客人向你询问武器、讲价或打探黑道情报时，以暗黑地牢/洛夫克拉夫特式的语气简明回答，字数在60字以内。"
         };
 
@@ -2382,6 +2402,7 @@
         const llmSaveBtn = document.getElementById('llmSaveBtn');
         const llmResetBtn = document.getElementById('llmResetBtn');
         const llmPortraitBase = document.getElementById('llmPortraitBase');
+        const llmAvatarBase = document.getElementById('llmAvatarBase');
 
         // 底栏输入
         const partyDeck = document.getElementById('partyDeck');
@@ -2852,6 +2873,7 @@
             llmApiKey.value = llmConfig.apiKey;
             llmModel.value = llmConfig.model;
             llmPortraitBase.value = llmConfig.portraitBase;
+            llmAvatarBase.value = llmConfig.avatarBase;
             llmSystemPrompt.value = llmConfig.systemPrompt;
             llmModal.classList.add('show');
         });
@@ -2863,12 +2885,14 @@
             llmConfig.apiKey = llmApiKey.value.trim();
             llmConfig.model = llmModel.value.trim() || "gpt-4o-mini";
             llmConfig.portraitBase = llmPortraitBase.value.trim();
+            llmConfig.avatarBase = llmAvatarBase.value.trim();
             llmConfig.systemPrompt = llmSystemPrompt.value.trim();
             localStorage.setItem('dd_llm_config', JSON.stringify(llmConfig));
             sound.playWoodClick();
             llmModal.classList.remove('show');
-            // 根 URL 变更后按当前商店刷新立绘
+            // 根 URL 变更后按当前商店刷新立绘与头像
             loadKeeperPortrait(shopState ? shopState.portrait : '铁匠机械师');
+            refreshPartyAvatars();
             dialogueText.textContent = "老布莱克伍德扶了扶帽檐：“LLM 智脑配置已更新。随时可以向我打探黑市情报。”";
         });
 
@@ -2877,6 +2901,7 @@
             llmApiKey.value = "";
             llmModel.value = "gpt-4o-mini";
             llmPortraitBase.value = "";
+            llmAvatarBase.value = "";
             llmSystemPrompt.value = "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，你都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。";
         });
 
@@ -2899,7 +2924,7 @@
                 card.classList.add('active');
                 const idx = parseInt(card.dataset.index, 10);
                 activeSpeaker = partyMembers[idx];
-                currentHeroAvatar.src = activeSpeaker.avatar;
+                currentHeroAvatar.src = avatarUrl(activeSpeaker.avatar);
                 sound.playWoodClick();
                 chatInput.placeholder = `以【${activeSpeaker.name} · ${activeSpeaker.role}】的身份向老布莱克伍德交谈或砍价... (Enter 发送)`;
             });
@@ -3044,6 +3069,7 @@
         // 初始化
         buildCategoryTabs();
         loadKeeperPortrait('铁匠机械师'); // demo 模式默认店主
+        refreshPartyAvatars();
         renderCabinet();
         updateUI();
         updateCartUI();
