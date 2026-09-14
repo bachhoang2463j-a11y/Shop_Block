@@ -2208,12 +2208,62 @@
             return base;
         }
 
-        // 主调用：scene ∈ enter|buy|chat，extra 为场景附加文本
+        // 可选上下文（SPEC 降级原则：读不到自动为空，绝不阻塞）——报纸/风声
+        async function collectOptionalContext() {
+            const parts = [];
+            // 风声：$ad_world.winds（副导演未启用则为空）
+            try {
+                if (typeof getVariables === 'function') {
+                    const vars = await getVariables({ type: 'chat' });
+                    const winds = vars && vars['$ad_world'] && vars['$ad_world'].winds;
+                    if (Array.isArray(winds) && winds.length) {
+                        const lines = winds.slice(0, 5).map(w => {
+                            const c = (w && (w.content || w['风声'])) || '';
+                            const s = (w && (w.source || w['来源'])) || '';
+                            const sp = (w && (w.spread || w['传播'])) || '';
+                            return c ? `  - ${c}（${sp}·${s}）` : '';
+                        }).filter(Boolean);
+                        if (lines.length) parts.push('【市面风声】\n' + lines.join('\n'));
+                    }
+                }
+            } catch (e) { /* 降级为空 */ }
+            // 报纸：回溯 ≤10 楼找最近 <Newday> 的报名/头条/快讯标题
+            try {
+                if (typeof getChatMessages === 'function' && typeof getLastMessageId === 'function') {
+                    const lastId = getLastMessageId();
+                    for (let id = lastId; id >= Math.max(0, lastId - 10); id--) {
+                        const msgs = await getChatMessages(id, 1);
+                        const m = msgs && msgs[0];
+                        const text = m && (m.raw_content || m.message || m.mes || '');
+                        if (!text || !String(text).includes('<Newday>')) continue;
+                        const mm = String(text).match(/<Newday>([\s\S]*?)<\/Newday>/i);
+                        if (!mm) break;
+                        const inner = mm[1];
+                        const paper = (inner.match(/newspaper_name:\s*"([^"]*)"/) || [])[1];
+                        const headline = (inner.match(/headline:\s*"([^"]*)"/) || [])[1];
+                        const titles = [];
+                        const re = /title:\s*"([^"]*)"/g; let t;
+                        while ((t = re.exec(inner)) && titles.length < 3) titles.push(t[1]);
+                        const bits = [];
+                        if (paper) bits.push(paper);
+                        if (headline) bits.push('头条：' + headline);
+                        if (titles.length) bits.push('快讯：' + titles.join(' / '));
+                        if (bits.length) parts.push('【近日报纸】\n  ' + bits.join('\n  '));
+                        break;
+                    }
+                }
+            } catch (e) { /* 降级为空 */ }
+            return parts.join('\n');
+        }
+
+        // 主调用：scene ∈ enter|buy|chat|bargain，extra 为场景附加文本
         async function callShopLLM(scene, extra) {
             const sys = buildShopSystemPrompt();
             const floors = await collectRecentStoryFloors(2);
+            const optional = await collectOptionalContext();
             const story = floors.length ? `\n【最近剧情】\n${floors.join('\n---\n')}\n` : '';
-            const user = `${story}${buildSceneTrigger(scene, extra)}`;
+            const optPart = optional ? `\n${optional}\n` : '';
+            const user = `${story}${optPart}${buildSceneTrigger(scene, extra)}`;
             const response = await fetch(`${llmConfig.apiBase.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: {
@@ -2362,7 +2412,7 @@
             if (Number.isFinite(aff) && aff !== 0 && shopState) {
                 try {
                     const nv = await updateShopAffection(shopState.shopName, aff);
-                    if (nv != null) window.__shopAffection = nv;
+                    if (nv != null) { const wasLocked = !exclusiveUnlocked(); window.__shopAffection = nv; if (wasLocked && nv >= 100 && shopState && shopState.hasExclusive) { buildCategoryTabs(); renderCabinet(); showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true); } }
                 } catch (e) { console.warn('[ShopBlock] 好感落地失败:', e); }
             }
             // add 命令：四重限制校验后上架（SPEC 第三节）
@@ -2539,7 +2589,7 @@
             if (res.penalty && shopState) {
                 try {
                     const nv = await updateShopAffection(shopState.shopName, res.penalty);
-                    if (nv != null) window.__shopAffection = nv;
+                    if (nv != null) { const wasLocked = !exclusiveUnlocked(); window.__shopAffection = nv; if (wasLocked && nv >= 100 && shopState && shopState.hasExclusive) { buildCategoryTabs(); renderCabinet(); showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true); } }
                 } catch (e) { console.warn('[ShopBlock] 砍价惩罚落地失败:', e); }
             }
 
@@ -2782,7 +2832,7 @@
                     const gain = Math.floor(total / 5);
                     if (gain > 0) {
                         const nv = await updateShopAffection(shopState.shopName, gain);
-                        if (nv != null) window.__shopAffection = nv;
+                        if (nv != null) { const wasLocked = !exclusiveUnlocked(); window.__shopAffection = nv; if (wasLocked && nv >= 100 && shopState && shopState.hasExclusive) { buildCategoryTabs(); renderCabinet(); showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true); } }
                     }
                 } catch (e) { console.warn('[ShopBlock] 购物好感落地失败:', e); }
             }
@@ -2931,7 +2981,7 @@
             // demo 数据 tier 值 → 中文标签
             const demoLabels = { armor: '防具', weapon: '武器', ammo: '弹药', exclusive: '独家私藏' };
             const cats = shopState
-                ? ['all'].concat(shopState.categories, shopState.hasExclusive ? ['独家私藏'] : [])
+                ? ['all'].concat(shopState.categories, shopState.hasExclusive && exclusiveUnlocked() ? ['独家私藏'] : [])
                 : ['all', 'weapon', 'armor', 'ammo', 'exclusive'];
             const icons = { 'all': '❖', '独家私藏': '🗝️', 'armor': '🛡️', 'weapon': '⚔️', 'ammo': '🪙' };
             categoryTabs.innerHTML = '';
@@ -2959,8 +3009,16 @@
             currentCategory = 'all';
         }
 
+        // 私藏解锁判定（SPEC：好感度 100 才可解锁购买）
+        function exclusiveUnlocked() {
+            const aff = (typeof window.__shopAffection === 'number') ? window.__shopAffection : SHOP_AFFECTION_INIT;
+            return aff >= 100;
+        }
+
         function countItemsInCategory(cat) {
-            const list = activeItems();
+            let list = activeItems();
+            // 私藏在未解锁时不参与任何计数/展示
+            if (!exclusiveUnlocked()) list = list.filter(i => i.category !== '独家私藏');
             return cat === 'all' ? list.length : list.filter(i => i.category === cat).length;
         }
 
@@ -3269,7 +3327,9 @@
 
         function renderCabinet() {
             woodenCabinet.innerHTML = '';
-            const all = activeItems();
+            let all = activeItems();
+            // 私藏未解锁：整类隐藏（不可见不可买）
+            if (!exclusiveUnlocked()) all = all.filter(i => i.category !== '独家私藏');
             // demo 数据（无 shopState）：按 tier 字段过滤；解析数据：按 category 过滤
             const list = currentCategory === 'all' ? all : all.filter(i =>
                 shopState ? i.category === currentCategory : i.tier === currentCategory
@@ -3311,6 +3371,12 @@
                 // 点击逻辑：砍价模式弹砍价拉条；正常模式单个直入/复数拉条
                 cell.addEventListener('click', () => {
                     if (item.sold) return;
+                    // 私藏未解锁：点击给出店主婉拒提示
+                    if (item.category === '独家私藏' && !exclusiveUnlocked()) {
+                        sound.playWoodClick();
+                        showKeeperDialogue(shopState ? shopState.keeper : '店主', '（那个柜子上了锁）那些是非卖品，您还不够格，朋友。', true);
+                        return;
+                    }
                     sound.playWoodClick();
 
                     if (bargainMode) {
