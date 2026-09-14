@@ -1510,7 +1510,6 @@
                     <img class="party-avatar-img" data-avatar="Eil.png" alt="埃利奥特">
                     <div class="party-name-tag">
                         <span class="party-name-text">埃利奥特</span>
-                        <span class="party-role-text">私家侦探</span>
                     </div>
                 </div>
 
@@ -1518,7 +1517,6 @@
                     <img class="party-avatar-img" data-avatar="Frank.png" alt="弗兰克">
                     <div class="party-name-tag">
                         <span class="party-name-text">弗兰克</span>
-                        <span class="party-role-text">一战老兵</span>
                     </div>
                 </div>
 
@@ -1526,7 +1524,6 @@
                     <img class="party-avatar-img" data-avatar="chen.png" alt="玛德琳">
                     <div class="party-name-tag">
                         <span class="party-name-text">玛德琳</span>
-                        <span class="party-role-text">密大调查员</span>
                     </div>
                 </div>
 
@@ -1534,7 +1531,6 @@
                     <img class="party-avatar-img" data-avatar="suoen_compressed.png" alt="索恩">
                     <div class="party-name-tag">
                         <span class="party-name-text">索恩</span>
-                        <span class="party-role-text">秘术顾问</span>
                     </div>
                 </div>
             </div>
@@ -2078,6 +2074,191 @@
             return false;
         }
 
+        // ====================================================
+        // 独立 LLM 通道（SPEC 第三节：英文键 JSON、四场景触发器、代言白名单）
+        // ====================================================
+        // 副导演同款 extractJson：剥 ```json 围栏 → 括号字符串感知配对切片 → JSON.parse
+        function extractJsonLoose(text) {
+            if (!text || typeof text !== 'string') return null;
+            let s = text.replace(/^[\s\S]*?```(?:json)?\s*\n?/, '').replace(/\n?```\s*[\s\S]*$/, '').trim();
+            const start = s.search(/[[{]/);
+            if (start === -1) return null;
+            const open = s[start];
+            const close = open === '{' ? '}' : ']';
+            let depth = 0, inStr = false, esc = false;
+            for (let i = start; i < s.length; i++) {
+                const c = s[i];
+                if (inStr) {
+                    if (esc) esc = false;
+                    else if (c === '\\') esc = true;
+                    else if (c === '"') inStr = false;
+                    continue;
+                }
+                if (c === '"') { inStr = true; continue; }
+                if (c === open) depth++;
+                else if (c === close) {
+                    depth--;
+                    if (depth === 0) {
+                        try { return JSON.parse(s.slice(start, i + 1)); }
+                        catch (e) { return null; }
+                    }
+                }
+            }
+            return null;
+        }
+
+        // 代言白名单：店主 + 在场固定角色 − 当前发言玩家角色（SPEC 硬规则）
+        function buildSpeakerWhitelist(excludePlayer) {
+            const list = new Set();
+            if (shopState) {
+                list.add(shopState.keeper);
+                shopState.presentMembers.forEach(n => list.add(n));
+            }
+            // demo 模式：店主 + 全小队
+            partyMembers.forEach(p => list.add(p.name));
+            if (excludePlayer && activeSpeaker) list.delete(activeSpeaker.name);
+            return list;
+        }
+
+        // 上下文：最近 N 层正文（getChatMessages 守卫；剥各 Block 标签）
+        async function collectRecentStoryFloors(n) {
+            if (typeof getChatMessages !== 'function' || typeof getLastMessageId !== 'function') return [];
+            try {
+                const lastId = getLastMessageId();
+                const segs = [];
+                for (let id = lastId; id >= 0 && segs.length < n; id--) {
+                    const msgs = await getChatMessages(id, 1);
+                    const m = msgs && msgs[0];
+                    if (!m || m.is_system) continue;
+                    const text = (m.raw_content || m.message || m.mes || '').toString()
+                        .replace(/<(Shop_block|Shop_Record|Status_block|Combat_block)>[\s\S]*?<\/\1>/gi, '')
+                        .trim();
+                    if (text) segs.unshift(`【${m.is_user ? '玩家' : 'AI'}】${text}`);
+                    else break;
+                }
+                return segs;
+            } catch (e) {
+                console.warn('[ShopBlock] 读取楼层失败:', e);
+                return [];
+            }
+        }
+
+        // 组装 system prompt（四场景共用骨架）
+        function buildShopSystemPrompt() {
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            const persona = (shopState && shopState.keeperPersona) || '精明谨慎的店主';
+            const affection = shopState ? (window.__shopAffection != null ? window.__shopAffection : 30) : 30;
+            const attitude = affection >= 80 ? '熟络热络' : affection >= 50 ? '客气有礼' : affection >= 20 ? '公事公办' : '冷淡戒备';
+            const whitelist = Array.from(buildSpeakerWhitelist(false)).join('、');
+            return [
+                `你扮演1920年代克苏鲁跑团商店场景中的店主「${keeper}」与随行队友。`,
+                `店主人设：${persona}。当前店主对玩家的好感度：${affection}/100（态度基调：${attitude}，好感越高越热情，越低越不耐烦）。`,
+                `你可以让这些角色说话：${whitelist}。当前由玩家操控的角色除外——你绝对不能替玩家操控的角色发言，他的台词由玩家自己输入。`,
+                `输出必须是纯 JSON 本体，禁止 markdown 围栏和任何解释文字。schema：`,
+                `{"dialogue":[{"speaker":"说话人","text":"台词(≤60字)"}],"affection":-5到5的整数(玩家言行对店主好感的影响，无玩家台词时省略),"commands":[]}`,
+                `dialogue 1~4 条，店主先说，队友可插话。commands 仅在玩家问到店里没有的常规补给品时用 add 命令上架（你不是许愿机，违禁品/神话物品/大宗军火必须拒绝）。`
+            ].join('\n');
+        }
+
+        // 场景触发器
+        function buildSceneTrigger(scene, extra) {
+            const keeper = shopState ? shopState.keeper : '店主';
+            const present = shopState ? shopState.presentMembers.join('、') : partyMembers.map(p => p.name).join('、');
+            const goods = shopState
+                ? shopState.items.filter(i => i.category !== '独家私藏').map(i => `${i.name}(${i.priceText})`).join('、') || '（暂无）'
+                : '（货架陈列中的商品）';
+            const base = `【在场成员】${present}\n【店内商品】${goods}`;
+            if (scene === 'enter') return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue，队友可插话。无玩家台词，省略affection。]`;
+            if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度），队友可插话，affection按玩家爽快程度判定。]`;
+            if (scene === 'chat') return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应，队友可插话，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。]`;
+            return base;
+        }
+
+        // 主调用：scene ∈ enter|buy|chat，extra 为场景附加文本
+        async function callShopLLM(scene, extra) {
+            const sys = buildShopSystemPrompt();
+            const floors = await collectRecentStoryFloors(2);
+            const story = floors.length ? `\n【最近剧情】\n${floors.join('\n---\n')}\n` : '';
+            const user = `${story}${buildSceneTrigger(scene, extra)}`;
+            const response = await fetch(`${llmConfig.apiBase.replace(/\/+$/, '')}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(llmConfig.apiKey ? { 'Authorization': `Bearer ${llmConfig.apiKey}` } : {})
+                },
+                body: JSON.stringify({
+                    model: llmConfig.model,
+                    messages: [
+                        { role: 'system', content: sys },
+                        { role: 'user', content: user }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 400
+                })
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            const text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+            if (!text) throw new Error('空回复');
+            return extractJsonLoose(text);
+        }
+
+        // 进店反应：LLM 失败回退内置文案
+        async function triggerEnterReaction() {
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            dialogueText.innerHTML = `<span style="color:#a38c75;">（${keeper}抬起头……）</span>`;
+            let result = null;
+            for (let attempt = 0; attempt < 2 && !result; attempt++) {
+                if (!llmConfig.apiKey) break;
+                try { result = await callShopLLM('enter'); }
+                catch (e) { console.warn(`[ShopBlock] 进店反应 LLM 第${attempt + 1}次失败:`, e.message); }
+            }
+            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
+                applyLLMResult(result); // 白名单过滤+渲染+affection
+            } else {
+                // 内置文案回退
+                showKeeperDialogue(keeper, '（ Built-in 通用迎宾词 ）欢迎光临。看看有什么合用的，尽管开口。', true);
+            }
+        }
+
+        // LLM 结果落地：白名单过滤 → 渲染 → affection 落地
+        async function applyLLMResult(result) {
+            const whitelist = buildSpeakerWhitelist(true); // 排除当前玩家角色
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            const lines = (result.dialogue || [])
+                .filter(d => d && typeof d.text === 'string' && d.text.trim())
+                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim().slice(0, 80) }))
+                .filter(d => whitelist.has(d.speaker) || d.speaker === keeper)
+                .slice(0, 4);
+            if (!lines.length) { showKeeperDialogue(keeper, '……', true); return; }
+            // 逐条展示：店主走立绘气泡+对话框，队友走对话框
+            const html = [];
+            for (const line of lines) {
+                if (line.speaker === keeper) {
+                    showKeeperDialogue(keeper, line.text, false);
+                }
+                html.push(`<span style="color:${line.speaker === keeper ? '#c9a86a' : '#7a9a8a'};">【${line.speaker}】：“${line.text}”</span>`);
+            }
+            dialogueText.innerHTML = html.join('<br>');
+            // affection 落地（钳制 0~100）
+            const aff = parseInt(result.affection, 10);
+            if (Number.isFinite(aff) && aff !== 0 && shopState) {
+                try {
+                    const nv = await updateShopAffection(shopState.shopName, aff);
+                    if (nv != null) window.__shopAffection = nv;
+                } catch (e) { console.warn('[ShopBlock] 好感落地失败:', e); }
+            }
+        }
+
+        // 店主台词上气泡
+        function showKeeperDialogue(keeper, text, isFallback) {
+            bossBubbleItemTag.textContent = keeper;
+            bossBubbleText.textContent = isFallback ? text : `“${text}”`;
+            bossSpeechBubble.classList.add('show');
+            clearTimeout(bubbleTimer);
+            bubbleTimer = setTimeout(() => bossSpeechBubble.classList.remove('show'), 6000);
+        }
+
         // 入口：接收正文文本（或手动粘贴），解析成功 → 建立商店会话并重渲染
         async function onShopDataReceived(text) {
             const yamlText = extractShopBlock(text) || text; // 无标签时视为裸 YAML
@@ -2088,10 +2269,14 @@
             playerState.cart = [];        // 换店/换块清空购物车
             applyShopToUI();
             try {
+                const all = await readAllShops();
+                const saved = all[parsed.shopName];
+                window.__shopAffection = saved ? saved['好感度'] : SHOP_AFFECTION_INIT;
                 await persistMergedShop(parsed); // 持久化失败不阻塞渲染
             } catch (e) {
                 console.warn('[ShopBlock] $shops 持久化失败（非阻塞）:', e);
             }
+            triggerEnterReaction();       // 进店反应（M4：LLM 失败回退内置文案）
             return true;
         }
 
