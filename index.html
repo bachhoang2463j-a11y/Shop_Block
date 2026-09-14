@@ -1878,7 +1878,8 @@
                 unit: String(g['单位'] || '件').trim(),
                 tier: 'shop',
                 tierText: tags || (category + ' · ' + name.slice(0, 8)),
-                quote: intro
+                quote: intro,
+                _raw: JSON.parse(JSON.stringify(g)) // 原文中键结构，$shops 持久化零转换（SPEC 第四节）
             };
         }
 
@@ -1947,8 +1948,133 @@
             };
         }
 
+        // ====================================================
+        // $shops 持久化与合并（SPEC 第四节：chat 变量，中文键直存，以店名为键）
+        // ====================================================
+        const SHOPS_VAR_KEY = '$shops';
+        const SHOP_AFFECTION_INIT = 30;
+        // 无 TavernHelper API 环境（本地 demo / harness）的内存兜底；测试可注入 getVariables 等 mock 接管
+        const shopsMem = {};
+
+        function tavernVarsApiAvailable() {
+            return typeof getVariables === 'function' && typeof insertOrAssignVariables === 'function';
+        }
+
+        async function readAllShops() {
+            if (tavernVarsApiAvailable()) {
+                const vars = await getVariables({ type: 'chat' });
+                return (vars && typeof vars === 'object' && vars[SHOPS_VAR_KEY]) || {};
+            }
+            return shopsMem;
+        }
+
+        async function writeAllShops(all) {
+            if (tavernVarsApiAvailable()) {
+                await insertOrAssignVariables({ [SHOPS_VAR_KEY]: all }, { type: 'chat' });
+                return;
+            }
+            // 内存兜底：整包替换模拟真实持久化
+            Object.keys(shopsMem).forEach(k => delete shopsMem[k]);
+            Object.assign(shopsMem, JSON.parse(JSON.stringify(all)));
+        }
+
+        // 合并规则（SPEC 第一节）：同名商品以新块 价格/介绍/标签 覆盖并迁移到新块类目；
+        // 新块未提及的旧商品保留原类目；独家私藏新块有输出则整体以新块为准、未输出保留旧值；
+        // 好感度延续（新店初始 30）；店主/立绘/性格/在场成员以新块为准。
+        function mergeShopIntoAll(all, parsed) {
+            const name = parsed.shopName;
+            const prev = (all && all[name]) || null;
+
+            let floorId = null;
+            if (typeof getCurrentMessageId === 'function') {
+                try { floorId = getCurrentMessageId(); } catch (e) { /* demo 环境无楼层 */ }
+            }
+
+            // 新块商品 → 中文名集合（用于剔除旧档同名项）
+            const newNames = new Set();
+            parsed.items.forEach(it => newNames.add(it.name));
+
+            // 旧档分类商品为基底，剔除同名
+            const merged = {};
+            if (prev && prev['分类商品'] && typeof prev['分类商品'] === 'object') {
+                for (const cat in prev['分类商品']) {
+                    const list = prev['分类商品'][cat];
+                    if (!Array.isArray(list)) continue;
+                    const kept = list.filter(e => {
+                        const g = (e && e['商品']) ? e['商品'] : e;
+                        return !(g && newNames.has(String(g['名字'] || '')));
+                    });
+                    if (kept.length) merged[cat] = JSON.parse(JSON.stringify(kept));
+                }
+            }
+            // 新块商品并入所属类目（排除私藏）
+            parsed.items.forEach(it => {
+                if (it.category === '独家私藏') return;
+                if (!Array.isArray(merged[it.category])) merged[it.category] = [];
+                merged[it.category].push({ '商品': it._raw });
+            });
+
+            // 独家私藏：新块有输出则新块为准，未输出保留旧值
+            const newExcl = parsed.items
+                .filter(it => it.category === '独家私藏')
+                .map(it => ({ '商品': it._raw }));
+            let exclusive = newExcl;
+            if (!exclusive.length && prev && Array.isArray(prev['独家私藏'])) {
+                exclusive = JSON.parse(JSON.stringify(prev['独家私藏']));
+            }
+
+            const payload = {
+                '店名': name,
+                '店主': parsed.keeper,
+                '立绘': parsed.portrait,
+                '店主性格': parsed.keeperPersona,
+                '好感度': (prev && Number.isFinite(prev['好感度'])) ? prev['好感度'] : SHOP_AFFECTION_INIT,
+                '在场成员': parsed.presentMembers.slice(),
+                '分类商品': merged,
+                '独家私藏': exclusive,
+                '$meta': { version: 1, floorId: floorId, ts: Date.now() }
+            };
+            all[name] = payload;
+            return payload;
+        }
+
+        async function persistMergedShop(parsed) {
+            const all = await readAllShops();
+            mergeShopIntoAll(all, parsed);
+            await writeAllShops(all);
+        }
+
+        // 好感度增减（钳制 0~100），返回新值；店不存在返回 null
+        async function updateShopAffection(shopName, delta) {
+            const all = await readAllShops();
+            const shop = all[shopName];
+            if (!shop) return null;
+            const cur = Number.isFinite(shop['好感度']) ? shop['好感度'] : SHOP_AFFECTION_INIT;
+            shop['好感度'] = Math.max(0, Math.min(100, cur + delta));
+            await writeAllShops(all);
+            return shop['好感度'];
+        }
+
+        // 删除店铺：必须整体替换（insertOrAssign 深合并删不掉键，MMS 已有教训）
+        async function deleteShop(shopName) {
+            if (typeof replaceVariables === 'function' && tavernVarsApiAvailable()) {
+                const vars = await getVariables({ type: 'chat' });
+                const all = (vars && vars[SHOPS_VAR_KEY]) || {};
+                if (!(shopName in all)) return false;
+                const next = Object.assign({}, vars);
+                delete next[SHOPS_VAR_KEY];
+                const nextAll = Object.assign({}, all);
+                delete nextAll[shopName];
+                next[SHOPS_VAR_KEY] = nextAll;
+                await replaceVariables(next, { type: 'chat' });
+                return true;
+            }
+            if (shopName in shopsMem) { delete shopsMem[shopName]; return true; }
+            return false;
+        }
+
         // 入口：接收正文文本（或手动粘贴），解析成功 → 建立商店会话并重渲染
-        function onShopDataReceived(text) {
+        async function onShopDataReceived(text) {
             const yamlText = extractShopBlock(text) || text; // 无标签时视为裸 YAML
             if (!yamlText || !yamlText.trim()) return false;
             const parsed = parseShopBlockYaml(yamlText);
@@ -1956,6 +2082,11 @@
             shopState = parsed;
             playerState.cart = [];        // 换店/换块清空购物车
             applyShopToUI();
+            try {
+                await persistMergedShop(parsed); // 持久化失败不阻塞渲染
+            } catch (e) {
+                console.warn('[ShopBlock] $shops 持久化失败（非阻塞）:', e);
+            }
             return true;
         }
 
@@ -2873,7 +3004,7 @@
             if (e.target === importBlockModal) importBlockModal.classList.remove('show');
         });
 
-        importBlockConfirmBtn.addEventListener('click', () => {
+        importBlockConfirmBtn.addEventListener('click', async () => {
             sound.playWoodClick();
             const text = importBlockTextarea.value;
             if (!text.trim()) {
@@ -2881,7 +3012,7 @@
                 importBlockMsg.style.color = '#c0605a';
                 return;
             }
-            if (onShopDataReceived(text)) {
+            if (await onShopDataReceived(text)) {
                 importBlockMsg.textContent = `✓ 已载入「${shopState.shopName}」：店主 ${shopState.keeper}，${shopState.items.length} 件商品，${shopState.categories.length} 个类目${shopState.hasExclusive ? ' + 独家私藏' : ''}。`;
                 importBlockMsg.style.color = '#7a9a5a';
                 setTimeout(() => importBlockModal.classList.remove('show'), 800);
