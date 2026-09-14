@@ -226,9 +226,24 @@
     {"owner": "埃利奥特", "name": "柯尔特 M1911", "count": 1, "category": "武器", "toVehicle": false},
     {"owner": "弗兰克", "name": ".45 军规手枪弹", "count": 24, "category": "弹药", "toVehicle": true}
   ],
-  "bargain": {"requested": 10, "rolled": 62, "success": true, "discount": 10}
+  "bargain": {"requested": 10, "rolled": 62, "success": true, "discount": 10},
+  "lock": {
+    "cash": true,
+    "chars": [{"name": "埃利奥特", "items": ["柯尔特 M1911"]}],
+    "vehicles": [{"name": "防弹轿车", "items": [".45 军规手枪弹"]}]
+  }
 }
 ```
+
+### 二次扣除锁（与 RpgCombat 战斗硬锁 `$mms_combat_sync` 同款）
+
+商店结算的数值已由程序直写 `stat_data`，但后续楼层的 **MMS 独立更新 LLM** 读到购买叙事（`<Shop_Record>` 续写出的正文）时可能再次扣现金/加物品。防御分三层：
+
+1. **幂等台账 `$shop_sync`**（chat 变量，商店侧）：`{lastId, appliedFloor, ts}`。结算写 `stat_data` 前比对 `lastId === 本次结算 id` 则跳过——防重试/事件重放/重复点击导致的程序侧重复写入（战斗侧 11762 行同款语义）。
+2. **合并层硬锁（MMS 侧契约，MiniMapStatus 后续任务）**：`$shop_deal_result.lock` 是硬锁清单——`cash:true` 锁现金字段，`chars[].items`/`vehicles[].items` 锁对应角色/载具的物品条目。MMS 更新合并时（`mmsMergeState` 的 combatLock 通道），锁定项的 AI 数值命令**一律丢弃**（10435 行语义：'丢弃更新 AI 对已由程序写入的属性键/物品的数值命令'），AI 的自由字段输出不受影响。
+3. **锁窗口**：硬锁只在购买叙事仍处于更新 LLM 上下文窗口内时有效（战斗侧 11733 行同款），叙事滚出窗口后锁过期，避免永久锁死 LLM 对这些字段的正常维护。
+
+纵深防御：MMS 更新提示词追加"商店结算禁令"（战斗结算禁令 13724 行同款位置）——但真正的拦截在合并层硬锁，提示词只是第一道。
 
 - 正文 AI 对购买/搬运过程的叙述：依赖上文注入的商店数据自然生成，无额外格式。
 
