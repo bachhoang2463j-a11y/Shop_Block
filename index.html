@@ -424,13 +424,36 @@
         .wooden-cabinet {
             display: grid;
             grid-template-columns: repeat(5, 1fr);
-            grid-template-rows: repeat(4, 1fr);
+            grid-auto-rows: 114px;
             gap: 10px;
             background: transparent;
-            padding: 2px;
+            padding: 6px 2px 2px 2px;
             border: none;
             box-shadow: none;
             position: relative;
+            /* 柜内独立滚动：可视区固定约 4 行高度，超量只在柜内纵滚 */
+            max-height: 496px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            scrollbar-color: #63422c #120b08;
+        }
+
+        /* 货柜暗金细滚动条（仅作用于货柜） */
+        #woodenCabinet::-webkit-scrollbar {
+            width: 8px;
+        }
+        #woodenCabinet::-webkit-scrollbar-track {
+            background: #120b08;
+            border-radius: 4px;
+        }
+        #woodenCabinet::-webkit-scrollbar-thumb {
+            background: #63422c;
+            border-radius: 4px;
+        }
+        #woodenCabinet::-webkit-scrollbar-thumb:hover {
+            background: var(--dd-gold);
         }
 
         .shelf-cell {
@@ -3397,6 +3420,8 @@
 
         function renderCabinet() {
             woodenCabinet.innerHTML = '';
+            // 柜内独立滚动：每次重渲染回到顶部
+            woodenCabinet.scrollTop = 0;
             let all = activeItems();
             // 私藏未解锁：整类隐藏（不可见不可买）
             if (!exclusiveUnlocked()) all = all.filter(i => i.category !== '独家私藏');
