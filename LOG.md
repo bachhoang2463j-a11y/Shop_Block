@@ -82,7 +82,13 @@
 |---|---|
 | cd72b60 | M12：楼层块自动捕获（RpgCombat startSTPolling 同构）+ MMS 三态提示（缺失/零匹配不再静默）+ 现钞回显 + updateUI/同步竞态双修（poll-harness 35/35，product 10/10、duo 25/25、narrow 15/15 回归全绿） |
 
-## 2026-09-16 · M13 修复"150% 缩放全屏竖屏"（中屏紧凑双栏档 + 产物过期事故）
+## 2026-09-17 · M14 LLM 对话/ADD 最小 MVP + 150% 短视高底栏修复
+
+- **布局根因与修复**：M13 只解决 150% 缩放误入单栏，`body` 仍只有 `min-height:100vh`，`main` 按内容高度把底栏推出固定 iframe。新增 `min-width:641px && max-height:900px` 的视高容器：`body:100dvh`、顶栏/底栏不收缩、`main` 内部纵向滚动；`≤720/560px` 再分级压展台、立绘、货柜和底栏尺寸。保持 641–880 双栏和 ≤640 单栏契约不变。
+- **ADD 跑通优先**：新增 `ADD_PERMISSIVE=true`，只保留命令类型/商店、名称/类目、正价格校验；旧锚点/私藏/频率/均价规则保留但旁路。`applyAddCommand` 统一返回 `{ok,reason}`，成功/失败均进购物记录；主请求 `max_tokens 400→900`，读取 `finish_reason`，`length` 或截断时只补问一次 commands。
+- **对话三件套**：删除立绘下方 `dialogueText` 节点、样式及全部写点；右上购物记录增加全部/对话/购物/上架筛选，统一记录对话、购物车、购买和 ADD；LLM 多人台词改为 body 级 fixed 头像气泡，店主锚定立绘、队友锚定 `party-card[data-name]`，左右夹紧、600ms 轮播、超时移除。商品介绍继续使用原商品气泡。
+- **稳定化**：加入 `shopblock_llm_debug` 门控日志、共享 LLM 请求锁、原生 chat 浅拷贝→楼层 API→generating 楼补偿的上下文链；统一 `purchaseHistory` 的 id/buyer/time/qty schema；修正 `readAllShops` 漏调用残留与 `$shop_sync` 键比对。
+- **验证**：`llm-history-harness` 14/14，midwide 78/78，narrow 15/15，product 10/10，poll 35/35，duo 25/25，avatar 27/27；`build-regex.cjs` 源码脚本与酒馆替换管线全通过。
 
 - **症状**：用户 PC 在 100% 缩放点全屏是横屏双栏，150% 下全屏变成单栏竖排；前一轮把断点 1200→880 后，125% 横屏了，150% 仍竖屏。
 - **根因两条**：

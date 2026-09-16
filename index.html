@@ -342,28 +342,6 @@
             font-style: italic;
         }
 
-        /* 对话流水区：立绘展台底部常驻，气泡 6s 收起后仍可回看 */
-        .dialogue-log {
-            position: relative;
-            z-index: 5;
-            margin: 8px 12px 12px;
-            padding: 8px 12px;
-            min-height: 54px;
-            max-height: 130px;
-            overflow-y: auto;
-            background: rgba(12, 8, 6, 0.88);
-            border: 1px solid #3d291c;
-            border-radius: 4px;
-            font-size: 13px;
-            line-height: 1.5;
-            color: #d8cbb8;
-        }
-        .dialogue-log:empty::before {
-            content: '（与店主交谈，对话将显示在这里）';
-            color: #6b5644;
-            font-style: italic;
-        }
-
         /* 右侧：方案2 简约无边框 · 工匠实木托盘 (Artisan Floating Trays) */
         .cabinet-section {
             display: flex;
@@ -1077,6 +1055,89 @@
             color: var(--dd-gold);
         }
 
+        .history-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .history-filter-btn {
+            background: #160f0c;
+            border: 1px solid #4a3322;
+            color: #a48e78;
+            padding: 4px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .history-filter-btn.active {
+            color: #160f0c;
+            background: var(--dd-gold);
+            border-color: var(--dd-gold-bright);
+        }
+
+        .shop-event-log {
+            max-height: 280px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-right: 4px;
+        }
+
+        .shop-event-row {
+            background: rgba(12, 8, 6, 0.72);
+            border: 1px solid #352319;
+            border-left: 3px solid #6e5036;
+            padding: 7px 9px;
+            font-size: 12px;
+            line-height: 1.45;
+            color: #cfbfab;
+        }
+
+        .shop-event-row[data-kind="dialog"] { border-left-color: #8f755c; }
+        .shop-event-row[data-kind="cart"] { border-left-color: #6f8e9f; }
+        .shop-event-row[data-kind="add"] { border-left-color: #799a64; }
+        .shop-event-row[data-kind="error"] { border-left-color: #b84e49; color: #e7a19d; }
+        .shop-event-time { color: #725f50; margin-right: 6px; }
+        .shop-event-empty { color: #6d5747; padding: 18px; text-align: center; }
+
+        .avatar-chat-bubble {
+            position: fixed;
+            z-index: 220;
+            width: min(220px, calc(100vw - 16px));
+            padding: 9px 11px;
+            background: linear-gradient(180deg, #251913, #120b08);
+            border: 1px solid #98703e;
+            border-radius: 7px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.9);
+            color: #f2e4d0;
+            font-size: 12px;
+            line-height: 1.45;
+            pointer-events: none;
+            animation: avatarBubbleIn 0.18s ease-out;
+        }
+
+        .avatar-chat-bubble.ally { border-color: #668b78; }
+        .avatar-chat-bubble.keeper { border-color: var(--dd-gold); }
+        .avatar-chat-bubble.out { opacity: 0; transform: translateY(-5px); transition: 0.25s ease; }
+        .avatar-chat-name { display: block; color: var(--dd-gold-bright); font-weight: bold; margin-bottom: 3px; }
+        .avatar-chat-bubble::after {
+            content: '';
+            position: absolute;
+            left: calc(50% - 6px);
+            bottom: -7px;
+            border-width: 7px 6px 0;
+            border-style: solid;
+            border-color: #98703e transparent transparent;
+        }
+        @keyframes avatarBubbleIn {
+            from { opacity: 0; transform: translateY(5px) scale(0.97); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
         /* 数量拉条弹窗样式 (可拉条，可直接输入数量) */
         .quantity-dialog-box {
             display: flex;
@@ -1468,6 +1529,86 @@
         }
 
         /* ====================================================
+           横屏有限视高：顶栏和底栏留在组件视口，主陈列区自行滚动。
+           该规则不改变列数或字号，只修复 iframe 被宿主裁切时底栏不可达。
+        ==================================================== */
+        @media (min-width: 641px) and (max-height: 900px) {
+            html, body { height: 100%; min-height: 0; }
+            body { height: 100dvh; overflow-y: hidden; }
+            header, .bottom-console { flex-shrink: 0; }
+            main {
+                min-height: 0;
+                overflow-y: auto;
+                align-items: start;
+            }
+        }
+
+        /* ====================================================
+           中屏短视高：保留双栏，但把垂直预算让给底部控制台。
+           酒馆 iframe 的可视高度可能随浏览器缩放大幅缩小，不能让展台
+           的最小高度把底栏永久推到宿主裁切区之外。
+        ==================================================== */
+        @media (min-width: 641px) and (max-width: 880px) and (max-height: 720px) {
+            header { padding: 6px 14px; }
+            .shop-emblem { font-size: 22px; }
+            .shop-title-text h1 { font-size: 18px; }
+            .shop-title-text p { font-size: 10px; }
+
+            main {
+                min-height: 0;
+                padding: 8px 14px;
+                gap: 10px;
+                overflow-y: auto;
+                align-items: start;
+            }
+            .blacksmith-stage { min-height: 300px; }
+            .blacksmith-img { max-height: 220px; }
+            .dialogue-log {
+                margin: 5px 8px 7px;
+                min-height: 36px;
+                max-height: 64px;
+                padding: 5px 8px;
+                font-size: 11px;
+            }
+            .wooden-cabinet {
+                max-height: min(464px, calc(100dvh - 250px));
+            }
+
+            .bottom-console { padding: 8px 14px 9px; gap: 7px; }
+            .party-card { width: 74px; height: 78px; }
+            .cart-panel { height: 82px; padding: 6px 10px; }
+            .chat-input-bar { padding-top: 4px; padding-bottom: 4px; }
+        }
+
+        @media (min-width: 641px) and (max-width: 880px) and (max-height: 560px) {
+            header { padding: 4px 10px; gap: 5px 10px; }
+            .header-controls { gap: 8px; }
+            .status-pill { padding: 3px 7px; }
+            .top-pill-btn { padding: 4px 8px; }
+
+            main { padding: 6px 10px; gap: 8px; }
+            .blacksmith-stage { min-height: 230px; }
+            .blacksmith-img { max-height: 170px; }
+            .dialogue-log {
+                margin: 4px 6px 5px;
+                min-height: 30px;
+                max-height: 44px;
+                padding: 4px 6px;
+                font-size: 10px;
+            }
+            .wooden-cabinet {
+                max-height: min(464px, calc(100dvh - 205px));
+            }
+
+            .bottom-console { padding: 5px 10px 6px; gap: 5px; }
+            .party-deck { gap: 5px; }
+            .party-card { width: 66px; height: 70px; }
+            .cart-panel { height: 72px; padding: 5px 8px; }
+            .chat-input-bar { padding-top: 3px; padding-bottom: 3px; }
+            .current-hero-avatar { width: 24px; height: 24px; }
+        }
+
+        /* ====================================================
            窄屏适配（手机竖屏 / 酒馆侧栏挤压，断点对齐 RpgCombat 的 640px）
            纯 CSS 覆盖：iframe 内媒体查询按 iframe 视口自动响应，
            不做整体缩放（避免点击错位），不动 JS 渲染逻辑
@@ -1553,6 +1694,16 @@
         :root:fullscreen .console-upper-row, :fullscreen .console-upper-row {
             grid-template-columns: auto 1fr;
         }
+
+        /* 全屏也可能处在高缩放短视高环境，不能用上面的 520px 规则撑开页面。 */
+        @media (max-height: 720px) {
+            :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 300px; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 220px; }
+        }
+        @media (max-height: 560px) {
+            :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 230px; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 170px; }
+        }
     </style>
 </head>
 <body>
@@ -1633,8 +1784,6 @@
                      title="点击与店主交谈">
             </div>
 
-            <!-- 对话流水区：handleSendMessage / applyLLMResult 双写（气泡 6s 收起后仍可回看） -->
-            <div class="dialogue-log" id="dialogueText"></div>
         </section>
 
         <!-- 右侧：4x5 实木货柜 (方案2: 工匠实木托盘) -->
@@ -1957,7 +2106,19 @@
                 <button class="modal-close-btn" id="historyCloseBtn">&times;</button>
             </div>
 
-            <div style="max-height: 320px; overflow-y: auto;">
+            <div class="history-filters" id="historyFilters">
+                <button class="history-filter-btn active" data-filter="all">全部</button>
+                <button class="history-filter-btn" data-filter="dialog">对话</button>
+                <button class="history-filter-btn" data-filter="cart">购物</button>
+                <button class="history-filter-btn" data-filter="add">上架</button>
+            </div>
+
+            <div class="shop-event-log" id="shopEventLog">
+                <div class="shop-event-empty">本次进店尚无记录。</div>
+            </div>
+
+            <div style="margin:14px 0 8px;color:#8c7360;font-size:11px;letter-spacing:1px;">交易单据</div>
+            <div style="max-height: 220px; overflow-y: auto;">
                 <table class="ledger-table">
                     <thead>
                         <tr>
@@ -2370,26 +2531,47 @@
             return list;
         }
 
-        // 上下文：最近 N 层正文（getChatMessages 守卫；剥各 Block 标签）
+        // 上下文：优先读 SillyTavern 原生 chat 浅拷贝，退化到楼层 API，并补当前 generating 楼
         async function collectRecentStoryFloors(n) {
-            if (typeof getChatMessages !== 'function' || typeof getLastMessageId !== 'function') return [];
+            const cleanMessage = (m) => {
+                if (!m || m.is_system) return '';
+                const text = String(m.raw_content || m.content || m.message || m.mes || '')
+                    .replace(/<(Shop_block|Shop_Record|Status_block|Combat_block)>[\s\S]*?<\/\1>/gi, '')
+                    .trim();
+                if (!text) return '';
+                const isUser = m.is_user === true || m.role === 'user';
+                return `【${isUser ? '玩家' : 'AI'}】${text}`;
+            };
             try {
-                const lastId = getLastMessageId();
-                const segs = [];
-                for (let id = lastId; id >= 0 && segs.length < n; id--) {
-                    const msgs = await getChatMessages(id, 1);
-                    const m = msgs && msgs[0];
-                    if (!m || m.is_system) continue;
-                    const text = (m.raw_content || m.message || m.mes || '').toString()
-                        .replace(/<(Shop_block|Shop_Record|Status_block|Combat_block)>[\s\S]*?<\/\1>/gi, '')
-                        .trim();
-                    if (text) segs.unshift(`【${m.is_user ? '玩家' : 'AI'}】${text}`);
-                    else break;
+                const context = window.parent && window.parent.SillyTavern && window.parent.SillyTavern.getContext
+                    ? window.parent.SillyTavern.getContext()
+                    : null;
+                const chat = context && Array.isArray(context.chat) ? context.chat.slice() : null;
+                if (chat && chat.length) {
+                    const segs = chat.slice(-Math.max(n + 2, n)).map(cleanMessage).filter(Boolean).slice(-n);
+                    if (segs.length) return segs;
                 }
-                return segs;
+            } catch (e) { /* 退化到楼层 API */ }
+
+            const segs = [];
+            try {
+                if (typeof getChatMessages === 'function' && typeof getLastMessageId === 'function') {
+                    const lastId = getLastMessageId();
+                    for (let id = lastId; id >= 0 && segs.length < n; id--) {
+                        const msgs = await getChatMessages(id, 1);
+                        const text = cleanMessage(msgs && msgs[0]);
+                        if (text) segs.unshift(text);
+                    }
+                }
+                if (typeof getCurrentMessage === 'function') {
+                    const current = await getCurrentMessage();
+                    const text = cleanMessage(current);
+                    if (text && !segs.includes(text)) segs.push(text);
+                }
+                return segs.slice(-n);
             } catch (e) {
                 console.warn('[ShopBlock] 读取楼层失败:', e);
-                return [];
+                return segs.slice(-n);
             }
         }
 
@@ -2410,7 +2592,7 @@
                 `你可以让这些角色说话：${whitelist}。当前由玩家操控的角色除外——你绝对不能替玩家操控的角色发言，他的台词由玩家自己输入。`,
                 `输出必须是纯 JSON 本体，禁止 markdown 围栏和任何解释文字。schema：`,
                 `{"dialogue":[{"speaker":"说话人","text":"台词(≤60字)"}],"affection":-5到5的整数(玩家言行对店主好感的影响，无玩家台词时省略),"commands":[]}`,
-                `dialogue 1~4 条，店主先说，队友可插话。commands 仅在玩家问到店里没有的常规补给品时用 add 命令上架（你不是许愿机，违禁品/神话物品/大宗军火必须拒绝）。` +
+                `dialogue 1~4 条，店主先说，队友可插话。玩家明确询问店内没有的商品时，优先在 commands 中给出 add，不要静默拒绝；先保证 name/category/price 字段完整。` +
                 `add 的 name 必须带 emoji 前缀（格式"🧪 名字"，如"🍾 肯塔基私酿玉米酒"，emoji 贴合商品、无合适时可省略，前端无前缀默认📦）。`
             ];
             if (hasCustomPersona) parts.splice(2, 0, `【全局补充人设（店主自定义，优先级低于本次块内人设）】${customPersona}`);
@@ -2480,14 +2662,20 @@
             return parts.join('\n');
         }
 
-        // 主调用：scene ∈ enter|buy|chat|bargain，extra 为场景附加文本
-        async function callShopLLM(scene, extra) {
-            const sys = buildShopSystemPrompt();
-            const floors = await collectRecentStoryFloors(2);
-            const optional = await collectOptionalContext();
-            const story = floors.length ? `\n【最近剧情】\n${floors.join('\n---\n')}\n` : '';
-            const optPart = optional ? `\n${optional}\n` : '';
-            const user = `${story}${optPart}${buildSceneTrigger(scene, extra)}`;
+        // ADD 跑通期：先保证链路可观察，稳定后再逐条恢复约束
+        const ADD_PERMISSIVE = true;
+        let lastShopLlmMeta = null;
+        const LLM_DEBUG = (() => {
+            try { return localStorage.getItem('shopblock_llm_debug') === '1'; }
+            catch (e) { return false; }
+        })();
+        function llmLog(label, value) {
+            if (LLM_DEBUG) console.info(`[ShopBlock LLM] ${label}`, value);
+        }
+
+        async function requestShopLlm(sys, user, options = {}) {
+            const messages = options.messages || [{ role: 'system', content: sys }, { role: 'user', content: user }];
+            llmLog('request', { messages, max_tokens: options.maxTokens || 900, temperature: options.temperature == null ? 0.7 : options.temperature });
             const response = await fetch(`${llmConfig.apiBase.replace(/\/+$/, '')}/chat/completions`, {
                 method: 'POST',
                 headers: {
@@ -2496,19 +2684,60 @@
                 },
                 body: JSON.stringify({
                     model: llmConfig.model,
-                    messages: [
-                        { role: 'system', content: sys },
-                        { role: 'user', content: user }
-                    ],
-                    temperature: 0.7,
-                    max_tokens: 400
+                    messages,
+                    temperature: options.temperature == null ? 0.7 : options.temperature,
+                    max_tokens: options.maxTokens || 900
                 })
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            const text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+            const choice = data.choices && data.choices[0];
+            const text = choice && choice.message && choice.message.content;
             if (!text) throw new Error('空回复');
-            return extractJsonLoose(text);
+            lastShopLlmMeta = { finishReason: choice.finish_reason || null, usage: data.usage || null };
+            llmLog('response', { text, ...lastShopLlmMeta });
+            return { data, text, finishReason: lastShopLlmMeta.finishReason };
+        }
+
+        async function requestMissingCommands(sys, user, priorText) {
+            const supplement = `${user}\n\n上一条回复可能因长度截断，原文如下：\n${priorText}\n\n只补全 commands 字段，输出纯 JSON：{"commands":[{"cmd":"add","category":"类目","name":"🧪 商品名","price":"0.00美元","count":1,"unit":"件","desc":"简短介绍"}]}。若没有上架命令则输出 {"commands":[]}`;
+            const result = await requestShopLlm(
+                '你是商店 JSON 修复器。只补齐被截断的 commands，不重复输出 dialogue，不写解释。',
+                supplement,
+                { maxTokens: 500 }
+            );
+            return extractJsonLoose(result.text);
+        }
+
+        let shopLlmRequesting = false;
+
+        // 主调用：scene ∈ enter|buy|chat|bargain，extra 为场景附加文本
+        async function callShopLLM(scene, extra) {
+            if (shopLlmRequesting) throw new Error('已有 LLM 请求进行中');
+            shopLlmRequesting = true;
+            try {
+                const sys = buildShopSystemPrompt();
+                const floors = await collectRecentStoryFloors(2);
+                const optional = await collectOptionalContext();
+                const story = floors.length ? `\n【最近剧情】\n${floors.join('\n---\n')}\n` : '';
+                const optPart = optional ? `\n${optional}\n` : '';
+                const user = `${story}${optPart}${buildSceneTrigger(scene, extra)}`;
+                const result = await requestShopLlm(sys, user, { maxTokens: 900 });
+                const parsed = extractJsonLoose(result.text);
+                if (parsed) return parsed;
+                if (result.finishReason === 'length') {
+                    try {
+                        const supplement = await requestMissingCommands(sys, user, result.text);
+                        if (supplement && Array.isArray(supplement.commands)) return { dialogue: [], commands: supplement.commands, _supplemented: true };
+                    } catch (e) {
+                        logShopEvent('error', 'LLM 返回被截断，commands 补全失败：' + e.message);
+                    }
+                    throw new Error('LLM 返回被截断，未能解析 JSON');
+                }
+                throw new Error('LLM 返回不是有效 JSON');
+            } finally {
+                shopLlmRequesting = false;
+            }
         }
 
         // ====================================================
@@ -2577,18 +2806,25 @@
             }
         }
 
+        function hasLlmPayload(result) {
+            return !!(result && (
+                (Array.isArray(result.dialogue) && result.dialogue.length)
+                || (Array.isArray(result.commands) && result.commands.length)
+            ));
+        }
+
         // 进店反应：LLM 失败回退内置文案
         async function triggerEnterReaction() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
-            dialogueText.innerHTML = `<span style="color:#a38c75;">（${keeper}抬起头……）</span>`;
+            logShopEvent('dialog', `[对话] ${keeper}抬起头，打量着刚进店的小队。`);
             let result = null;
             for (let attempt = 0; attempt < 2 && !result; attempt++) {
                 if (!llmConfig.apiKey) break;
                 try { result = await callShopLLM('enter'); }
                 catch (e) { console.warn(`[ShopBlock] 进店反应 LLM 第${attempt + 1}次失败:`, e.message); }
             }
-            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
-                applyLLMResult(result); // 白名单过滤+渲染+affection
+            if (hasLlmPayload(result)) {
+                await applyLLMResult(result);
             } else {
                 // 内置文案回退
                 showKeeperDialogue(keeper, '（ Built-in 通用迎宾词 ）欢迎光临。看看有什么合用的，尽管开口。', true);
@@ -2605,7 +2841,7 @@
                     catch (e) { console.warn(`[ShopBlock] 购买回应 LLM 第${attempt + 1}次失败:`, e.message); }
                 }
             }
-            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
+            if (hasLlmPayload(result)) {
                 await applyLLMResult(result);
             } else {
                 showKeeperDialogue(keeper, '（ Built-in 成交词 ）货款两讫，欢迎下次再来。', true);
@@ -2622,21 +2858,14 @@
             const dropped = rawLines.filter(d => !(whitelist.has(d.speaker) || d.speaker === keeper));
             if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
             const lines = rawLines.filter(d => whitelist.has(d.speaker) || d.speaker === keeper).slice(0, 4);
-            if (!lines.length) {
+            if (rawLines.length && !lines.length) {
                 showKeeperDialogue(keeper, '……', true);
-                dialogueText.innerHTML = `<span style="color:#c9a86a;">【${keeper}】：“……”</span><br><span style="color:#8c7360;font-size:11px;">（店主欲言又止——LLM 返回的发言人不在白名单，已被过滤，详见控制台）</span>`;
-                return;
+                logShopEvent('error', 'LLM 返回的发言人不在白名单，已全部过滤');
             }
-            // 逐条展示：店主走立绘气泡+对话框，队友走对话框
-            const html = [];
-            for (const line of lines) {
-                if (line.speaker === keeper) {
-                    showKeeperDialogue(keeper, line.text, false);
-                }
-                html.push(`<span style="color:${line.speaker === keeper ? '#c9a86a' : '#7a9a8a'};">【${line.speaker}】：“${line.text}”</span>`);
-                logSessionDialog(line.speaker, line.text);
+            if (lines.length) {
+                lines.forEach(line => logSessionDialog(line.speaker, line.text));
+                await showDialogueSequence(lines);
             }
-            dialogueText.innerHTML = html.join('<br>');
             // affection 落地（钳制 0~100）
             const aff = parseInt(result.affection, 10);
             if (Number.isFinite(aff) && aff !== 0 && shopState) {
@@ -2645,21 +2874,72 @@
                     if (nv != null) { const wasLocked = !exclusiveUnlocked(); window.__shopAffection = nv; if (wasLocked && nv >= 100 && shopState && shopState.hasExclusive) { buildCategoryTabs(); renderCabinet(); showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true); } }
                 } catch (e) { console.warn('[ShopBlock] 好感落地失败:', e); }
             }
-            // add 命令：四重限制校验后上架（SPEC 第三节）
+            // add 命令：跑通期只保留最小字段与正价格校验，结果必须可见
             if (Array.isArray(result.commands)) {
                 for (const cmd of result.commands) {
-                    try { applyAddCommand(cmd); } catch (e) { console.warn('[ShopBlock] add 命令处理失败:', e); }
+                    let outcome;
+                    try { outcome = applyAddCommand(cmd); }
+                    catch (e) { outcome = { ok: false, reason: e.message || '未知异常' }; }
+                    if (!outcome.ok) {
+                        console.warn('[ShopBlock] add 未上架:', outcome.reason, cmd);
+                        logShopEvent('error', `[上架失败] ${outcome.reason}`);
+                    }
                 }
             }
         }
 
-        // 店主台词上气泡
+        function findDialogueAnchor(speaker) {
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            if (speaker === keeper) return blacksmithImg;
+            const exact = Array.from(partyDeck.querySelectorAll('.party-card')).find(card => card.dataset.name === speaker);
+            if (exact) return exact;
+            const fuzzy = Array.from(partyDeck.querySelectorAll('.party-card')).find(card => {
+                const name = card.dataset.name || '';
+                return name.includes(speaker) || speaker.includes(name);
+            });
+            return fuzzy || partyDeck.querySelector('.party-card');
+        }
+
+        function showAvatarChatBubble(speaker, text, duration = 3200) {
+            const anchor = findDialogueAnchor(speaker);
+            if (!anchor || !text) return Promise.resolve(false);
+            const rect = anchor.getBoundingClientRect();
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            const bubble = document.createElement('div');
+            bubble.className = `avatar-chat-bubble ${speaker === keeper ? 'keeper' : 'ally'}`;
+            const name = document.createElement('span');
+            name.className = 'avatar-chat-name';
+            name.textContent = speaker;
+            bubble.appendChild(name);
+            bubble.appendChild(document.createTextNode(text));
+            document.body.appendChild(bubble);
+            const width = bubble.getBoundingClientRect().width;
+            const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2));
+            const top = Math.max(8, rect.top - bubble.getBoundingClientRect().height - 10);
+            bubble.style.left = `${left}px`;
+            bubble.style.top = `${top}px`;
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    bubble.classList.add('out');
+                    setTimeout(() => { bubble.remove(); resolve(true); }, 260);
+                }, duration);
+            });
+        }
+
+        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        async function showDialogueSequence(lines) {
+            for (let i = 0; i < lines.length; i++) {
+                if (i) await sleep(600);
+                showAvatarChatBubble(lines[i].speaker, lines[i].text);
+            }
+        }
+
+        // 店主台词上头像气泡
         function showKeeperDialogue(keeper, text, isFallback) {
-            bossBubbleItemTag.textContent = keeper;
-            bossBubbleText.textContent = isFallback ? text : `“${text}”`;
-            bossSpeechBubble.classList.add('show');
-            clearTimeout(bubbleTimer);
-            bubbleTimer = setTimeout(() => bossSpeechBubble.classList.remove('show'), 6000);
+            const spoken = isFallback ? text : `“${text}”`;
+            showAvatarChatBubble(keeper, spoken);
+            logSessionDialog(keeper, text);
         }
 
         // ====================================================
@@ -2681,56 +2961,55 @@
 
         let addLandedThisSession = 0; // 每次进店会话 add 落地 ≤1 条
 
-        // add 命令处理：四重限制全过才上架；返回 true 表示落地
+        // add 命令处理：跑通期开关旁路非最小约束，始终返回可观察结果
         function applyAddCommand(cmd) {
-            if (!cmd || cmd.cmd !== 'add' || !shopState) return false;
+            if (!cmd || cmd.cmd !== 'add') return { ok: false, reason: '命令不是 add' };
+            if (!shopState) return { ok: false, reason: '当前没有已载入的商店' };
             const rawName = String(cmd.name || '').trim();
             const parsed = getCleanNameAndEmoji(rawName);
             const name = parsed.name;
             const category = String(cmd.category || '').trim();
-            if (!name || !category) return false;
-
-            // 限制2：锚点校验——category 必须命中该店立绘的货品锚点
-            const anchors = PORTRAIT_ANCHOR[shopState.portrait] || PORTRAIT_ANCHOR['占卜商妇'];
-            const anchorOk = anchors.some(a => category.includes(a) || a.includes(category));
-            if (!anchorOk) { console.info(`[ShopBlock] add 锚点拦截：${category} 不在 ${shopState.portrait} 的货品范围`); return false; }
-
-            // 限制：禁止写入独家私藏
-            if (category.includes('私藏')) return false;
-
-            // 限制3：频率——每次进店会话只落地 1 条
-            if (addLandedThisSession >= 1) { console.info('[ShopBlock] add 频率拦截：本次会话已用'); return false; }
-
-            // 去重：已存在同名商品则更新（不重复添加，干净名比较）
-            const existing = shopState.items.find(i => i.name === name);
+            if (!name || !category) return { ok: false, reason: '商品名或类目为空' };
             const price = parsePriceString(cmd.price);
+            if (!isFinite(price) || price <= 0) return { ok: false, reason: '价格必须为正数' };
+
+            if (!ADD_PERMISSIVE) {
+                const anchors = PORTRAIT_ANCHOR[shopState.portrait] || PORTRAIT_ANCHOR['占卜商妇'];
+                const anchorOk = anchors.some(a => category.includes(a) || a.includes(category));
+                if (!anchorOk) return { ok: false, reason: `${category} 不在 ${shopState.portrait} 的货品范围` };
+                if (category.includes('私藏')) return { ok: false, reason: '不能写入独家私藏' };
+                if (addLandedThisSession >= 1) return { ok: false, reason: '本次进店已使用一次上架额度' };
+            }
+
+            // 去重：已存在同名商品则更新，不额外占用正式模式频率
+            const existing = shopState.items.find(i => i.name === name);
             if (existing) {
-                if (isFinite(price) && price > 0) existing.price = price;
+                existing.price = price;
+                existing.priceText = String(cmd.price || `${price.toFixed(2)}美元`);
                 if (cmd.desc) existing.quote = String(cmd.desc).trim();
                 if (parsed.emoji !== '📦') existing.emoji = parsed.emoji;
-                existing.category = category; // 允许 add 顺手挪类目
-                addLandedThisSession++;
+                existing.category = category;
                 renderCabinet();
                 updateCartUI();
-                return true;
+                logShopEvent('add', `[上架] ${name} 已更新（${category} · $${price.toFixed(2)}）`, { item: name });
+                return { ok: true, updated: true, item: existing };
             }
 
-            // 限制4：价格约束——参照同类定价，免费/象征性收费拒绝
-            if (!isFinite(price) || price <= 0) { console.info('[ShopBlock] add 价格拦截'); return false; }
-            const sameCat = shopState.items.filter(i => i.category === category);
-            if (sameCat.length) {
-                const avg = sameCat.reduce((s, i) => s + i.price, 0) / sameCat.length;
-                if (price < avg * 0.05) { console.info(`[ShopBlock] add 象征性收费拦截：$${price} vs 类目均价 $${avg.toFixed(2)}`); return false; }
+            if (!ADD_PERMISSIVE) {
+                const sameCat = shopState.items.filter(i => i.category === category);
+                if (sameCat.length) {
+                    const avg = sameCat.reduce((s, i) => s + i.price, 0) / sameCat.length;
+                    if (price < avg * 0.05) return { ok: false, reason: `价格 $${price} 低于同类均价 $${avg.toFixed(2)} 的 5%` };
+                }
             }
 
-            // 上架：构造内部 item 形状
             const count = parseInt(cmd.count, 10);
             const maxId = shopState.items.reduce((m, i) => Math.max(m, i.id), 0);
-            shopState.items.push({
+            const item = {
                 id: maxId + 1,
-                name: name,
-                category: category,
-                price: price,
+                name,
+                category,
+                price,
                 priceText: String(cmd.price || `${price.toFixed(2)}美元`),
                 emoji: parsed.emoji !== '📦' ? parsed.emoji : '🆕',
                 isStackable: isFinite(count) && count > 1,
@@ -2740,12 +3019,15 @@
                 tierText: String(cmd.tag || '').trim() || (category + ' · ' + name.slice(0, 8)),
                 quote: String(cmd.desc || '（店主从柜台下翻出了一件货。）').trim(),
                 _raw: { '名字': rawName, '价格': String(cmd.price || `${price.toFixed(2)}美元`), '标签': String(cmd.tag || ''), '介绍': String(cmd.desc || ''), ...(isFinite(count) && count > 1 ? { '数量': count, '单位': String(cmd.unit || '件') } : {}) }
-            });
+            };
+            shopState.items.push(item);
             if (!shopState.categories.includes(category)) shopState.categories.push(category);
             addLandedThisSession++;
+            buildCategoryTabs();
             renderCabinet();
             updateCartUI();
-            return true;
+            logShopEvent('add', `[上架] ${name}（${category} · $${price.toFixed(2)}）`, { item: name });
+            return { ok: true, updated: false, item };
         }
 
         // ====================================================
@@ -2836,11 +3118,12 @@
                     } catch (e) { console.warn(`[ShopBlock] 砍价 LLM 第${attempt + 1}次失败:`, e.message); }
                 }
             }
-            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
+            if (hasLlmPayload(result)) {
                 await applyLLMResult(result);
             } else {
-                showKeeperDialogue(keeper, BARGAIN_FALLBACK[res.branch](keeper, discount), true);
-                dialogueText.innerHTML = `<span style="color:#7a9a8a;">【${activeSpeaker.name}】尝试砍价「${item.name}」${discount}%……</span><br><span style="color:#c9a86a;">${BARGAIN_FALLBACK[res.branch](keeper, discount)}</span>`;
+                const fallbackText = BARGAIN_FALLBACK[res.branch](keeper, discount);
+                showKeeperDialogue(keeper, fallbackText, true);
+                logShopEvent('cart', `[讲价] ${activeSpeaker.name} 对 ${item.name} 提出 ${discount}% 折扣：${res.branch}`);
             }
         }
 
@@ -3006,6 +3289,8 @@
                 // 一件商品只归属一处：先清旧
                 assignState.assigned = assignState.assigned.filter(a => a.entryId !== entryId);
                 assignState.assigned.push({ entryId, owner: target.name, kind: target.kind });
+                const entry = playerState.cart.find(c => c.id === entryId);
+                if (entry) logShopEvent('cart', `[购物车] ${entry.item.name}×${entry.quantity} 分配给 ${target.name}`);
             });
             assignState.picked = new Set();
             renderAssignPanel();
@@ -3047,14 +3332,9 @@
             }
 
             const dealId = 'shop-' + Date.now().toString(36) + Math.floor(Math.random() * 1000);
-            // 幂等台账检查（$shop_sync.lastId，防重复结算）
-            try {
-                const vars = await readAllShops; // noop：读 chat 变量
-            } catch (e) {}
             const chatVars = (typeof getVariables === 'function') ? await getVariables({ type: 'chat' }) : window.__mockVars || {};
             const sync = chatVars['$shop_sync'];
-            if (sync && sync.lastId && sync.dealId === dealId) return;
-            // （dealId 每次生成都不同，lastId 比对用于防同一事件重放；此处由按钮触发天然不重，写入留档）
+            if (sync && sync.lastId === dealId) return;
 
             // purchases 明细（SPEC 载荷契约）
             const purchases = playerState.cart.map(e => {
@@ -3123,10 +3403,19 @@
             triggerBuyReaction(buySummary);
 
             // 清账本入历史
-            playerState.cart.forEach(e => playerState.purchaseHistory.push({
-                name: e.item.name, qty: e.quantity, price: effPrice(e.item),
-                owner: (assignState.assigned.find(a => a.entryId === e.id) || {}).owner || ''
-            }));
+            const timeText = new Date(payload.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            playerState.cart.forEach((e, index) => {
+                const buyer = (assignState.assigned.find(a => a.entryId === e.id) || {}).owner || '';
+                playerState.purchaseHistory.push({
+                    id: `${payload.id}-${index + 1}`,
+                    name: e.item.name,
+                    qty: e.quantity,
+                    price: effPrice(e.item) * e.quantity,
+                    buyer,
+                    time: timeText
+                });
+            });
+            logShopEvent('buy', `[购买] 支付 $${total.toFixed(2)}：${purchases.map(p => `${p.name}×${p.count}→${p.owner}`).join('、')}`);
             playerState.cart = [];
             assignState = null;
             closeCartDetailModal();
@@ -3206,10 +3495,31 @@
             return lines.join('\n');
         }
 
-        // 会话对话流水（进店期间内存收集，SPEC 第七节）
+        // 会话事件流：购物记录的永久层；Shop_Record 继续只消费对话文本
         const sessionDialogLog = [];
+        const shopEventHistory = [];
+        let historyFilter = 'all';
+
+        function eventPrefix(kind) {
+            return kind === 'dialog' ? '[对话]'
+                : kind === 'cart' ? '[购物车]'
+                : kind === 'add' ? '[上架]'
+                : kind === 'buy' ? '[购买]'
+                : '[异常]';
+        }
+
+        function logShopEvent(kind, text, meta = {}) {
+            const event = { kind, text: String(text || '').trim(), ts: Date.now(), ...meta };
+            shopEventHistory.push(event);
+            if (shopEventHistory.length > 200) shopEventHistory.shift();
+            if (historyModal && historyModal.classList.contains('show')) renderShopEvents();
+            return event;
+        }
+
         function logSessionDialog(speaker, text) {
-            sessionDialogLog.push(`${speaker}: "${text}"`);
+            const line = `${speaker}: "${text}"`;
+            sessionDialogLog.push(line);
+            logShopEvent('dialog', `${eventPrefix('dialog')} ${speaker}：「${text}」`, { speaker });
         }
 
         // 入口：接收正文文本（或手动粘贴），解析成功 → 建立商店会话并重渲染
@@ -3222,6 +3532,7 @@
             playerState.cart = [];        // 换店/换块清空购物车
             addLandedThisSession = 0;     // 新会话重置 add 频率限制
             sessionDialogLog.length = 0;  // 新会话清空对话流水
+            shopEventHistory.length = 0;  // 新会话清空购物记录事件
             stopFloorPolling();           // 块已落地 → 停楼层轮询（手动导入优先，防随后轮询覆盖）
             applyShopToUI();
             try {
@@ -3665,9 +3976,6 @@
         const sanityText = document.getElementById('sanityText');
         const blacksmithImg = document.getElementById('blacksmithImg');
         const stageBg = document.getElementById('stageBg');
-        // 对话流水区：展台底部常驻节点，LLM/回退/砍价统一双写于此
-        const dialogueText = document.getElementById('dialogueText');
-
         // 老板气泡
         const bossSpeechBubble = document.getElementById('bossSpeechBubble');
         const bossBubbleText = document.getElementById('bossBubbleText');
@@ -3711,6 +4019,8 @@
         const historyModal = document.getElementById('historyModal');
         const historyCloseBtn = document.getElementById('historyCloseBtn');
         const ledgerTableBody = document.getElementById('ledgerTableBody');
+        const historyFilters = document.getElementById('historyFilters');
+        const shopEventLog = document.getElementById('shopEventLog');
 
         const llmModal = document.getElementById('llmModal');
         const llmCloseBtn = document.getElementById('llmCloseBtn');
@@ -3851,9 +4161,6 @@
             bossBubbleText.textContent = `“${item.quote}”`;
             bossSpeechBubble.classList.add('show');
 
-            // 同时在左下角对话框显示
-            dialogueText.textContent = `${keeperName}介绍道：“${item.quote}”`;
-
             // 5秒后自动隐退气泡
             bubbleTimer = setTimeout(() => {
                 bossSpeechBubble.classList.remove('show');
@@ -3871,10 +4178,10 @@
         function addDirectToCart(item, qty = 1) {
             const existing = playerState.cart.find(c => c.id === item.id);
             if (existing) {
-                // 已有该商品
-                dialogueText.textContent = `老布莱克伍德：“【${item.name}】已在你的预购清单中了。”`;
+                logShopEvent('cart', `[购物车] ${item.name} 已在清单中`);
             } else {
                 playerState.cart.push({ id: item.id, item: item, quantity: qty });
+                logShopEvent('cart', `[购物车] 加入 ${item.name}×${qty}`, { item: item.name });
             }
 
             popBossSpeechBubble(item, qty);
@@ -3962,8 +4269,10 @@
             const existing = playerState.cart.find(c => c.id === item.id);
             if (existing) {
                 existing.quantity = Math.min(item.stock, existing.quantity + qty);
+                logShopEvent('cart', `[购物车] ${item.name} 数量调整为 ×${existing.quantity}`, { item: item.name });
             } else {
                 playerState.cart.push({ id: item.id, item: item, quantity: qty });
+                logShopEvent('cart', `[购物车] 加入 ${item.name}×${qty}`, { item: item.name });
             }
 
             closeQuantityModal();
@@ -4154,8 +4463,10 @@
                 tr.querySelector('.btn-minus').addEventListener('click', () => {
                     if (entry.quantity > 1) {
                         entry.quantity--;
+                        logShopEvent('cart', `[购物车] ${entry.item.name} 数量调整为 ×${entry.quantity}`);
                     } else {
                         playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
+                        logShopEvent('cart', `[购物车] 移除 ${entry.item.name}`);
                     }
                     sound.playWoodClick();
                     renderCartDetailTable();
@@ -4167,6 +4478,7 @@
                     const max = entry.item.isStackable ? entry.item.stock : 1;
                     if (entry.quantity < max) {
                         entry.quantity++;
+                        logShopEvent('cart', `[购物车] ${entry.item.name} 数量调整为 ×${entry.quantity}`);
                         sound.playWoodClick();
                         renderCartDetailTable();
                         updateCartUI();
@@ -4177,6 +4489,7 @@
                 // 移除
                 tr.querySelector('.table-del-btn').addEventListener('click', () => {
                     playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
+                    logShopEvent('cart', `[购物车] 移除 ${entry.item.name}`);
                     sound.playWoodClick();
                     renderCartDetailTable();
                     updateCartUI();
@@ -4195,6 +4508,7 @@
 
         // 清空购物车
         cartModalClearBtn.addEventListener('click', () => {
+            if (playerState.cart.length) logShopEvent('cart', `[购物车] 清空 ${playerState.cart.length} 项商品`);
             playerState.cart = [];
             sound.playWoodClick();
             renderCartDetailTable();
@@ -4214,6 +4528,41 @@
         // ====================================================
         // 购物记录账簿与 LLM 设置
         // ====================================================
+        function renderShopEvents() {
+            const visible = shopEventHistory.filter(event => {
+                if (historyFilter === 'all') return true;
+                if (historyFilter === 'cart') return event.kind === 'cart' || event.kind === 'buy';
+                if (historyFilter === 'add') return event.kind === 'add' || event.kind === 'error';
+                return event.kind === historyFilter;
+            });
+            if (!visible.length) {
+                shopEventLog.innerHTML = '<div class="shop-event-empty">当前筛选下暂无记录。</div>';
+                return;
+            }
+            shopEventLog.innerHTML = '';
+            visible.forEach(event => {
+                const row = document.createElement('div');
+                row.className = 'shop-event-row';
+                row.dataset.kind = event.kind;
+                const time = new Date(event.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                const stamp = document.createElement('span');
+                stamp.className = 'shop-event-time';
+                stamp.textContent = time;
+                row.appendChild(stamp);
+                row.appendChild(document.createTextNode(event.text));
+                shopEventLog.appendChild(row);
+            });
+            shopEventLog.scrollTop = shopEventLog.scrollHeight;
+        }
+
+        historyFilters.addEventListener('click', (event) => {
+            const btn = event.target.closest('[data-filter]');
+            if (!btn) return;
+            historyFilter = btn.dataset.filter;
+            historyFilters.querySelectorAll('.history-filter-btn').forEach(el => el.classList.toggle('active', el === btn));
+            renderShopEvents();
+        });
+
         function renderLedgerTable() {
             if (playerState.purchaseHistory.length === 0) {
                 ledgerTableBody.innerHTML = `
@@ -4230,7 +4579,7 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td style="font-family: var(--font-title); color: #8c7360;">${tx.id}</td>
-                    <td style="font-weight: bold; color: #e5d7c3;">${tx.name}</td>
+                    <td style="font-weight: bold; color: #e5d7c3;">${tx.name}${tx.qty > 1 ? ' ×' + tx.qty : ''}</td>
                     <td>${tx.buyer}</td>
                     <td style="color: #dfb06c; font-family: var(--font-title); font-weight: bold;">$${tx.price.toFixed(2)}</td>
                     <td style="color: #8c7360;">${tx.time}</td>
@@ -4241,6 +4590,7 @@
 
         btnHistory.addEventListener('click', () => {
             sound.playWoodClick();
+            renderShopEvents();
             renderLedgerTable();
             historyModal.classList.add('show');
         });
@@ -4273,7 +4623,7 @@
             // 根 URL 变更后按当前商店刷新立绘与头像
             loadKeeperPortrait(shopState ? shopState.portrait : '铁匠机械师');
             refreshPartyAvatars();
-            dialogueText.textContent = "老布莱克伍德扶了扶帽檐：“LLM 智脑配置已更新。随时可以向我打探黑市情报。”";
+            showKeeperDialogue(shopState ? shopState.keeper : '老布莱克伍德', 'LLM 智脑配置已更新。随时可以向我打探黑市情报。', true);
         });
 
         llmResetBtn.addEventListener('click', () => {
@@ -4326,9 +4676,9 @@
         let shopChatRequesting = false;
 
         async function handleSendMessage() {
-            // 底栏为空（零匹配置空）：没有代言者，拒绝前同样在流水区留痕，避免“点了没反应”
+            // 底栏为空（零匹配置空）：没有代言者，记录并给出明确提示
             if (!activeSpeaker) {
-                dialogueText.innerHTML = `<span style="color:#c0605a;">（到场角色为空：块内「在场成员」与 MMS 名册不匹配，无法代为发言。请检查块内姓名。）</span>`;
+                logShopEvent('error', '到场角色为空：块内「在场成员」与 MMS 名册不匹配，无法代为发言。');
                 setTempNotice('到场角色为空（块内「在场成员」与 MMS 名册不匹配），无法代为发言。', 6000);
                 return;
             }
@@ -4344,10 +4694,7 @@
                 if (m && pendingBargain) {
                     const extra = m[2].trim().replace(/^["“]|["”]$/g, '');
                     logSessionDialog(activeSpeaker.name, `*尝试砍价，砍价后价格为${text.match(/价格为([^*。]+)/)?.[1] || ''}*${extra ? ' ' + extra : ''}`);
-                    const speakerPrefix = playerState.narratorEnabled
-                        ? `【${activeSpeaker.name}】：<em>${text.split('*')[1]}*</em><br>`
-                        : '';
-                    dialogueText.innerHTML = speakerPrefix + `<span style="color:#a38c75;">（正在与店主周旋……）</span>`;
+                    showAvatarChatBubble(activeSpeaker.name, text);
                     await handleBargainSend(pendingBargain.itemName, pendingBargain.discount, extra);
                     return;
                 }
@@ -4357,11 +4704,7 @@
             logSessionDialog(activeSpeaker.name, text);
 
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
-            let speakerPrefix = playerState.narratorEnabled
-                ? `【${activeSpeaker.name}】：“${text}”<br>`
-                : '';
-
-            dialogueText.innerHTML = speakerPrefix + `<span style="color:#a38c75;">（${keeper}正在沉吟……）</span>`;
+            if (playerState.narratorEnabled) showAvatarChatBubble(activeSpeaker.name, text);
 
             // M4 通道：自由对话场景（chat），失败回退旧 demo 关键词库
             shopChatRequesting = true;
@@ -4373,7 +4716,7 @@
                 }
             }
             shopChatRequesting = false;
-            if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
+            if (hasLlmPayload(result)) {
                 const savedNarrator = playerState.narratorEnabled;
                 playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
                 await applyLLMResult(result);
@@ -4398,9 +4741,7 @@
                     ];
                     reply = `“${randomQuotes[Math.floor(Math.random() * randomQuotes.length)]}”`;
                 }
-                dialogueText.innerHTML = speakerPrefix + reply;
-                showKeeperDialogue(keeper, reply, true); // 无 Key 回退同样上气泡，不再静默只写流水
-                logSessionDialog(keeper, reply);
+                showKeeperDialogue(keeper, reply, true);
             }, 300);
         }
 

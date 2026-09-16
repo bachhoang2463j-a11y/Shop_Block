@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock LLM / 记录 / 气泡 Harness</title>
+<style>
+body { background:#14100c;color:#d8c7b5;font-family:Consolas,monospace;margin:0;padding:12px; }
+button { background:#20150e;color:#dfb06c;border:1px solid #5a3822;padding:5px 12px;cursor:pointer; }
+#frame { width:920px;height:760px;border:2px solid #382417;display:block;margin-top:10px; }
+#log { white-space:pre-wrap;background:#0b0908;border:1px solid #382417;padding:8px;margin-top:10px;max-height:420px;overflow:auto; }
+.pass{color:#7a9a5a}.fail{color:#c0605a}.head{color:#dfb06c}
+</style>
+</head>
+<body>
+<h3>ShopBlock LLM / ADD / 记录 / 气泡回归</h3>
+<button id="btnRun">▶ 跑功能断言</button> <span id="summary"></span>
+<iframe id="frame"></iframe>
+<div id="log"></div>
+<script>
+const logBox=document.getElementById('log');let pass=0,fail=0;
+function log(s,c){const d=document.createElement('div');d.className=c||'';d.textContent=s;logBox.appendChild(d)}
+function assert(ok,s){if(ok){pass++;log('  ✓ '+s,'pass')}else{fail++;log('  ✗ '+s,'fail')}}
+const STORE={chat:{},message:{7:{stat_data:{状态栏:{角色列表:[{角色:{名字:'埃利奥特',物品:''}},{角色:{名字:'弗兰克',物品:''}}],据点:{名称:'酒店',现金:'500美元'}}},'$mms_meta':{mesId:7}}},global:{}};
+function mockScript(){return `<script>(function(){var S=parent.__store;window.getCurrentMessageId=()=>7;window.getLastMessageId=()=>7;window.getChatMessages=()=>[{message:'剧情',raw_content:'剧情',is_user:false,is_system:false}];window.getVariables=function(o){o=o||{};var x=o.type==='message'?(S.message[o.message_id]||{}):o.type==='global'?S.global:S.chat;return JSON.parse(JSON.stringify(x))};window.insertOrAssignVariables=function(obj,o){Object.assign(o&&o.type==='message'?(S.message[o.message_id]=S.message[o.message_id]||{}):S.chat,JSON.parse(JSON.stringify(obj)));return Promise.resolve(true)};window.replaceVariables=function(obj,o){if(o&&o.type==='message')S.message[o.message_id]=JSON.parse(JSON.stringify(obj));else S.chat=JSON.parse(JSON.stringify(obj));return Promise.resolve(true)};window.eventOn=function(){};window.eventEmit=function(){};window.alert=function(){};window.confirm=()=>true;})();<\/script>`}
+window.__store=STORE;
+async function ready(){const f=document.getElementById('frame');const html=await fetch('../index.html').then(r=>r.text());f.srcdoc=html.replace('<head>','<head>'+mockScript());const t=Date.now();while(Date.now()-t<15000){await new Promise(r=>setTimeout(r,250));try{if(f.contentWindow.eval('typeof applyAddCommand==="function"&&typeof callShopLLM==="function"'))return}catch(e){}}throw new Error('组件未就绪')}
+async function run(){logBox.innerHTML='';pass=fail=0;document.getElementById('summary').textContent='';await ready();const w=document.getElementById('frame').contentWindow;
+await w.eval(`onShopDataReceived('店名: 回归杂货铺\\n店主: 老布莱克伍德\\n立绘: 占卜商妇\\n店主性格: 精明谨慎\\n在场成员: [埃利奥特, 弗兰克]\\n分类商品:\\n  补给:\\n    - 商品:\\n        名字: 🧼 普通肥皂\\n        价格: 1.00美元\\n        标签: 日用品\\n        介绍: 普通肥皂')`);
+log('== ADD 跑通期 ==','head');
+const before=w.eval('shopState.items.length');
+const ok=w.eval(`applyAddCommand({cmd:'add',category:'超出锚点',name:'🧪 测试药剂',price:'3.50美元',count:2,unit:'瓶',desc:'测试商品'})`);
+assert(ok&&ok.ok,'锚点越界在跑通期开关下仍可上架');
+assert(w.eval('shopState.items.length')===before+1,'商品实际加入货架数据');
+assert(w.eval(`shopEventHistory.some(e=>e.kind==='add'&&e.text.includes('测试药剂'))`),'成功上架写入购物记录');
+const bad=w.eval(`applyAddCommand({cmd:'add',category:'补给',name:'坏价格',price:'0美元'})`);
+assert(bad&&!bad.ok&&bad.reason.includes('正数'),'非正价格返回明确失败原因');
+log('== 对话记录与头像气泡 ==','head');
+await w.eval(`applyLLMResult({dialogue:[{speaker:'老布莱克伍德',text:'店主测试台词'},{speaker:'弗兰克',text:'队友测试台词'}],commands:[]})`);
+assert(w.eval(`shopEventHistory.filter(e=>e.kind==='dialog').length>=2`),'两条对话永久写入记录');
+w.document.querySelectorAll('.avatar-chat-bubble').forEach(el=>el.remove());
+w.eval(`showAvatarChatBubble('弗兰克','定位测试',80)`);
+await new Promise(r=>setTimeout(r,30));
+assert(w.document.querySelectorAll('.avatar-chat-bubble').length>=1,'气泡挂到 body');
+await new Promise(r=>setTimeout(r,400));
+assert(w.document.querySelectorAll('.avatar-chat-bubble').length===0,'短时气泡自动清理');
+w.eval(`historyFilter='dialog';renderShopEvents()`);
+assert(w.document.querySelectorAll('#shopEventLog .shop-event-row').length>=2,'购物记录对话筛选可渲染');
+assert(!w.document.getElementById('dialogueText'),'立绘下方常驻流水节点已移除');
+log('== finish_reason 截断补问 ==','head');
+w.eval(`llmConfig.apiKey='test'; window.__fetchCount=0; window.fetch=async function(){window.__fetchCount++;return {ok:true,json:async()=>window.__fetchCount===1?{choices:[{finish_reason:'length',message:{content:'{"dialogue":['}}]}:{choices:[{finish_reason:'stop',message:{content:'{"commands":[{"cmd":"add","category":"补给","name":"🧼 补问肥皂","price":"1.20美元"}]}'}}]}}}`);
+const repaired=await w.eval(`callShopLLM('chat','请补一块肥皂')`);
+assert(w.eval('window.__fetchCount')===2,'截断后仅追加一次补问');
+assert(repaired&&Array.isArray(repaired.commands)&&repaired.commands.length===1,'补问返回 commands JSON');
+await w.eval(`applyLLMResult(${JSON.stringify(repaired)})`);
+assert(w.eval(`shopState.items.some(i=>i.name==='补问肥皂')`),'仅 commands 的补问结果仍能落地');
+log('== 上下文与请求互斥 ==','head');
+const floors=await w.eval(`collectRecentStoryFloors(2)`);
+assert(Array.isArray(floors)&&floors.some(x=>x.includes('剧情')),'楼层 API 退化路径可取最近剧情');
+w.eval(`shopLlmRequesting=true`);
+let locked=false;try{await w.eval(`callShopLLM('chat','并发测试')`)}catch(e){locked=String(e.message).includes('请求进行中')}finally{w.eval(`shopLlmRequesting=false`)}
+assert(locked,'共享 LLM 请求锁阻止并发入口');
+const total=pass+fail;document.getElementById('summary').textContent=fail?'❌ '+fail+' 失败 / '+total:'✅ '+pass+'/'+total+' 全绿';log('== 完成：'+pass+' 通过, '+fail+' 失败 ==',fail?'fail':'pass')}
+document.getElementById('btnRun').addEventListener('click',()=>run().catch(e=>{fail++;log('异常: '+e.stack,'fail')}));
+</script>
+</body>
+</html>

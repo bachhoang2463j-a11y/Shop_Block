@@ -129,9 +129,12 @@ function buildMockScript() {
 const frameWin = (w) => document.getElementById('frame-' + w).contentWindow;
 function frameEval(w, code) { return frameWin(w).eval(code); }
 
-async function loadFrame(w) {
+async function loadFrame(w, h) {
+    const iframe = document.getElementById('frame-' + w);
+    iframe.height = h;
+    iframe.style.height = h + 'px';
     const html = await fetch('../index.html').then(r => r.text());
-    document.getElementById('frame-' + w).srcdoc = html.replace('<head>', '<head>' + buildMockScript());
+    iframe.srcdoc = html.replace('<head>', '<head>' + buildMockScript());
     const t0 = Date.now();
     while (Date.now() - t0 < 20000) {
         await new Promise(r => setTimeout(r, 400));
@@ -177,7 +180,19 @@ function measure(w) {
             consoleCols: cur ? getComputedStyle(cur).gridTemplateColumns.split(' ').length : -1,
             headerOverflowX: header ? header.scrollWidth - header.clientWidth : 999,
             cartOverflowX: cart ? cart.scrollWidth - cart.clientWidth : 999,
-            tipHidden: tipSpan ? getComputedStyle(tipSpan).display === 'none' : false
+            tipHidden: tipSpan ? getComputedStyle(tipSpan).display === 'none' : false,
+            bottomBottom: (() => {
+                var bottom = doc.querySelector('.bottom-console');
+                return bottom ? Math.round(bottom.getBoundingClientRect().bottom) : -1;
+            })(),
+            viewportH: doc.documentElement.clientHeight,
+            scrollHeight: doc.documentElement.scrollHeight,
+            mainOverflowY: getComputedStyle(main).overflowY,
+            mainScrollable: main.scrollHeight > main.clientHeight + 1,
+            bottomVisible: (() => {
+                var bottom = doc.querySelector('.bottom-console');
+                return !!bottom && bottom.getBoundingClientRect().bottom <= doc.documentElement.clientHeight + 1;
+            })()
         };
     })()`);
 }
@@ -188,16 +203,18 @@ async function runFlow() {
     passCount = failCount = 0;
     document.getElementById('summary').textContent = '';
 
-    // 档位定义：width + 期望（compact = 641–880 紧凑双栏；base = >880 基线）
+    // 档位定义：width + height + 期望（compact = 641–880 紧凑双栏；base = >880 基线）
     const FRAMES = [
-        { w: 853, tier: 'compact' },
-        { w: 700, tier: 'compact' },
-        { w: 920, tier: 'base' }
+        { w: 853, h: 760, tier: 'compact', label: '常规视高' },
+        { w: 853, h: 600, tier: 'compact', label: '短视高' },
+        { w: 853, h: 480, tier: 'compact', label: '极短视高' },
+        { w: 700, h: 600, tier: 'compact', label: '窄中屏短视高' },
+        { w: 920, h: 760, tier: 'base', label: '基线' }
     ];
 
     for (const f of FRAMES) {
-        log('== 加载 ' + f.w + 'px 视口（' + (f.tier === 'compact' ? '紧凑双栏档' : '基线档') + '） ==', 'head');
-        await loadFrame(f.w);
+        log('== 加载 ' + f.w + '×' + f.h + 'px 视口（' + f.label + '） ==', 'head');
+        await loadFrame(f.w, f.h);
         assert(frameEval(f.w, 'typeof onShopDataReceived === "function"'), '[' + f.w + '] 组件 boot 无崩溃');
 
         const g = measure(f.w);
@@ -210,8 +227,13 @@ async function runFlow() {
         if (compact) {
             assert(g.mainLeftW >= 200 && g.mainLeftW <= 281, '[' + f.w + '] 左栏收窄 200–280px（实际 ' + g.mainLeftW + 'px，基线 430px）');
             assert(g.cabCols === 4, '[' + f.w + '] 货柜 4 列（实际 ' + g.cabCols + '，基线 5 列）');
-            assert(g.cabMaxH === '464px', '[' + f.w + '] 货柜可视高 464px（实际 ' + g.cabMaxH + '，基线 496px）');
-            assert(g.stageH >= 420, '[' + f.w + '] 立绘展台 ≥420px（实际 ' + g.stageH + 'px）');
+            if (f.h > 720) {
+                assert(g.cabMaxH === '464px', '[' + f.w + '] 常规视高货柜可视高 464px（实际 ' + g.cabMaxH + '）');
+                assert(g.stageH >= 420, '[' + f.w + '] 常规视高立绘展台 ≥420px（实际 ' + g.stageH + 'px）');
+            } else {
+                assert(parseFloat(g.cabMaxH) <= 464, '[' + f.w + '×' + f.h + '] 短视高货柜未超过 464px（实际 ' + g.cabMaxH + '）');
+                assert(g.stageH < 420, '[' + f.w + '×' + f.h + '] 短视高展台已收缩（实际 ' + g.stageH + 'px）');
+            }
             assert(g.consoleCols === 2, '[' + f.w + '] 底栏仍左右横排（track 数 ' + g.consoleCols + '）');
             assert(g.tipHidden, '[' + f.w + '] 分类头操作提示已隐藏（只留重排按钮）');
         } else {
@@ -224,6 +246,10 @@ async function runFlow() {
         assert(g.cellCount >= 15, '[' + f.w + '] 商品格渲染 ' + g.cellCount + ' 件（demo 全量）');
         assert(g.headerOverflowX <= 1, '[' + f.w + '] 顶栏无内部溢出（差 ' + g.headerOverflowX + 'px）');
         assert(g.cartOverflowX <= 1, '[' + f.w + '] 购物车面板无溢出（差 ' + g.cartOverflowX + 'px）');
+        assert(g.bottomVisible, '[' + f.w + '×' + f.h + '] 底栏在组件视口内可见（底边 ' + g.bottomBottom + ' / 视高 ' + g.viewportH + '）');
+        if (f.h <= 900) {
+            assert(g.mainOverflowY === 'auto', '[' + f.w + '×' + f.h + '] 主区使用内部纵向滚动兜底');
+        }
         assert(g.cellW >= 70, '[' + f.w + '] 货架格宽 ' + g.cellW + 'px ≥70（不挤压商品名）');
     }
 
