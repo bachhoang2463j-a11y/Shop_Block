@@ -252,7 +252,7 @@ async function runFlow() {
             assert(g.cabMaxH === '464px', '[' + f.w + '] 高缩放货柜可视高 464px（实际 ' + g.cabMaxH + '）');
             // 展台拉伸对齐货柜：不再是固定 420，而是与货柜区等高、立绘顶满
             assert(Math.abs(g.stageH - g.cabSectionH) <= 4, '[' + f.w + '] 高缩放展台与货柜区等高（展台 ' + g.stageH + 'px / 货柜区 ' + g.cabSectionH + 'px）');
-            assert(g.imgH >= g.stageH - 8, '[' + f.w + '] 高缩放立绘顶满展台（立绘 ' + g.imgH + 'px / 展台 ' + g.stageH + 'px）');
+            assert(g.imgH >= g.stageH * 0.8 - 8 && g.imgH <= g.stageH * 0.8 + 8, '[' + f.w + '] 高缩放立绘 80% 填充（立绘 ' + g.imgH + 'px / 展台 ' + g.stageH + 'px）');
             assert(g.consoleCols === 2, '[' + f.w + '] 高缩放底栏仍左右横排（track 数 ' + g.consoleCols + '）');
             assert(g.tipHidden, '[' + f.w + '] 高缩放分类头操作提示已隐藏（只留重排按钮）');
         } else {
