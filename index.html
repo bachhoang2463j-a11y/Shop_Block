@@ -2051,11 +2051,20 @@
             return m ? parseFloat(m[0]) : NaN;
         }
 
+        // 商品名前缀 emoji → 图标（RpgCombat getCleanNameAndEmoji 同款）："🧪 杀虫粉" → {emoji:'🧪', name:'杀虫粉'}，无前缀回落 📦
+        function getCleanNameAndEmoji(rawName) {
+            const s = String(rawName || '').trim();
+            const m = s.match(/^([\uD800-\uDBFF][\uDC00-\uDFFF]|\p{Emoji_Presentation}|\p{Emoji}\uFE0F?)\s*/u);
+            if (m) return { emoji: m[1], name: (s.slice(m[0].length).trim() || s) };
+            return { emoji: '📦', name: s };
+        }
+
         // 归一化单个商品：YAML 的 - 商品: {名字/价格/数量/单位/标签/介绍} → 内部 item 形状
         function normalizeGoodsItem(raw, category, idCounter) {
             if (!raw || typeof raw !== 'object') return null;
             const g = raw['商品'] && typeof raw['商品'] === 'object' ? raw['商品'] : raw;
-            const name = String(g['名字'] || '').trim();
+            const parsed = getCleanNameAndEmoji(g['名字']);
+            const name = parsed.name;
             if (!name) return null;
             const price = parsePriceString(g['价格']);
             if (!isFinite(price) || price < 0) return null;
@@ -2069,7 +2078,7 @@
                 category: category,           // 所属类目（含"独家私藏"）
                 price: price,                  // 数值
                 priceText: String(g['价格']).trim(), // 原文（带货币后缀）
-                emoji: '📦',                   // M1 占位，M2 接立绘/图标体系
+                emoji: parsed.emoji,
                 isStackable: stock > 1,
                 stock: stock,
                 unit: String(g['单位'] || '件').trim(),
@@ -2187,7 +2196,7 @@
                 try { floorId = getCurrentMessageId(); } catch (e) { /* demo 环境无楼层 */ }
             }
 
-            // 新块商品 → 中文名集合（用于剔除旧档同名项）
+            // 新块商品 → 干净名集合（剥 emoji 前缀后比较，防止"🧪杀虫粉"对不上"杀虫粉"重复追加）
             const newNames = new Set();
             parsed.items.forEach(it => newNames.add(it.name));
 
@@ -2199,7 +2208,7 @@
                     if (!Array.isArray(list)) continue;
                     const kept = list.filter(e => {
                         const g = (e && e['商品']) ? e['商品'] : e;
-                        return !(g && newNames.has(String(g['名字'] || '')));
+                        return !(g && newNames.has(getCleanNameAndEmoji(g['名字']).name));
                     });
                     if (kept.length) merged[cat] = JSON.parse(JSON.stringify(kept));
                 }
@@ -2617,7 +2626,9 @@
         // add 命令处理：四重限制全过才上架；返回 true 表示落地
         function applyAddCommand(cmd) {
             if (!cmd || cmd.cmd !== 'add' || !shopState) return false;
-            const name = String(cmd.name || '').trim();
+            const rawName = String(cmd.name || '').trim();
+            const parsed = getCleanNameAndEmoji(rawName);
+            const name = parsed.name;
             const category = String(cmd.category || '').trim();
             if (!name || !category) return false;
 
@@ -2632,12 +2643,13 @@
             // 限制3：频率——每次进店会话只落地 1 条
             if (addLandedThisSession >= 1) { console.info('[ShopBlock] add 频率拦截：本次会话已用'); return false; }
 
-            // 去重：已存在同名商品则更新（不重复添加）
+            // 去重：已存在同名商品则更新（不重复添加，干净名比较）
             const existing = shopState.items.find(i => i.name === name);
             const price = parsePriceString(cmd.price);
             if (existing) {
                 if (isFinite(price) && price > 0) existing.price = price;
                 if (cmd.desc) existing.quote = String(cmd.desc).trim();
+                if (parsed.emoji !== '📦') existing.emoji = parsed.emoji;
                 existing.category = category; // 允许 add 顺手挪类目
                 addLandedThisSession++;
                 renderCabinet();
@@ -2662,14 +2674,14 @@
                 category: category,
                 price: price,
                 priceText: String(cmd.price || `${price.toFixed(2)}美元`),
-                emoji: '🆕',
+                emoji: parsed.emoji !== '📦' ? parsed.emoji : '🆕',
                 isStackable: isFinite(count) && count > 1,
                 stock: isFinite(count) && count > 0 ? count : 1,
                 unit: String(cmd.unit || '件').trim(),
                 tier: 'shop',
                 tierText: String(cmd.tag || '').trim() || (category + ' · ' + name.slice(0, 8)),
                 quote: String(cmd.desc || '（店主从柜台下翻出了一件货。）').trim(),
-                _raw: { '名字': name, '价格': String(cmd.price || `${price.toFixed(2)}美元`), '标签': String(cmd.tag || ''), '介绍': String(cmd.desc || ''), ...(isFinite(count) && count > 1 ? { '数量': count, '单位': String(cmd.unit || '件') } : {}) }
+                _raw: { '名字': rawName, '价格': String(cmd.price || `${price.toFixed(2)}美元`), '标签': String(cmd.tag || ''), '介绍': String(cmd.desc || ''), ...(isFinite(count) && count > 1 ? { '数量': count, '单位': String(cmd.unit || '件') } : {}) }
             });
             if (!shopState.categories.includes(category)) shopState.categories.push(category);
             addLandedThisSession++;
