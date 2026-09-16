@@ -171,6 +171,8 @@ function measure(w) {
         var cur = doc.querySelector('.console-upper-row');
         var cart = doc.querySelector('.cart-panel');
         var tipSpan = doc.querySelector('.cabinet-tip > span');
+        var img = doc.getElementById('blacksmithImg');
+        var cabSection = doc.querySelector('.cabinet-section');
         return {
             vw: doc.documentElement.clientWidth,
             docOverflowX: doc.documentElement.scrollWidth - doc.documentElement.clientWidth,
@@ -181,6 +183,8 @@ function measure(w) {
             cellCount: cells.length,
             cellW: cells.length ? Math.round(cells[0].getBoundingClientRect().width) : -1,
             stageH: stage ? Math.round(stage.getBoundingClientRect().height) : -1,
+            imgH: img ? Math.round(img.getBoundingClientRect().height) : -1,
+            cabSectionH: cabSection ? Math.round(cabSection.getBoundingClientRect().height) : -1,
             consoleCols: cur ? getComputedStyle(cur).gridTemplateColumns.split(' ').length : -1,
             headerOverflowX: header ? header.scrollWidth - header.clientWidth : 999,
             cartOverflowX: cart ? cart.scrollWidth - cart.clientWidth : 999,
@@ -246,7 +250,9 @@ async function runFlow() {
             assert(g.mainLeftW >= 280 && g.mainLeftW <= 361, '[' + f.w + '] 高缩放左栏收窄 280–360px（实际 ' + g.mainLeftW + 'px）');
             assert(g.cabCols === 4, '[' + f.w + '] 高缩放货柜 4 列（实际 ' + g.cabCols + '，基线 5 列）');
             assert(g.cabMaxH === '464px', '[' + f.w + '] 高缩放货柜可视高 464px（实际 ' + g.cabMaxH + '）');
-            assert(g.stageH >= 420, '[' + f.w + '] 高缩放立绘展台 ≥420px（实际 ' + g.stageH + 'px）');
+            // 展台拉伸对齐货柜：不再是固定 420，而是与货柜区等高、立绘顶满
+            assert(Math.abs(g.stageH - g.cabSectionH) <= 4, '[' + f.w + '] 高缩放展台与货柜区等高（展台 ' + g.stageH + 'px / 货柜区 ' + g.cabSectionH + 'px）');
+            assert(g.imgH >= g.stageH - 8, '[' + f.w + '] 高缩放立绘顶满展台（立绘 ' + g.imgH + 'px / 展台 ' + g.stageH + 'px）');
             assert(g.consoleCols === 2, '[' + f.w + '] 高缩放底栏仍左右横排（track 数 ' + g.consoleCols + '）');
             assert(g.tipHidden, '[' + f.w + '] 高缩放分类头操作提示已隐藏（只留重排按钮）');
         } else {
