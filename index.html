@@ -1137,6 +1137,13 @@
             from { opacity: 0; transform: translateY(5px) scale(0.97); }
             to { opacity: 1; transform: translateY(0) scale(1); }
         }
+        .llm-thinking-dot { display: inline-block; animation: thinkingBlink 1.2s infinite; font-weight: bold; }
+        .llm-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+        .llm-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes thinkingBlink {
+            0%, 60%, 100% { opacity: 0.2; }
+            30% { opacity: 1; }
+        }
 
         /* 数量拉条弹窗样式 (可拉条，可直接输入数量) */
         .quantity-dialog-box {
@@ -2188,8 +2195,26 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">出场角色人设（每行「角色名：人设」，只注入在场成员）:</label>
-                <textarea class="form-textarea" id="llmPartyPersonas" rows="3" placeholder="埃利奥特：私家侦探，谨慎多疑，随身带研究手札&#10;弗兰克：一战老兵，讲义气，看不惯花哨货"></textarea>
+                <label class="form-label">出场角色人设（仅在场成员注入，可换行描述）:</label>
+                <details id="partyPersonasDetails" open style="background:#20150e;border:1px solid #5a3822;border-radius:4px;flex-shrink:0;">
+                    <summary style="cursor:pointer;padding:8px 10px;font-size:12px;font-weight:bold;color:#c9a86a;list-style:none;display:flex;align-items:center;justify-content:space-between;">
+                        <span>🎭 角色人设列表</span>
+                        <span id="ppCount" style="font-size:11px;color:#8c7360;background:#120b08;padding:2px 8px;border-radius:999px;"></span>
+                    </summary>
+                    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px;border-top:1px solid #5a3822;">
+                        <div id="partyPersonasList" style="display:flex;flex-direction:column;gap:8px;"></div>
+                        <button type="button" class="buy-btn" id="ppAddBtn" style="align-self:flex-start;">＋ 添加角色人设</button>
+                        <div style="font-size:11px;color:#8c7360;line-height:1.4;">按角色名精确匹配当前在场名单，未在场角色的人设不会发给 LLM。人设可换行多段描述。</div>
+                    </div>
+                </details>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">开场问候:</label>
+                <label style="display:flex;align-items:center;gap:8px;color:#c9a86a;font-size:12px;cursor:pointer;">
+                    <input type="checkbox" id="llmGreetToggle" style="accent-color:#dfb06c;">
+                    进店时自动请求 LLM 欢迎问候（关闭则零 token 消耗，只显示内置迎宾）
+                </label>
             </div>
 
             <div class="form-group">
@@ -2606,15 +2631,24 @@
             // 名单排除玩家操控角色：代言白名单即“可说话名单”，LLM 只能从中取值
             const whitelist = Array.from(buildSpeakerWhitelist(true)).join('、');
             const partyPersonas = buildPartyPersonaBlock();
+            // 旁白开关 OFF：只演店主，不演队友（名单只留店主，人设块省略）
+            const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
+            const speakList = narratorOff ? keeper : whitelist;
             const parts = [
-                `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主和在场队友。`,
-                `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说，队友可插话；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到5的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。`,
+                narratorOff
+                    ? `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主。`
+                    : `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主和在场队友。`,
+                narratorOff
+                    ? `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~3 条，由店主独白；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到5的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。`
+                    : `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说，队友可插话；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到5的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。`,
                 `## 二、世界观\n${worldview}`,
                 `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n说话风格：${tone}。` : ''),
-                `## 四、好感度\n当前店主对玩家的好感度：${affection}/100。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，0~19冷淡戒备。按当前分档（${attitude}）演绎，不得跳档。`,
-                `## 五、可说话名单\n你可以让这些角色说话：${whitelist}。\nspeaker只能从本名单中取值，禁止输出名单外的名字。`
+                `## 四、好感度\n当前店主对玩家的好感度：${affection}/100。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，0~19冷淡戒备。按当前分档（${attitude}）演绎，不得跳档。80以下视为初识，店主不知玩家姓名。`,
+                narratorOff
+                    ? `## 五、可说话名单\n你可以让这些角色说话：${speakList}。\nspeaker只能从本名单中取值，禁止输出名单外的名字，禁止让队友插话。好感未达熟络（<80）时，text内称呼玩家用“这位客人”，不得直呼玩家名；speaker键照常用名单原名。`
+                    : `## 五、可说话名单\n你可以让这些角色说话：${speakList}。\nspeaker只能从本名单中取值，禁止输出名单外的名字。好感未达熟络（<80）时，text内称呼玩家用“这位客人”，不得直呼玩家名；speaker键照常用名单原名。`
             ];
-            if (partyPersonas) parts.push(`## 六、出场角色补充人设\n${partyPersonas}`);
+            if (partyPersonas && !narratorOff) parts.push(`## 六、出场角色补充人设\n${partyPersonas}`);
             parts.push(
                 `## 七、commands 指令规范（仅在玩家明确询问店内没有的常规补给品时输出，否则输出 []）\n- 上架指令为扁平对象：{"cmd":"add","category":"类目","name":"emoji 商品名","price":"0.50美元","count":1,"unit":"件","desc":"一句话介绍"}。\n- 字段规则：cmd 固定为 "add"；name 必须带 emoji 前缀（无合适时可省略，前端无前缀默认📦）；price 必须是 "数字+美元" 的字符串（如 "0.50美元"，禁止纯数字）；count/unit 缺省为 1/件。\n- 价格只允许出现在 price 字段，不得写进 name。`,
                 `## 八、输出示例（仅示范格式，人物与商品均为虚构，不得照抄）\n{"dialogue":[{"speaker":"示例店主","text":"要看点什么？新到的货都在柜上。"},{"speaker":"示例队友","text":"这家的东西一向实在。"}],"affection":1,"commands":[{"cmd":"add","category":"生活用品","name":"🧺 示例毛巾","price":"0.50美元","count":1,"unit":"条","desc":"吸水耐用的粗棉毛巾"}]}`
@@ -2622,25 +2656,36 @@
             return parts.join('\n');
         }
 
-        // 出场角色人设表：设置页每行「角色名：人设」，只注入当前出场名单，防提示词膨胀
+        // 出场角色人设：独立窗口数组 [{name,prompt}]，按在场名单精确匹配注入，人设可换行
+        // 旧串迁移：单行「角色名：人设」文本 → 数组（启动时转一次，此处兜底）
+        function migratePartyPersonas(raw) {
+            if (Array.isArray(raw)) return raw.filter(p => p && typeof p.name === 'string' && typeof p.prompt === 'string');
+            const out = [];
+            String(raw || '').split('\n').forEach(line => {
+                if (out.length >= 8) return;
+                const sep = line.search(/[：:]/);
+                if (sep <= 0) return;
+                const name = line.slice(0, sep).trim();
+                const prompt = line.slice(sep + 1).trim();
+                if (name && prompt) out.push({ name, prompt });
+            });
+            return out;
+        }
         function buildPartyPersonaBlock() {
-            const raw = (llmConfig.partyPersonas || '').trim();
-            if (!raw) return '';
+            const arr = migratePartyPersonas(llmConfig.partyPersonas);
+            if (!arr.length) return '';
             // 出场名单以底栏实际渲染的小队为准（MMS 交集后的最终名单），无底栏时退回块内「在场成员」
             const roster = partyMembers.length
                 ? partyMembers.map(p => p.name)
                 : (shopState ? shopState.presentMembers.slice() : []);
             if (!roster.length) return '';
+            const outNames = new Set(roster.map(n => String(n).trim()).filter(Boolean));
             const lines = [];
-            raw.split('\n').forEach(line => {
-                if (lines.length >= 8) return;
-                const sep = line.search(/[：:]/);
-                if (sep <= 0) return;
-                const name = line.slice(0, sep).trim();
-                const persona = line.slice(sep + 1).trim().slice(0, 120);
-                if (!name || !persona) return;
-                const hit = roster.find(p => p === name || p.includes(name) || name.includes(p));
-                if (hit) lines.push(`  ${hit}：${persona}`);
+            arr.forEach(cp => {
+                const name = String(cp.name || '').trim();
+                const prompt = String(cp.prompt || '').trim();
+                if (!name || !prompt) return;
+                if (outNames.has(name)) lines.push(`  ${name}：${prompt}`);
             });
             return lines.length ? lines.join('\n') : '';
         }
@@ -2648,6 +2693,8 @@
         // 场景触发器
         function buildSceneTrigger(scene, extra) {
             const keeper = shopState ? shopState.keeper : '店主';
+            const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
+            const mateLine = narratorOff ? '' : '，队友可插话';
             const present = shopState ? shopState.presentMembers.join('、') : partyMembers.map(p => p.name).join('、');
             const goods = shopState
                 ? shopState.items.filter(i => i.category !== '独家私藏').map(i => `${i.name}(${i.priceText})`).join('、') || '（暂无）'
@@ -2657,12 +2704,13 @@
                 // 熟客感来自好感度：仅当好感度仍贴近初始值时明确“初次会面”，防 LLM 演绎成老主顾
                 const aff = (typeof window.__shopAffection === 'number') ? window.__shopAffection : SHOP_AFFECTION_INIT;
                 const familiarity = aff <= SHOP_AFFECTION_INIT + 2
-                    ? '这是店主与这批客人的初次会面（或交情尚浅），不要把他们当熟客或老主顾。'
+                    ? '这是店主与这批客人的初次会面（或交情尚浅），不要把他们当熟客或老主顾，以“这位客人”相称。'
                     : '店主与这批小队已有旧交情（好感度见 system），可按熟客口吻演绎。';
-                return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue，队友可插话。无玩家台词，省略affection。${familiarity}]`;
+                const welcome = `逐一点名欢迎在场玩家角色（${present}），每人一句招呼，热情而不谄媚。`;
+                return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue${mateLine}。无玩家台词，省略affection。${familiarity}${welcome}]`;
             }
-            if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度），队友可插话，affection按玩家爽快程度判定。]`;
-            if (scene === 'chat') return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应，队友可插话，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。]`;
+            if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度）${mateLine}，affection按玩家爽快程度判定。]`;
+            if (scene === 'chat') return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应${mateLine}，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。]`;
             if (scene === 'bargain') return `${base}\n\n[系统指令：${extra}]`;
             return base;
         }
@@ -2828,6 +2876,7 @@
         async function callShopLLM(scene, extra) {
             if (shopLlmRequesting) throw new Error('已有 LLM 请求进行中');
             shopLlmRequesting = true;
+            showKeeperThinking();
             try {
                 const sys = buildShopSystemPrompt();
                 const floors = await collectRecentStoryFloors(2);
@@ -2850,6 +2899,7 @@
                 }
                 throw new Error('LLM 返回不是有效 JSON');
             } finally {
+                hideKeeperThinking();
                 shopLlmRequesting = false;
             }
         }
@@ -2931,6 +2981,11 @@
         async function triggerEnterReaction() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             logShopEvent('dialog', `[对话] ${keeper}抬起头，打量着刚进店的小队。`);
+            // 开场问候开关：关闭则零 token 消耗，只显示内置迎宾
+            if (llmConfig.greetEnabled === false) {
+                showKeeperDialogue(keeper, '（ Built-in 通用迎宾词 ）欢迎光临。看看有什么合用的，尽管开口。', true);
+                return;
+            }
             let result = null;
             for (let attempt = 0; attempt < 2 && !result; attempt++) {
                 if (!llmConfig.apiKey) break;
@@ -2964,11 +3019,15 @@
 
         // LLM 结果落地：白名单过滤 → 渲染 → affection 落地
         async function applyLLMResult(result) {
+            hideKeeperThinking(); // 兜底：对话渲染前确保等待气泡已移除
             const whitelist = buildSpeakerWhitelist(true); // 排除当前玩家角色
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
             const rawLines = (result.dialogue || [])
                 .filter(d => d && typeof d.text === 'string' && d.text.trim())
-                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim().slice(0, 80) }));
+                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim().slice(0, 80) }))
+                // 旁白 OFF 双保险：模型不听话仍写队友台词时，前端直接丢弃
+                .filter(d => !narratorOff || d.speaker === keeper);
             const dropped = rawLines.filter(d => !(whitelist.has(d.speaker) || d.speaker === keeper));
             if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
             const lines = rawLines.filter(d => whitelist.has(d.speaker) || d.speaker === keeper).slice(0, 4);
@@ -3014,6 +3073,32 @@
             return fuzzy || partyDeck.querySelector('.party-card');
         }
 
+        // 店主等待气泡：LLM 请求期间挂在老板立绘上的省略号提示，仅店主一处
+        function showKeeperThinking() {
+            hideKeeperThinking();
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            const anchor = (typeof blacksmithImg !== 'undefined' && blacksmithImg) ? blacksmithImg : findDialogueAnchor(keeper);
+            if (!anchor) return;
+            const rect = anchor.getBoundingClientRect();
+            const bubble = document.createElement('div');
+            bubble.id = 'keeperThinkingBubble';
+            bubble.className = 'avatar-chat-bubble keeper';
+            const name = document.createElement('span');
+            name.className = 'avatar-chat-name';
+            name.textContent = keeper;
+            bubble.appendChild(name);
+            const dots = document.createElement('span');
+            dots.innerHTML = '<span class="llm-thinking-dot">·</span><span class="llm-thinking-dot">·</span><span class="llm-thinking-dot">·</span>';
+            bubble.appendChild(dots);
+            document.body.appendChild(bubble);
+            const width = bubble.getBoundingClientRect().width;
+            bubble.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2))}px`;
+            bubble.style.top = `${Math.max(8, rect.top - bubble.getBoundingClientRect().height - 10)}px`;
+        }
+        function hideKeeperThinking() {
+            const old = document.getElementById('keeperThinkingBubble');
+            if (old) old.remove();
+        }
         function showAvatarChatBubble(speaker, text, duration = 3200) {
             const anchor = findDialogueAnchor(speaker);
             if (!anchor || !text) return Promise.resolve(false);
@@ -4029,7 +4114,8 @@
             portraitBase: "",
             avatarBase: "",
             systemPrompt: DEFAULT_WORLDVIEW,
-            partyPersonas: ""
+            partyPersonas: [],
+            greetEnabled: true
         };
 
         try {
@@ -4038,6 +4124,8 @@
                 const parsed = JSON.parse(saved);
                 // 存量迁移：旧版存的是「老板人设」出厂文本，改版后换成世界观默认值
                 if (BUILTIN_PERSONA_DEFAULTS.includes(String(parsed.systemPrompt || '').trim())) parsed.systemPrompt = DEFAULT_WORLDVIEW;
+                if (parsed.greetEnabled == null) parsed.greetEnabled = true;
+                parsed.partyPersonas = migratePartyPersonas(parsed.partyPersonas);
                 llmConfig = Object.assign(llmConfig, parsed);
             }
         } catch(e) {}
@@ -4148,12 +4236,77 @@
         const llmApiKey = document.getElementById('llmApiKey');
         const llmModel = document.getElementById('llmModel');
         const llmSystemPrompt = document.getElementById('llmSystemPrompt');
-        const llmPartyPersonas = document.getElementById('llmPartyPersonas');
+        const llmPartyPersonasList = document.getElementById('partyPersonasList');
+        const ppCount = document.getElementById('ppCount');
+        const ppAddBtn = document.getElementById('ppAddBtn');
+        const llmGreetToggle = document.getElementById('llmGreetToggle');
         const llmDebugToggle = document.getElementById('llmDebugToggle');
         const llmSaveBtn = document.getElementById('llmSaveBtn');
         const llmResetBtn = document.getElementById('llmResetBtn');
         const llmPortraitBase = document.getElementById('llmPortraitBase');
         const llmAvatarBase = document.getElementById('llmAvatarBase');
+
+        // 出场角色人设独立窗口（照搬 RpgCombat 单配置版）：每角色一行，可换行描述
+        function collectPartyPersonasFromDOM() {
+            if (!llmPartyPersonasList) return [];
+            const out = [];
+            llmPartyPersonasList.querySelectorAll('[data-pp-row]').forEach(r => {
+                const n = r.querySelector('[data-pp-name]');
+                const p = r.querySelector('[data-pp-prompt]');
+                out.push({ name: n ? n.value.trim() : '', prompt: p ? p.value.trim() : '' });
+            });
+            return out;
+        }
+        function renderPartyPersonas() {
+            const arr = Array.isArray(llmConfig.partyPersonas) ? llmConfig.partyPersonas : [];
+            if (ppCount) ppCount.textContent = arr.length ? `${arr.length} 条` : '0 条';
+            if (!llmPartyPersonasList) return;
+            llmPartyPersonasList.innerHTML = '';
+            arr.forEach((cp, idx) => {
+                const row = document.createElement('div');
+                row.setAttribute('data-pp-row', String(idx));
+                row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;background:#120b08;border:1px solid #382417;border-radius:4px;padding:8px;';
+                const nameInput = document.createElement('input');
+                nameInput.setAttribute('data-pp-name', '');
+                nameInput.placeholder = '角色名（需与在场名一致）';
+                nameInput.value = cp.name || '';
+                nameInput.className = 'form-input';
+                nameInput.style.cssText = 'width:110px;flex-shrink:0;';
+                const promptArea = document.createElement('textarea');
+                promptArea.setAttribute('data-pp-prompt', '');
+                promptArea.placeholder = '该角色的人设/发言风格（可换行，仅在场时载入）';
+                promptArea.value = cp.prompt || '';
+                promptArea.className = 'form-textarea';
+                promptArea.rows = 2;
+                promptArea.style.cssText = 'flex:1;resize:vertical;';
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.textContent = '删除';
+                delBtn.className = 'buy-btn';
+                delBtn.style.cssText = 'flex-shrink:0;background:#20150e;border-color:#5a3822;';
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:6px;min-width:0;';
+                wrap.appendChild(nameInput);
+                wrap.appendChild(promptArea);
+                row.appendChild(wrap);
+                row.appendChild(delBtn);
+                delBtn.addEventListener('click', () => removePartyPersona(idx));
+                nameInput.addEventListener('input', () => { if (llmConfig.partyPersonas[idx]) llmConfig.partyPersonas[idx].name = nameInput.value; });
+                promptArea.addEventListener('input', () => { if (llmConfig.partyPersonas[idx]) llmConfig.partyPersonas[idx].prompt = promptArea.value; });
+                llmPartyPersonasList.appendChild(row);
+            });
+        }
+        function addPartyPersona() {
+            if (!Array.isArray(llmConfig.partyPersonas)) llmConfig.partyPersonas = [];
+            llmConfig.partyPersonas.push({ name: '', prompt: '' });
+            renderPartyPersonas();
+        }
+        function removePartyPersona(idx) {
+            if (!Array.isArray(llmConfig.partyPersonas)) return;
+            llmConfig.partyPersonas.splice(idx, 1);
+            renderPartyPersonas();
+        }
+        if (ppAddBtn) ppAddBtn.addEventListener('click', addPartyPersona);
 
         // 底栏输入
         const partyDeck = document.getElementById('partyDeck');
@@ -4727,7 +4880,8 @@
             llmPortraitBase.value = llmConfig.portraitBase;
             llmAvatarBase.value = llmConfig.avatarBase;
             llmSystemPrompt.value = llmConfig.systemPrompt;
-            llmPartyPersonas.value = llmConfig.partyPersonas || '';
+            renderPartyPersonas();
+            llmGreetToggle.checked = llmConfig.greetEnabled !== false;
             llmDebugToggle.checked = LLM_DEBUG;
             llmModal.classList.add('show');
         });
@@ -4741,7 +4895,8 @@
             llmConfig.portraitBase = llmPortraitBase.value.trim();
             llmConfig.avatarBase = llmAvatarBase.value.trim();
             llmConfig.systemPrompt = llmSystemPrompt.value.trim();
-            llmConfig.partyPersonas = llmPartyPersonas.value.trim();
+            llmConfig.partyPersonas = collectPartyPersonasFromDOM().filter(p => p.name || p.prompt);
+            llmConfig.greetEnabled = llmGreetToggle.checked;
             localStorage.setItem('dd_llm_config', JSON.stringify(llmConfig));
             localStorage.setItem('shopblock_llm_debug', llmDebugToggle.checked ? '1' : '0');
             sound.playWoodClick();
@@ -4759,7 +4914,8 @@
             llmPortraitBase.value = "";
             llmAvatarBase.value = "";
             llmSystemPrompt.value = DEFAULT_WORLDVIEW;
-            llmPartyPersonas.value = "";
+            llmConfig.partyPersonas = [];
+            renderPartyPersonas();
         });
 
         btnFullscreen.addEventListener('click', () => {

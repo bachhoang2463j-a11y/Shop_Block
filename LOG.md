@@ -106,3 +106,12 @@
 | 提交 | 内容 |
 |---|---|
 | 88e567f | M13：中屏 641–880 紧凑双栏（150% 全屏保持横屏）+ midwide-harness 40 断言 + 产物重建（narrow 15/15、product 10/10 回归全绿） |
+
+## 2026-09-17 · 四件套：等待气泡/问候开关/匿名约束/人设独立窗口
+
+- **① 等待省略号气泡**：新增 `.llm-thinking-dot` 三点闪烁 CSS + `showKeeperThinking/hideKeeperThinking`，仅锚定老板立绘（复用店主分支定位）；钩子统一包 `callShopLLM`（入口显示、finally 移除），`applyLLMResult` 首行兜底。
+- **② 开场问候开关**：新增 `llmConfig.greetEnabled`（默认 true，持久化），设置页复选框；OFF 时 `triggerEnterReaction` 跳过 LLM 直接内置迎宾，零 token；ON 时 enter 指令追加逐一点名欢迎。
+- **③ 熟络前匿名**：第五节名单追加“<80 时 text 以‘这位客人’称呼、speaker 仍用真名”，第四节呼应“80 以下初识不知名”，enter 初次句追加相称；称谓用中性（无性别源）。
+- **④ 人设独立窗口**：照搬 RpgCombat 单配置版——`partyPersonas` string→`[{name,prompt}]` 数组（启动迁移旧串），设置页 textarea→details 行列表（input 名+textarea 人设可换行+删除/新增），解析改精确匹配（删 120 字截断/8条上限/双向 includes）。旁白 OFF 真正停演：拼装只演店主+名单仅店主+场景去插话+落地丢弃非店主行。
+- **token 上限**：四处（主请求默认/显式、补单、重排）900/500/400→8192。
+- **验证**：沙盒 14/14；`llm-history-harness` 36/36（含新增 6 条）；IAB 设置页目检正常；`build-regex.cjs` 构建通过。
