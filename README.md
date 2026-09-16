@@ -123,7 +123,7 @@
 | 商店 → 正文 AI | `<Shop_Record>` 进店记录（结算后填入酒馆输入框，正文续写购买/搬运过程） |
 | 商店 → 聊天变量 | `$shops`（以店名为键，中文键直存，含好感度） |
 | 商店 → MMS | 直写 `stat_data`（现金/物品）+ 事件 `mms:status-updated` + `$shop_deal_result`（含 lock 硬锁清单）+ `$shop_sync` 幂等台账（二次扣除锁） |
-| MMS → 商店 | `stat_data`（在场团队/现金/头像）、`$mms_roster`（固定角色）、`AVATAR_MAP`（头像） |
+| MMS → 商店 | `stat_data`（在场团队/现金）、`$mms_roster`（固定角色 + avatar 字段）、MMS 生效头像表（跨 iframe 共享 `MMSImages` → 只读导出键 `mms_avatar_export_v1` → 旧快照 `mms_img_data_llm_v1`） |
 | 副导演 → 商店 | `$ad_world.winds`（风声）、正文 `<Newday>`（报纸），作独立 LLM 上下文。**弱耦合可选源**：副导演未启用时自动降级为空，商店完全可用 |
 
 ---
@@ -153,7 +153,7 @@
 - 验证：harness monkey-patch Math.random 断言边界值（刚好过线/差 1 点）成败分支；二次大幅被拒时免投骰且好感 -2；好感三来源叠加与 0~100 钳制正确；斜体宣言文本格式断言。
 
 ### M6 MMS 直连桥（结算闭环，MVP 核心里程碑）
-- 内容：读 `stat_data`（回溯 ≤50 楼 + mesId 校验）取在场团队/现金/头像（AVATAR_MAP 三路取值）；结算框多选归属 UI（勾选商品→点角色头像/载具放入，确认前可撤销）；结算写现金/物品 + `eventEmit('mms:status-updated')` + `$shop_deal_result`（含 lock 硬锁清单）+ `$shop_sync` 幂等台账；购物好感每满 $5 +1 不设上限；`<Shop_Record>` 记录组装并填入酒馆输入框。
+- 内容：读 `stat_data`（回溯 ≤50 楼 + mesId 校验）取在场团队/现金/头像（六级链：MMS 共享表 → 只读导出键 → 旧快照 → 名册原值 → 本地映射 → 首字占位）；结算框多选归属 UI（勾选商品→点角色头像/载具放入，确认前可撤销）；结算写现金/物品 + `eventEmit('mms:status-updated')` + `$shop_deal_result`（含 lock 硬锁清单）+ `$shop_sync` 幂等台账；购物好感每满 $5 +1 不设上限；`<Shop_Record>` 记录组装并填入酒馆输入框。
 - 验证：harness 造 mock stat_data（含现金模块、角色列表、载具模块），完成一次多商品分归属购买，断言：现金扣对、物品落在选定角色/载具、撤销后物品回到待选池、载荷结构正确、现金不足时阻断、好感按实付金额累加、记录文本含四要素且格式正确；**重复触发结算（模拟重试/事件重放）时 `$shop_sync.lastId` 比对生效、stat_data 零二次写入**；真机：与真实 mms 状态栏同场联调，状态栏数值即时刷新。
 
 ### M7 独立 LLM 全场景 + 功能命令（增量）
