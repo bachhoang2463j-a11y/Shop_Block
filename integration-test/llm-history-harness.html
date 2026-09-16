@@ -61,10 +61,13 @@ let locked=false;try{await w.eval(`callShopLLM('chat','并发测试')`)}catch(e)
 assert(locked,'共享 LLM 请求锁阻止并发入口');
 log('== 世界观 / 人设拼装 ==','head');
 const sysDefault=w.eval(`buildShopSystemPrompt()`);
-assert(sysDefault.includes('【世界观】'),'system prompt 含世界观段落');
+assert(sysDefault.includes('## 二、世界观'),'system prompt 含世界观段落');
 assert(sysDefault.includes('1926')&&sysDefault.includes('克苏鲁'),'默认世界观注入时代与神话氛围');
 assert(!sysDefault.includes('黑市军火贩子'),'默认不再注入固定老板模板');
-assert(sysDefault.includes('店主人设：')&&sysDefault.includes('自行演绎'),'店主交由块内性格+立绘演绎');
+assert(sysDefault.includes('## 三、店主人设'),'店主交由块内性格+立绘演绎');
+assert(sysDefault.includes('## 八、输出示例'),'system prompt 含输出示例');
+assert(sysDefault.includes('"cmd":"add"'),'示例给出扁平add格式');
+assert(!/例：\{"add"/.test(sysDefault)&&!/示例.*\{"add"/.test(sysDefault),'无可抄的嵌套add示例（仅见于禁止句）');
 w.eval(`llmConfig.systemPrompt=BUILTIN_PERSONA_DEFAULTS[0]`);
 assert(!w.eval(`buildShopSystemPrompt()`).includes('黑市军火贩子'),'存量旧老板文本视同未自定义，回落世界观');
 w.eval(`llmConfig.systemPrompt='世界观：蒸汽朋克废土'`);
@@ -76,7 +79,11 @@ assert(sysParty.includes('埃利奥特：谨慎多疑的侦探'),'在场角色�
 assert(!sysParty.includes('不该出现'),'不在场角色人设不注入');
 assert(!sysParty.includes('弗兰克：一战老兵'),'不在场队友人设不注入');
 w.eval(`llmConfig.partyPersonas=''`);
-log('== 进店熟客感 ==','head');
+w.eval(`activeSpeaker={name:'埃利奥特'}`);
+const sysExcl=w.eval(`buildShopSystemPrompt()`);
+const speakLine=(sysExcl.split('\n').find(l=>l.includes('你可以让这些角色说话'))||'');
+assert(!speakLine.includes('埃利奥特'),'玩家操控角色已从可说话名单排除');
+assert(speakLine.includes('弗兰克')||speakLine.includes('老布莱克伍德'),'其余名单成员保留');
 w.eval(`window.__shopAffection=30`);
 assert(w.eval(`buildSceneTrigger('enter')`).includes('初次会面'),'好感度初始时进店标注初次会面');
 w.eval(`window.__shopAffection=70`);

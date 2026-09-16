@@ -2592,32 +2592,33 @@
             }
         }
 
-        // 组装 system prompt（四场景共用骨架）
-        // 人设层次：①世界观=设置页文本框（通用时代氛围，始终注入） ②店主人设=块内「店主性格」+ 立绘类型语气锚（LLM 自行演绎）
-        // ③出场角色人设=设置页人设表按在场名单裁剪注入；好感度决定态度基调
+        // 组装 system prompt（四场景共用骨架，八节模板：身份→契约→世界观→店主人设→好感→名单→补充人设→commands→示例）
+        // 人设层次：①世界观=设置页文本框（通用时代氛围，始终注入） ②店主人设=块内「店主性格」+ 立绘类型语气锚
+        // ③出场角色人设=设置页人设表按在场名单裁剪注入；好感度按四档数值表演绎
         function buildShopSystemPrompt() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             const persona = (shopState && shopState.keeperPersona) || '精明谨慎的店主';
-            const portrait = shopState ? shopState.portrait : '';
             const tone = (shopState && PORTRAIT_TONE[shopState.portrait]) || '';
             const rawWorldview = (llmConfig.systemPrompt || '').trim();
             const worldview = (rawWorldview && !BUILTIN_PERSONA_DEFAULTS.includes(rawWorldview)) ? rawWorldview : DEFAULT_WORLDVIEW;
             const affection = shopState ? (window.__shopAffection != null ? window.__shopAffection : 30) : 30;
             const attitude = affection >= 80 ? '熟络热络' : affection >= 50 ? '客气有礼' : affection >= 20 ? '公事公办' : '冷淡戒备';
-            const whitelist = Array.from(buildSpeakerWhitelist(false)).join('、');
+            // 名单排除玩家操控角色：代言白名单即“可说话名单”，LLM 只能从中取值
+            const whitelist = Array.from(buildSpeakerWhitelist(true)).join('、');
             const partyPersonas = buildPartyPersonaBlock();
             const parts = [
-                `你扮演1920年代克苏鲁跑团商店场景中的店主「${keeper}」与随行队友。`,
-                `【世界观】${worldview}`,
-                `店主人设：${persona}${tone ? '；说话风格：' + tone : ''}。店主形象由块内性格与立绘类型${portrait ? '「' + portrait + '」' : ''}自行演绎，不要套用其他商店的老板模板。`,
-                `当前店主对玩家的好感度：${affection}/100（态度基调：${attitude}，好感越高越热情，越低越不耐烦）。`,
-                `你可以让这些角色说话：${whitelist}。当前由玩家操控的角色除外——你绝对不能替玩家操控的角色发言，他的台词由玩家自己输入。`,
-                `输出必须是纯 JSON 本体，禁止 markdown 围栏和任何解释文字。schema：`,
-                `{"dialogue":[{"speaker":"说话人","text":"台词(≤60字)"}],"affection":-5到5的整数(玩家言行对店主好感的影响，无玩家台词时省略),"commands":[]}`,
-                `dialogue 1~4 条，店主先说，队友可插话。玩家明确询问店内没有的商品时，优先在 commands 中给出 add，不要静默拒绝；先保证 name/category/price 字段完整。` +
-                `add 的 name 必须带 emoji 前缀（格式"🧪 名字"，如"🍾 肯塔基私酿玉米酒"，emoji 贴合商品、无合适时可省略，前端无前缀默认📦）。`
+                `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主和在场队友。`,
+                `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说，队友可插话；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到5的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。`,
+                `## 二、世界观\n${worldview}`,
+                `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n说话风格：${tone}。` : ''),
+                `## 四、好感度\n当前店主对玩家的好感度：${affection}/100。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，0~19冷淡戒备。按当前分档（${attitude}）演绎，不得跳档。`,
+                `## 五、可说话名单\n你可以让这些角色说话：${whitelist}。\nspeaker只能从本名单中取值，禁止输出名单外的名字。`
             ];
-            if (partyPersonas) parts.splice(5, 0, partyPersonas);
+            if (partyPersonas) parts.push(`## 六、出场角色补充人设\n${partyPersonas}`);
+            parts.push(
+                `## 七、commands 指令规范（仅在玩家明确询问店内没有的常规补给品时输出，否则输出 []）\n- 上架指令为扁平对象：{"cmd":"add","category":"类目","name":"emoji 商品名","price":"0.50美元","count":1,"unit":"件","desc":"一句话介绍"}。\n- 字段规则：cmd 固定为 "add"；name 必须带 emoji 前缀（无合适时可省略，前端无前缀默认📦）；price 必须是 "数字+美元" 的字符串（如 "0.50美元"，禁止纯数字）；count/unit 缺省为 1/件。\n- 价格只允许出现在 price 字段，不得写进 name。`,
+                `## 八、输出示例（仅示范格式，人物与商品均为虚构，不得照抄）\n{"dialogue":[{"speaker":"示例店主","text":"要看点什么？新到的货都在柜上。"},{"speaker":"示例队友","text":"这家的东西一向实在。"}],"affection":1,"commands":[{"cmd":"add","category":"生活用品","name":"🧺 示例毛巾","price":"0.50美元","count":1,"unit":"条","desc":"吸水耐用的粗棉毛巾"}]}`
+            );
             return parts.join('\n');
         }
 
@@ -2641,7 +2642,7 @@
                 const hit = roster.find(p => p === name || p.includes(name) || name.includes(p));
                 if (hit) lines.push(`  ${hit}：${persona}`);
             });
-            return lines.length ? `【出场角色补充人设】\n${lines.join('\n')}` : '';
+            return lines.length ? lines.join('\n') : '';
         }
 
         // 场景触发器
@@ -2768,7 +2769,7 @@
             try {
                 if (LLM_DEBUG) {
                     console.info(`${tag} 请求参数`, { endpoint, model: llmConfig.model, temperature, max_tokens: maxTokens });
-                    const sysSecs = splitShopPrompt(sysText, ['【世界观】', '店主人设', '当前店主对玩家的好感度', '你可以让这些角色说话', '输出必须是纯 JSON', '【出场角色补充人设】']);
+                    const sysSecs = splitShopPrompt(sysText, ['## 一、', '## 二、', '## 三、', '## 四、', '## 五、', '## 六、', '## 七、', '## 八、']);
                     console.info(`${tag} ── system（${sysText.length}字，分${sysSecs.length}节）──`);
                     sysSecs.forEach((s, i) => console.info(`  [sys ${i + 1}/${sysSecs.length}] ${s.title}（${s.body.length}字）\n${s.body}`));
                     const userSecs = splitShopPrompt(userText, ['【最近剧情】', '【市面风声】', '【近日报纸】', '【在场成员】', '[系统指令']);
