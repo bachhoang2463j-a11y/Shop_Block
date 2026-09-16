@@ -178,6 +178,7 @@
 - `build-regex.cjs`：产物构建脚本（`node build-regex.cjs`，围栏断言 + & 实体免疫 + 结构哨兵）。
 - `integration-test/duo-harness.html`：与 MMS 双组件联动回归（25 断言）。
 - `integration-test/poll-harness.html`：楼层块自动捕获 + MMS 三态（在场/缺失/零匹配）回归，走产物管线（35 断言）。
+- `integration-test/avatar-harness.html`：头像取值链回归（27 断言）。验证：MMS 生效表导出落盘且只含 avatar、initializeGlobal 共享句柄活引用（名册覆盖后即时可见）、ShopBlock 侧六级链（共享表 → 导出键 → 旧快照 → 名册原值 → 本地映射 → 首字占位）、名册值三种形态（名称键/完整 URL/裸文件名）、中文名不再拼成本地坏链、归属面板与底栏同源。IAB 内用 parent 注册表实现同语义 stub。
 - 立绘资源：本地服务器 `D:\Project\my_assets\shop_resources\`（8766 端口），头像 `D:\Project\my_assets\头像\`。
 
 ### 构建与导入
