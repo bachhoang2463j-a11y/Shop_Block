@@ -1763,13 +1763,16 @@
             }
             :root:fullscreen .shelf-cell, :fullscreen .shelf-cell { height: 108px; }
         }
+        /* 全屏+矮视高：只压矮展台最小高度，立绘沿用填充式 cover（与上方
+           1280 档一致）——不能再钳 img 固定高，否则底对齐下立绘缩在底部、
+           上方大片空洞（150% 全屏实测根因）。 */
         @media (max-height: 720px) {
             :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 300px; }
-            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 220px; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: none; height: 100%; width: 100%; object-fit: cover; object-position: center top; }
         }
         @media (max-height: 560px) {
             :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 230px; }
-            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 170px; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: none; height: 100%; width: 100%; object-fit: cover; object-position: center top; }
         }
     </style>
 </head>
