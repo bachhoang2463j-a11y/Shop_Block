@@ -189,7 +189,7 @@
         main {
             flex: 1;
             display: grid;
-            grid-template-columns: 430px 1fr;
+            grid-template-columns: minmax(300px, 430px) minmax(0, 1fr);
             gap: 20px;
             padding: 14px 24px;
             max-width: 1700px;
@@ -347,6 +347,7 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            min-width: 0;
         }
 
         .cabinet-header {
@@ -431,6 +432,7 @@
             border: none;
             box-shadow: none;
             position: relative;
+            min-width: 0;
             /* 柜内独立滚动：可视区固定约 4 行高度，超量只在柜内纵滚 */
             max-height: 496px;
             overflow-y: auto;
@@ -1498,6 +1500,44 @@
         }
 
         /* ====================================================
+           桌面高缩放档（881–1280px）：1920 宽 @150% 等效 CSS 宽约 1280px，
+           仍在默认 5 列档，会横向溢出被 body 裁掉。此档提前降为 4 列、
+           收窄左栏并允许顶栏/分类头换行；≤880px 的中屏档在后覆盖更窄情况。
+        ==================================================== */
+        @media (min-width: 881px) and (max-width: 1280px) {
+            main {
+                grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+                gap: 14px;
+                padding: 12px 16px;
+            }
+            .blacksmith-stage { min-height: 420px; }
+            .blacksmith-img { max-height: 300px; }
+
+            /* 顶栏：宽度紧张时换行，防胶囊按钮被横向裁掉 */
+            header { flex-wrap: wrap; gap: 8px 12px; }
+            .header-controls { flex-wrap: wrap; gap: 8px 14px; }
+
+            /* 分类头：货柜变窄，提示文字让位、标签允许换行 */
+            .cabinet-header { flex-wrap: wrap; padding: 5px 8px; gap: 4px 6px; }
+            .cabinet-tip > span { display: none; }
+
+            /* 货柜：5列→4列，行高与可视高度同步收缩（保持柜内滚动） */
+            .wooden-cabinet {
+                grid-template-columns: repeat(4, 1fr);
+                grid-auto-rows: 108px;
+                gap: 8px;
+                max-height: 464px;
+            }
+            .shelf-cell { height: 108px; }
+
+            /* 底栏：仍左右横排（头像 + 购物车），头像卡收紧给购物车让位 */
+            .console-upper-row { grid-template-columns: auto minmax(0, 1fr); gap: 14px; }
+            .party-card { width: 80px; height: 88px; }
+            .cart-actions span { display: none; }
+            .cart-panel { min-width: 0; }
+        }
+
+        /* ====================================================
            中屏紧凑双栏（641–880px）：浏览器缩放（如 150%）把 CSS 视口宽
            压进这一档，若沿用旧 ≤880px 单栏判定，高缩放全屏会变竖排。
            此档保留左右双栏：左栏收窄、立绘压矮、货柜 5→4 列；≤640px 才单栏。
@@ -1703,6 +1743,22 @@
         }
 
         /* 全屏也可能处在高缩放短视高环境，不能用上面的 520px 规则撑开页面。 */
+        @media (max-width: 1280px) {
+            :root:fullscreen main, :fullscreen main {
+                grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+                gap: 14px;
+                padding: 12px 16px;
+            }
+            :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 420px; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 300px; }
+            :root:fullscreen .wooden-cabinet, :fullscreen .wooden-cabinet {
+                grid-template-columns: repeat(4, 1fr);
+                grid-auto-rows: 108px;
+                gap: 8px;
+                max-height: 464px;
+            }
+            :root:fullscreen .shelf-cell, :fullscreen .shelf-cell { height: 108px; }
+        }
         @media (max-height: 720px) {
             :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 300px; }
             :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 220px; }

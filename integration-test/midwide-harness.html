@@ -31,8 +31,12 @@
         <iframe id="frame-700" width="700" height="760"></iframe>
     </div>
     <div class="frame-box" style="width: 920px;">
-        <div class="frame-cap">920px · &gt;880px 基线回归（左栏 430 + 货柜 5 列）</div>
+        <div class="frame-cap">920px · 881–1280 高缩放档回归（左栏 280–360 + 货柜 4 列）</div>
         <iframe id="frame-920" width="920" height="760"></iframe>
+    </div>
+    <div class="frame-box" style="width: 1366px;">
+        <div class="frame-cap">1366px · &gt;1280px 基线回归（左栏 430 + 货柜 5 列）</div>
+        <iframe id="frame-1366" width="1366" height="760"></iframe>
     </div>
 </div>
 <div id="log"></div>
@@ -203,13 +207,14 @@ async function runFlow() {
     passCount = failCount = 0;
     document.getElementById('summary').textContent = '';
 
-    // 档位定义：width + height + 期望（compact = 641–880 紧凑双栏；base = >880 基线）
+    // 档位定义：compact = 641–880 紧凑双栏；zoom = 881–1280 高缩放档；base = >1280 基线）
     const FRAMES = [
         { w: 853, h: 760, tier: 'compact', label: '常规视高' },
         { w: 853, h: 600, tier: 'compact', label: '短视高' },
         { w: 853, h: 480, tier: 'compact', label: '极短视高' },
         { w: 700, h: 600, tier: 'compact', label: '窄中屏短视高' },
-        { w: 920, h: 760, tier: 'base', label: '基线' }
+        { w: 920, h: 760, tier: 'zoom', label: '高缩放档' },
+        { w: 1366, h: 760, tier: 'base', label: '基线' }
     ];
 
     for (const f of FRAMES) {
@@ -219,6 +224,7 @@ async function runFlow() {
 
         const g = measure(f.w);
         const compact = f.tier === 'compact';
+        const zoom = f.tier === 'zoom';
 
         assert(g.vw >= f.w - 16 && g.vw <= f.w, '[' + f.w + '] 视口宽 ' + g.vw + 'px（基线 ' + f.w + ' 含滚动条让位）');
         assert(g.docOverflowX <= 1, '[' + f.w + '] 文档无横向溢出（差 ' + g.docOverflowX + 'px）');
@@ -236,6 +242,13 @@ async function runFlow() {
             }
             assert(g.consoleCols === 2, '[' + f.w + '] 底栏仍左右横排（track 数 ' + g.consoleCols + '）');
             assert(g.tipHidden, '[' + f.w + '] 分类头操作提示已隐藏（只留重排按钮）');
+        } else if (zoom) {
+            assert(g.mainLeftW >= 280 && g.mainLeftW <= 361, '[' + f.w + '] 高缩放左栏收窄 280–360px（实际 ' + g.mainLeftW + 'px）');
+            assert(g.cabCols === 4, '[' + f.w + '] 高缩放货柜 4 列（实际 ' + g.cabCols + '，基线 5 列）');
+            assert(g.cabMaxH === '464px', '[' + f.w + '] 高缩放货柜可视高 464px（实际 ' + g.cabMaxH + '）');
+            assert(g.stageH >= 420, '[' + f.w + '] 高缩放立绘展台 ≥420px（实际 ' + g.stageH + 'px）');
+            assert(g.consoleCols === 2, '[' + f.w + '] 高缩放底栏仍左右横排（track 数 ' + g.consoleCols + '）');
+            assert(g.tipHidden, '[' + f.w + '] 高缩放分类头操作提示已隐藏（只留重排按钮）');
         } else {
             assert(g.mainLeftW >= 420 && g.mainLeftW <= 440, '[' + f.w + '] 基线左栏 430px 未被污染（实际 ' + g.mainLeftW + 'px）');
             assert(g.cabCols === 5, '[' + f.w + '] 基线货柜 5 列（实际 ' + g.cabCols + '）');
