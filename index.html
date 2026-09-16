@@ -2196,7 +2196,7 @@
                 <label class="form-label">LLM 调试日志:</label>
                 <label style="display:flex;align-items:center;gap:8px;color:#c9a86a;font-size:12px;cursor:pointer;">
                     <input type="checkbox" id="llmDebugToggle" style="accent-color:#dfb06c;">
-                    输出最近一次请求的完整 prompt、response 和 finish_reason（保存后刷新生效）
+                    输出最近一次请求的完整 prompt、response 和 finish_reason（保存后刷新生效；控制台过滤 [ShopBlock LLM] 展开分组查看）
                 </label>
             </div>
 
@@ -2721,42 +2721,102 @@
             try { return localStorage.getItem('shopblock_llm_debug') === '1'; }
             catch (e) { return false; }
         })();
-        function llmLog(label, value) {
-            if (LLM_DEBUG) console.info(`[ShopBlock LLM] ${label}`, value);
+        let shopLlmSeq = 0;
+        function nextShopLlmId() {
+            shopLlmSeq += 1;
+            return `#${shopLlmSeq}`;
+        }
+        function llmStamp() {
+            try { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
+            catch (e) { return ''; }
+        }
+        // 日志侧分节：只切展示，不动发给模型的字节
+        function splitShopPrompt(text, markers) {
+            const src = String(text == null ? '' : text);
+            const hits = [];
+            markers.forEach(m => {
+                const i = src.indexOf(m);
+                if (i >= 0) hits.push({ m, i });
+            });
+            hits.sort((a, b) => a.i - b.i);
+            if (!hits.length) return [{ title: '全文', body: src }];
+            const secs = [];
+            if (hits[0].i > 0) secs.push({ title: '开头', body: src.slice(0, hits[0].i) });
+            hits.forEach((h, k) => {
+                const end = k + 1 < hits.length ? hits[k + 1].i : src.length;
+                secs.push({ title: h.m, body: src.slice(h.i, end) });
+            });
+            return secs;
+        }
+        function llmPrettyJson(text) {
+            try { return JSON.stringify(JSON.parse(text), null, 2); }
+            catch (e) { return String(text == null ? '' : text); }
         }
 
         async function requestShopLlm(sys, user, options = {}) {
             const messages = options.messages || [{ role: 'system', content: sys }, { role: 'user', content: user }];
-            llmLog('request', { messages, max_tokens: options.maxTokens || 900, temperature: options.temperature == null ? 0.7 : options.temperature });
-            const response = await fetch(`${llmConfig.apiBase.replace(/\/+$/, '')}/chat/completions`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(llmConfig.apiKey ? { 'Authorization': `Bearer ${llmConfig.apiKey}` } : {})
-                },
-                body: JSON.stringify({
-                    model: llmConfig.model,
-                    messages,
-                    temperature: options.temperature == null ? 0.7 : options.temperature,
-                    max_tokens: options.maxTokens || 900
-                })
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const data = await response.json();
-            const choice = data.choices && data.choices[0];
-            const text = choice && choice.message && choice.message.content;
-            if (!text) throw new Error('空回复');
-            lastShopLlmMeta = { finishReason: choice.finish_reason || null, usage: data.usage || null };
-            llmLog('response', { text, ...lastShopLlmMeta });
-            return { data, text, finishReason: lastShopLlmMeta.finishReason };
+            const maxTokens = options.maxTokens || 900;
+            const temperature = options.temperature == null ? 0.7 : options.temperature;
+            const scene = options.scene || 'unknown';
+            const reqId = options.requestId || nextShopLlmId();
+            const tag = `[ShopBlock LLM] ${reqId} ${options.supplement ? '补单/' : ''}${scene} ${llmStamp()}`;
+            const endpoint = `${llmConfig.apiBase.replace(/\/+$/, '')}/chat/completions`;
+            const sysText = sys != null ? String(sys) : String((messages.find(m => m.role === 'system') || {}).content || '');
+            const userText = user != null ? String(user) : String((messages.filter(m => m.role === 'user').pop() || {}).content || '');
+            const groupOn = LLM_DEBUG && typeof console.groupCollapsed === 'function';
+            if (groupOn) console.groupCollapsed(tag);
+            try {
+                if (LLM_DEBUG) {
+                    console.info(`${tag} 请求参数`, { endpoint, model: llmConfig.model, temperature, max_tokens: maxTokens });
+                    const sysSecs = splitShopPrompt(sysText, ['【世界观】', '店主人设', '当前店主对玩家的好感度', '你可以让这些角色说话', '输出必须是纯 JSON', '【出场角色补充人设】']);
+                    console.info(`${tag} ── system（${sysText.length}字，分${sysSecs.length}节）──`);
+                    sysSecs.forEach((s, i) => console.info(`  [sys ${i + 1}/${sysSecs.length}] ${s.title}（${s.body.length}字）\n${s.body}`));
+                    const userSecs = splitShopPrompt(userText, ['【最近剧情】', '【市面风声】', '【近日报纸】', '【在场成员】', '[系统指令']);
+                    console.info(`${tag} ── user（${userText.length}字，分${userSecs.length}节）──`);
+                    userSecs.forEach((s, i) => console.info(`  [user ${i + 1}/${userSecs.length}] ${s.title}（${s.body.length}字）\n${s.body}`));
+                    console.info(`${tag} Final messages pretty-JSON:\n` + JSON.stringify(messages, null, 2));
+                }
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(llmConfig.apiKey ? { 'Authorization': `Bearer ${llmConfig.apiKey}` } : {})
+                    },
+                    body: JSON.stringify({
+                        model: llmConfig.model,
+                        messages,
+                        temperature,
+                        max_tokens: maxTokens
+                    })
+                });
+                if (!response.ok) {
+                    if (LLM_DEBUG) console.error(`${tag} HTTP 错误`, response.status);
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                const choice = data.choices && data.choices[0];
+                const text = choice && choice.message && choice.message.content;
+                if (!text) {
+                    if (LLM_DEBUG) console.error(`${tag} 空回复`, data);
+                    throw new Error('空回复');
+                }
+                lastShopLlmMeta = { finishReason: choice.finish_reason || null, usage: data.usage || null };
+                if (LLM_DEBUG) {
+                    console.info(`${tag} response pretty-JSON:\n` + llmPrettyJson(text));
+                    console.info(`${tag} finish_reason/usage`, lastShopLlmMeta);
+                }
+                return { data, text, finishReason: lastShopLlmMeta.finishReason };
+            } finally {
+                if (groupOn && typeof console.groupEnd === 'function') console.groupEnd();
+            }
         }
 
-        async function requestMissingCommands(sys, user, priorText) {
+        async function requestMissingCommands(sys, user, priorText, meta = {}) {
             const supplement = `${user}\n\n上一条回复可能因长度截断，原文如下：\n${priorText}\n\n只补全 commands 字段，输出纯 JSON：{"commands":[{"cmd":"add","category":"类目","name":"🧪 商品名","price":"0.00美元","count":1,"unit":"件","desc":"简短介绍"}]}。若没有上架命令则输出 {"commands":[]}`;
             const result = await requestShopLlm(
                 '你是商店 JSON 修复器。只补齐被截断的 commands，不重复输出 dialogue，不写解释。',
                 supplement,
-                { maxTokens: 500 }
+                { maxTokens: 500, scene: meta.scene || 'unknown', requestId: meta.requestId, supplement: true }
             );
             return extractJsonLoose(result.text);
         }
@@ -2774,12 +2834,13 @@
                 const story = floors.length ? `\n【最近剧情】\n${floors.join('\n---\n')}\n` : '';
                 const optPart = optional ? `\n${optional}\n` : '';
                 const user = `${story}${optPart}${buildSceneTrigger(scene, extra)}`;
-                const result = await requestShopLlm(sys, user, { maxTokens: 900 });
+                const requestId = nextShopLlmId();
+                const result = await requestShopLlm(sys, user, { maxTokens: 900, scene, requestId });
                 const parsed = extractJsonLoose(result.text);
                 if (parsed) return parsed;
                 if (result.finishReason === 'length') {
                     try {
-                        const supplement = await requestMissingCommands(sys, user, result.text);
+                        const supplement = await requestMissingCommands(sys, user, result.text, { scene, requestId });
                         if (supplement && Array.isArray(supplement.commands)) return { dialogue: [], commands: supplement.commands, _supplemented: true };
                     } catch (e) {
                         logShopEvent('error', 'LLM 返回被截断，commands 补全失败：' + e.message);
