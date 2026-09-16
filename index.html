@@ -2184,10 +2184,19 @@
 
             <div class="form-group">
                 <label class="form-label">老板系统人设 (System Persona):</label>
-                <textarea class="form-textarea" id="llmSystemPrompt" rows="3">你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，你都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。</textarea>
+                <textarea class="form-textarea" id="llmSystemPrompt" rows="3">你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。</textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">LLM 调试日志:</label>
+                <label style="display:flex;align-items:center;gap:8px;color:#c9a86a;font-size:12px;cursor:pointer;">
+                    <input type="checkbox" id="llmDebugToggle" style="accent-color:#dfb06c;">
+                    输出最近一次请求的完整 prompt、response 和 finish_reason（保存后刷新生效）
+                </label>
             </div>
 
             <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+
                 <button class="buy-btn" id="llmResetBtn" style="background:#20150e; border-color:#5a3822;">恢复默认</button>
                 <button class="buy-btn" id="llmSaveBtn">保存配置</button>
             </div>
@@ -2882,7 +2891,7 @@
                     catch (e) { outcome = { ok: false, reason: e.message || '未知异常' }; }
                     if (!outcome.ok) {
                         console.warn('[ShopBlock] add 未上架:', outcome.reason, cmd);
-                        logShopEvent('error', `[上架失败] ${outcome.reason}`);
+                        logShopEvent('error', `[命令格式异常] ${outcome.reason}`);
                     }
                 }
             }
@@ -2963,7 +2972,7 @@
 
         // add 命令处理：跑通期开关旁路非最小约束，始终返回可观察结果
         function applyAddCommand(cmd) {
-            if (!cmd || cmd.cmd !== 'add') return { ok: false, reason: '命令不是 add' };
+            if (!cmd || cmd.cmd !== 'add') return { ok: false, reason: 'LLM 命令格式异常：commands 项缺少 cmd:"add"' };
             if (!shopState) return { ok: false, reason: '当前没有已载入的商店' };
             const rawName = String(cmd.name || '').trim();
             const parsed = getCleanNameAndEmoji(rawName);
@@ -4028,6 +4037,7 @@
         const llmApiKey = document.getElementById('llmApiKey');
         const llmModel = document.getElementById('llmModel');
         const llmSystemPrompt = document.getElementById('llmSystemPrompt');
+        const llmDebugToggle = document.getElementById('llmDebugToggle');
         const llmSaveBtn = document.getElementById('llmSaveBtn');
         const llmResetBtn = document.getElementById('llmResetBtn');
         const llmPortraitBase = document.getElementById('llmPortraitBase');
@@ -4605,6 +4615,7 @@
             llmPortraitBase.value = llmConfig.portraitBase;
             llmAvatarBase.value = llmConfig.avatarBase;
             llmSystemPrompt.value = llmConfig.systemPrompt;
+            llmDebugToggle.checked = LLM_DEBUG;
             llmModal.classList.add('show');
         });
         llmCloseBtn.addEventListener('click', () => llmModal.classList.remove('show'));
@@ -4618,6 +4629,7 @@
             llmConfig.avatarBase = llmAvatarBase.value.trim();
             llmConfig.systemPrompt = llmSystemPrompt.value.trim();
             localStorage.setItem('dd_llm_config', JSON.stringify(llmConfig));
+            localStorage.setItem('shopblock_llm_debug', llmDebugToggle.checked ? '1' : '0');
             sound.playWoodClick();
             llmModal.classList.remove('show');
             // 根 URL 变更后按当前商店刷新立绘与头像
