@@ -1407,10 +1407,42 @@
             padding: 6px 4px;
         }
 
-        @media (max-width: 880px) {
-            main { grid-template-columns: 1fr; }
-            .blacksmith-stage { min-height: 400px; }
-            .console-upper-row { grid-template-columns: 1fr; }
+        /* ====================================================
+           中屏紧凑双栏（641–880px）：浏览器缩放（如 150%）把 CSS 视口宽
+           压进这一档，若沿用旧 ≤880px 单栏判定，高缩放全屏会变竖排。
+           此档保留左右双栏：左栏收窄、立绘压矮、货柜 5→4 列；≤640px 才单栏。
+        ==================================================== */
+        @media (min-width: 641px) and (max-width: 880px) {
+            main {
+                grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+                gap: 14px;
+                padding: 12px 14px;
+            }
+            .blacksmith-stage { min-height: 420px; }
+            .blacksmith-img { max-height: 300px; }
+
+            /* 顶栏：宽度紧张时换行（853px 下不触发，仅窄侧兜底防横向溢出） */
+            header { flex-wrap: wrap; gap: 8px 12px; }
+            .header-controls { flex-wrap: wrap; gap: 8px 14px; }
+
+            /* 分类头：货柜变窄，提示文字让位、标签允许换行 */
+            .cabinet-header { flex-wrap: wrap; padding: 5px 8px; gap: 4px 6px; }
+            .cabinet-tip > span { display: none; }
+
+            /* 货柜：5列→4列，行高与可视高度同步收缩（保持柜内滚动） */
+            .wooden-cabinet {
+                grid-template-columns: repeat(4, 1fr);
+                grid-auto-rows: 108px;
+                gap: 8px;
+                max-height: 464px;
+            }
+            .shelf-cell { height: 108px; }
+
+            /* 底栏：仍左右横排（头像 + 购物车），头像卡收紧给购物车让位 */
+            .console-upper-row { grid-template-columns: auto minmax(0, 1fr); gap: 14px; }
+            .party-card { width: 80px; height: 88px; }
+            .cart-actions span { display: none; }
+            .cart-panel { min-width: 0; }
         }
 
         /* ====================================================
@@ -1438,8 +1470,8 @@
             .top-pill-group { gap: 6px; flex-wrap: wrap; }
             .top-pill-btn { padding: 5px 10px; font-size: 11px; }
 
-            /* 主体：留白收紧，立绘展台压矮 */
-            main { padding: 10px 8px; gap: 12px; }
+            /* 主体：唯一单栏档（≤640 手机竖屏），留白收紧，立绘展台压矮 */
+            main { grid-template-columns: 1fr; padding: 10px 8px; gap: 12px; }
             .blacksmith-stage { min-height: 280px; }
             .blacksmith-img { max-height: 230px; }
 
@@ -1462,6 +1494,7 @@
 
             /* 底栏：头像卡缩小防溢出，购物车提示文字让位 */
             .bottom-console { padding: 8px 10px 10px 10px; gap: 8px; }
+            .console-upper-row { grid-template-columns: 1fr; }
             .party-deck { gap: 6px; }
             .party-card { width: 72px; height: 80px; }
             .env-notice { font-size: 11px; padding: 4px 10px; max-width: 94vw; }
