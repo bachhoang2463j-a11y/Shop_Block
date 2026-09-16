@@ -1407,7 +1407,7 @@
             padding: 6px 4px;
         }
 
-        @media (max-width: 1200px) {
+        @media (max-width: 880px) {
             main { grid-template-columns: 1fr; }
             .blacksmith-stage { min-height: 400px; }
             .console-upper-row { grid-template-columns: 1fr; }
@@ -1482,8 +1482,9 @@
         }
 
         /* ====================================================
-           全屏强制横屏：150% 缩放全屏 CSS 宽被压缩仍保持左右双栏，
-           覆盖 1200px 断点的单栏。非全屏/手机/侧栏挤压原样走断点。
+           全屏强制横屏：兜底全屏伪类（如宿主透传全屏），
+           高缩放全屏 CSS 宽被压缩仍保持左右双栏。
+           常规阈值已放宽至 880px，非全屏/手机/侧栏挤压原样走断点。
         ==================================================== */
         :root:fullscreen main, :fullscreen main {
             grid-template-columns: minmax(340px, 430px) minmax(0, 1fr);
