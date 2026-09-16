@@ -2860,7 +2860,8 @@
                 const btn = document.createElement('button');
                 btn.className = 'input-action-btn';
                 btn.style.cssText = 'flex-direction:row; gap:4px; padding:4px 8px; font-size:11px;';
-                btn.innerHTML = `${t.kind === 'vehicle' ? '🚙' : (t.avatar ? `<img src="${avatarUrl(t.avatar)}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;">` : '🧑')} ${t.name}`;
+                const tAvatar = t.kind === 'vehicle' ? null : resolveMemberAvatar({ name: t.name, avatar: t.avatar });
+                btn.innerHTML = `${t.kind === 'vehicle' ? '🚙' : (tAvatar ? `<img src="${tAvatar}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;">` : '🧑')} ${t.name}`;
                 btn.addEventListener('click', () => assignPickedTo(t));
                 targetsBox.appendChild(btn);
             });
@@ -3284,43 +3285,94 @@
         }
         let partyMembers = demoPartyMembers();
 
-        // MMS 头像表：与 MMS 同源共享 localStorage（LLM 版的 mms_img_data_llm_v1 快照，
-        // 完整版移植该方案后同 key 生效）。快照损坏静默回退空表 → 本地 my_assets 兜底。
-        const MMS_IMG_STORE_KEY = 'mms_img_data_llm_v1';
-        let mmsAvatarMap = null;
+        // ====================================================
+        // 头像取值（SPEC 第五节）：MMS 为唯一权威源
+        // ====================================================
+        // MMS 生效头像表 = 它的内存 AVATAR_MAP（内置 CDN 表 + 名册覆盖 + 图片管理改动），
+        // 经酒馆助手跨 iframe 接口 initializeGlobal('MMSImages') 共享；拿不到共享句柄时退回
+        // MMS 落盘的只读导出键，再退回旧版 MMS 的本机快照（图片管理编辑表，不含名册覆盖）。
+        const MMS_IMG_STORE_KEY = 'mms_img_data_llm_v1';       // 旧版 MMS 本机快照
+        const MMS_AVATAR_EXPORT_KEY = 'mms_avatar_export_v1';  // MMS 只读导出键（含名册覆盖）
+        let mmsImages = null;      // MMS 共享句柄：{ avatarMap, resolveAvatar(name) }
+        let mmsAvatarMap = null;   // 导出键/快照解析出的表（无共享句柄时的降级源）
+
+        // 本地 my_assets 兜底：仅当 MMS 各源全空且角色名命中下表时使用（最后兜底，非权威）
+        const LOCAL_AVATAR_FALLBACK = { '埃利奥特': 'Eil.png', '弗兰克': 'Frank.png', '玛德琳': 'chen.png', '索恩': 'suoen_compressed.png' };
+
+        function plainName(name) {
+            return String(name == null ? '' : name).replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').trim(); // 去emoji前缀
+        }
+        function avatarBaseDir() {
+            return (llmConfig.avatarBase || 'http://127.0.0.1:8766/头像').trim().replace(/\/+$/, '');
+        }
+        // 表内按名模糊匹配（与 MMS resolveAvatarUrl 同口径：全等优先，再双向包含）
+        function mmsMapLookup(map, name) {
+            if (!map || !name) return null;
+            const plain = plainName(name);
+            const keys = Object.keys(map);
+            const hit = keys.find(k => k === plain) || keys.find(k => plain.includes(k) || k.includes(plain));
+            return hit ? map[hit] : null;
+        }
         function loadMmsAvatarMap() {
-            try {
-                const stored = JSON.parse(localStorage.getItem(MMS_IMG_STORE_KEY));
-                if (stored && typeof stored === 'object' && stored.avatar) mmsAvatarMap = stored.avatar;
-                else mmsAvatarMap = null;
-            } catch (e) { mmsAvatarMap = null; }
+            mmsAvatarMap = null;
+            for (const key of [MMS_AVATAR_EXPORT_KEY, MMS_IMG_STORE_KEY]) {
+                try {
+                    const stored = JSON.parse(localStorage.getItem(key));
+                    if (stored && typeof stored === 'object' && stored.avatar) { mmsAvatarMap = stored.avatar; return; }
+                } catch (e) { /* 该键损坏：试下一个 */ }
+            }
         }
         loadMmsAvatarMap();
 
-        // 名字 → 头像 URL 三路取值（SPEC 第五节）：
-        // ① MMS 头像表（localStorage 快照，含用户增删改）② 名册/聊天变量 avatar 字段直连
-        // ③ 本地 my_assets 兜底（avatarBase + 已知文件名映射）
-        const LOCAL_AVATAR_FALLBACK = { '埃利奥特': 'Eil.png', '弗兰克': 'Frank.png', '玛德琳': 'chen.png', '索恩': 'suoen_compressed.png' };
-        function mmsAvatarLookup(name) {
-            if (!mmsAvatarMap || !name) return null;
-            const plain = String(name).replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '').trim(); // 去emoji前缀
-            const keys = Object.keys(mmsAvatarMap);
-            const hit = keys.find(k => k === plain) || keys.find(k => plain.includes(k) || k.includes(plain));
-            return hit ? mmsAvatarMap[hit] : null;
+        // 订阅 MMS 共享句柄：MMS 未渲染时 waitGlobalInitialized 会长期挂起，故不 await——
+        // 就绪后重渲染底栏（fire-and-forget，不阻塞首屏；MMS iframe 换实例时靠下次同步重订阅）。
+        function subscribeMmsImages() {
+            loadMmsAvatarMap();
+            if (typeof waitGlobalInitialized !== 'function') return;
+            Promise.resolve()
+                .then(() => waitGlobalInitialized('MMSImages'))
+                .then(handle => {
+                    if (!handle || handle === mmsImages) return;
+                    mmsImages = handle;
+                    refreshPartyAvatars(); // 拿到权威表 → 重渲染
+                })
+                .catch(() => { /* 无共享句柄：按本机表降级 */ });
         }
 
-        // 旧接口保留：完整 URL 直通，否则本地兜底根 URL 拼接
-        function avatarUrl(file) {
-            const base = (llmConfig.avatarBase || 'http://127.0.0.1:8766/头像').trim().replace(/\/+$/, '');
-            return file && /^https?:\/\//.test(file) ? file : `${base}/${file}`;
+        // 名字 → 头像 URL：MMS 共享表（权威）→ 导出键/本机快照 → null
+        function mmsResolveByName(name) {
+            if (!name) return null;
+            if (mmsImages) {
+                try {
+                    const byShare = mmsImages.resolveAvatar ? mmsImages.resolveAvatar(name) : '';
+                    if (byShare) return byShare;
+                    const hit = mmsMapLookup(mmsImages.avatarMap, name);
+                    if (hit) return hit;
+                } catch (e) { /* 共享句柄失效：退回本机表 */ }
+            }
+            return mmsMapLookup(mmsAvatarMap, name);
         }
 
-        // 角色（可能带 emoji 前缀名）→ 最终头像 URL：MMS 表 → 名册值 → 本地映射 → 首字 emoji 占位
+        // 名册/映射里的原始值 → 可用 URL：完整 URL 直通 → 按名查 MMS 表（MMS 输入框接受「名称 / 网址」）
+        // → 像文件名的才拼本地兜底根 → 其余返回 null（不再拼出不存在的本地路径）
+        function avatarValueUrl(value) {
+            const v = String(value == null ? '' : value).trim();
+            if (!v) return null;
+            if (/^https?:\/\//i.test(v)) return v;
+            const byName = mmsResolveByName(v);
+            if (byName) return byName;
+            return /\.[a-z0-9]{2,5}$/i.test(v) ? `${avatarBaseDir()}/${v}` : null;
+        }
+
+        // 成员（可能带 emoji 前缀名）→ 最终头像 URL：MMS 表 → 名册原值 → 本地映射 → 首字 emoji 占位
         function resolveMemberAvatar(member) {
-            return mmsAvatarLookup(member.name)
-                || (member.avatar ? avatarUrl(member.avatar) : null)
-                || (LOCAL_AVATAR_FALLBACK[member.name.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '')] ? avatarUrl(LOCAL_AVATAR_FALLBACK[member.name.replace(/^[^\u4e00-\u9fa5A-Za-z0-9]+/, '')]) : null)
-                || null; // null = 首字 emoji 占位（渲染层处理）
+            if (!member) return null;
+            const byName = mmsResolveByName(member.name);
+            if (byName) return byName;
+            const byValue = avatarValueUrl(member.avatar);
+            if (byValue) return byValue;
+            const localFile = LOCAL_AVATAR_FALLBACK[plainName(member.name)];
+            return localFile ? `${avatarBaseDir()}/${localFile}` : null; // null = 首字 emoji 占位
         }
 
         // 底栏角色卡由成员列表动态渲染（MMS stat_data 角色列表覆盖写死的四人）
@@ -3370,7 +3422,7 @@
         let partySyncSeq = 0;
         async function syncPartyFromMms() {
             const seq = ++partySyncSeq;
-            loadMmsAvatarMap(); // 每次同步重读快照（MMS 侧用户改图后无需刷新商店）
+            subscribeMmsImages(); // 每次同步重读本机表并（重）订阅共享句柄：MMS 侧改图/换实例后无需刷新商店
             const ctx = await loadMmsContext();
             if (seq !== partySyncSeq) return; // 更晚的同步已接管，本次作废
             // MMS 数据不可读：底栏回示例小队 + 常驻提示说明（不再静默装作正常数据）
@@ -4124,19 +4176,6 @@
         // ====================================================
         // 底栏我方角色与对话输入处理
         // ====================================================
-        const partyCards = partyDeck.querySelectorAll('.party-card');
-        partyCards.forEach(card => {
-            card.addEventListener('click', () => {
-                partyCards.forEach(c => c.classList.remove('active'));
-                card.classList.add('active');
-                const idx = parseInt(card.dataset.index, 10);
-                activeSpeaker = partyMembers[idx];
-                currentHeroAvatar.src = avatarUrl(activeSpeaker.avatar);
-                sound.playWoodClick();
-                chatInput.placeholder = `以【${activeSpeaker.name} · ${activeSpeaker.role}】的身份向老布莱克伍德交谈或砍价... (Enter 发送)`;
-            });
-        });
-
         btnNarratorToggle.addEventListener('click', () => {
             playerState.narratorEnabled = !playerState.narratorEnabled;
             btnNarratorToggle.classList.toggle('active', playerState.narratorEnabled);

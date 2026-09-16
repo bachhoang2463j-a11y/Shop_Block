@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock 头像取值链 Harness（MMS 权威源）</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    #frames { display: flex; gap: 12px; }
+    #frames iframe { width: 780px; height: 620px; border: 2px solid #382417; background: #0b0908; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 12px; max-height: 300px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h3>ShopBlock 头像取值链验证（MMS 为唯一权威源）</h3>
+<div>
+    <button id="btnRun">▶ 跑头像链断言</button>
+    <span id="summary" style="margin-left: 10px;"></span>
+</div>
+<div id="frames">
+    <div><h3>MMS 状态栏（真实源码）</h3><iframe id="mmsFrame"></iframe></div>
+    <div><h3>ShopBlock 商店（真实源码）</h3><iframe id="shopFrame"></iframe></div>
+</div>
+<div id="log"></div>
+
+<script>
+// ============================================================
+// 头像链 harness：两个组件都以 srcdoc 加载真实源码，共用本页 origin
+// （→ localStorage 同源共享，MMS 落的 mms_avatar_export_v1 可被 ShopBlock 直接读）。
+//
+// 覆盖目标：
+//   A. MMS 侧：生效表导出 + initializeGlobal 共享 + 共享句柄「活引用」
+//   B. ShopBlock 侧：六级取值链（共享表 → 导出键 → 名册原值 → 本地兜底 → 首字）
+//      重点回归「非 demo4 角色不显示」与「非 http 值被瞎拼成本地坏链」
+//   C. 归属面板与底栏同源解析
+//
+// 注：IAB / 真 Chrome 里没有酒馆助手的 initializeGlobal / waitGlobalInitialized，
+// 本页用 parent 上的注册表实现同语义 stub，以便真实源码走通共享路径。
+// ============================================================
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+// ---------- 跨 iframe 全局接口注册表（酒馆助手 initializeGlobal 的同语义 stub） ----------
+window.__globalRegistry = {};
+window.__globalWaiters = {};
+
+// ---------- 共享数据层 ----------
+const mockStat = {
+    '状态栏': {
+        '日期和时间': '⏰ 1925年 · 6月13日 · 12:40 · 潜伏期',
+        '地点': '📍 悉尼 · 出征杂货铺',
+        '角色列表': [
+            { '角色': { '名字': '🔮爱德华', '属性': '[❤️HP:10/10]', '物品': '[💼] [处方笺]' } },
+            { '角色': { '名字': '林有声', '属性': '[❤️HP:9/11]', '物品': '[💼] [符纸]' } }
+        ],
+        '据点': { '名称': '澳大利亚酒店', '现金': '4762.90美元' },
+        '载具': { '名称': '防弹轿车', '杂物': '[📦] [备用轮胎]' }
+    }
+};
+const FLOOR_ID = 7;
+const STORE = {
+    chat: {
+        // 名册：一条「名称键」（R1 场景）、一条完整 URL（R2 场景）
+        '$mms_roster': {
+            characters: [
+                { name: '林有声', avatar: '林有声' },
+                { name: '周云', avatar: 'https://example.com/avatar/zhouyun.png' }
+            ]
+        }
+    },
+    global: {},
+    message: {}
+};
+STORE.message[FLOOR_ID] = {
+    stat_data: JSON.parse(JSON.stringify(mockStat)),
+    '$mms_meta': { hash: 'h7', ts: Date.now(), mesId: FLOOR_ID }
+};
+const BUS = { listeners: {} };
+function busOn(name, cb) { (BUS.listeners[name] = BUS.listeners[name] || []).push(cb); }
+function busEmit(name, data) { (BUS.listeners[name] || []).forEach(cb => { try { cb(data); } catch (e) {} }); }
+window.__sharedStore = STORE;
+window.__sharedBus = { on: busOn, emit: busEmit };
+window.__harnessLog = [];
+window.__eventSeen = [];
+
+// ---------- mock 注入脚本（两个 iframe 共用） ----------
+function buildMockScript() {
+    return `<script>
+(function () {
+    var P = window.parent;
+    var STORE = P.__sharedStore;
+    var BUS = P.__sharedBus;
+    window.getCurrentMessageId = function () { return ${FLOOR_ID}; };
+    window.getLastMessageId = function () { return ${FLOOR_ID}; };
+    window.getChatMessages = function () { return [{ message: '小队推开杂货铺的门。\\n【状态栏标记点】', raw_content: '小队推开杂货铺的门。\\n【状态栏标记点】', role: 'assistant' }]; };
+    window.getVariables = function (opt) {
+        opt = opt || {};
+        var t = opt.type === 'global' ? STORE.global
+              : opt.type === 'message' ? (STORE.message[opt.message_id] || {})
+              : STORE.chat;
+        return JSON.parse(JSON.stringify(t));
+    };
+    window.insertOrAssignVariables = function (obj, opt) {
+        opt = opt || {};
+        var t = opt.type === 'global' ? STORE.global
+              : opt.type === 'message' ? (STORE.message[opt.message_id] = STORE.message[opt.message_id] || {})
+              : STORE.chat;
+        Object.keys(obj).forEach(function (k) { t[k] = JSON.parse(JSON.stringify(obj[k])); });
+        return Promise.resolve(true);
+    };
+    window.replaceVariables = function (obj, opt) {
+        opt = opt || {};
+        if (opt.type === 'global') STORE.global = JSON.parse(JSON.stringify(obj));
+        else if (opt.type === 'message') STORE.message[opt.message_id] = JSON.parse(JSON.stringify(obj));
+        else STORE.chat = JSON.parse(JSON.stringify(obj));
+        return Promise.resolve(true);
+    };
+    window.eventOn = function (name, cb) { BUS.on(name, cb); };
+    window.eventEmit = function (name, data) { P.__eventSeen.push(name); BUS.emit(name, data || {}); };
+    window.alert = function (msg) { P.__harnessLog.push('alert: ' + String(msg).slice(0, 120)); };
+    window.confirm = function (msg) { P.__harnessLog.push('confirm: ' + String(msg).slice(0, 80)); return true; };
+    // 酒馆助手跨 iframe 接口 stub：注册表挂在 parent，语义与文档一致
+    window.initializeGlobal = function (name, value) {
+        P.__globalRegistry[name] = value;
+        var w = P.__globalWaiters[name] || [];
+        P.__globalWaiters[name] = [];
+        w.forEach(function (r) { r(value); });
+    };
+    window.waitGlobalInitialized = function (name) {
+        if (P.__globalRegistry[name]) return Promise.resolve(P.__globalRegistry[name]);
+        return new Promise(function (res) { (P.__globalWaiters[name] = P.__globalWaiters[name] || []).push(res); });
+    };
+})();
+<\/script>`;
+}
+
+async function loadFrames() {
+    const [mmsHtml, shopHtml] = await Promise.all([
+        fetch('../../MiniMapStatus/MiniMapStatus.html').then(r => r.text()),
+        fetch('../../ShopBlock/index.html').then(r => r.text())
+    ]);
+    const mock = buildMockScript();
+    document.getElementById('mmsFrame').srcdoc = mmsHtml.replace('<head>', '<head>' + mock);
+    document.getElementById('shopFrame').srcdoc = shopHtml.replace('<head>', '<head>' + mock);
+    const t0 = Date.now();
+    let lastState = '';
+    while (Date.now() - t0 < 20000) {
+        await new Promise(r => setTimeout(r, 400));
+        let shopReady = false, mmsReady = false;
+        try { shopReady = typeof shopWin().resolveMemberAvatar === 'function'; } catch (e) {}
+        try { mmsReady = !!mmsWin().MMS && !!window.__globalRegistry.MMSImages; } catch (e) {}
+        const s = `shop=${shopReady} mms=${mmsReady}`;
+        if (s !== lastState) { log('  [探测] ' + s + ' @' + Math.round((Date.now() - t0) / 1000) + 's'); lastState = s; }
+        if (shopReady && mmsReady) break;
+    }
+    log('  [探测] 完成（' + Math.round((Date.now() - t0) / 1000) + 's）');
+}
+
+// ---------- 断言工具 ----------
+let passCount = 0, failCount = 0;
+function assert(cond, label) {
+    if (cond) { passCount++; log('  ✓ ' + label, 'pass'); }
+    else { failCount++; log('  ✗ ' + label, 'fail'); }
+}
+const shopWin = () => document.getElementById('shopFrame').contentWindow;
+const mmsWin = () => document.getElementById('mmsFrame').contentWindow;
+function shopEval(code) { return shopWin().eval(code); }
+function mmsEval(code) { return mmsWin().eval(code); }
+function avatarOf(memberLit) { return shopEval(`resolveMemberAvatar(${memberLit})`); }
+const EXPORT_KEY = 'mms_avatar_export_v1';
+
+async function runFlow() {
+    logBox.innerHTML = '';
+    passCount = failCount = 0;
+
+    log('== 1. 加载双组件（真实源码 + 跨 iframe 接口 stub） ==');
+    await loadFrames();
+    assert(typeof shopWin().resolveMemberAvatar === 'function', 'ShopBlock 主脚本就绪');
+    assert(!!mmsWin().MMS, 'MMS 正常启动（新增共享块未破坏 boot）');
+
+    log('== 2. MMS 侧：生效表导出（无需用户保存过图片管理器） ==');
+    // 导出键写入有 250ms 防抖，而探测循环在 initializeGlobal 注册时即退出 → 轮询等待落盘
+    let exported = null;
+    for (let i = 0; i < 15 && !exported; i++) {
+        try { exported = JSON.parse(localStorage.getItem(EXPORT_KEY)); } catch (e) { exported = null; }
+        if (!exported) await new Promise(r => setTimeout(r, 200));
+    }
+    assert(!!exported && !!exported.avatar, '导出键 ' + EXPORT_KEY + ' 已落盘');
+    const eddie = exported && exported.avatar && exported.avatar['爱德华'];
+    assert(/^https?:\/\//.test(String(eddie)), '内置表非 demo4 条目已导出：「爱德华」→ ' + String(eddie).slice(0, 60));
+    assert(exported && !exported.portrait, '只导出 avatar，不夹带立绘表');
+    const shopSees = shopEval(`(function () { try { return JSON.parse(localStorage.getItem('${EXPORT_KEY}')).avatar['爱德华']; } catch (e) { return 'ERR:' + e.message; } })()`);
+    assert(shopSees === eddie, 'ShopBlock 侧直读同一导出键（同源 localStorage 假设成立）');
+
+    log('== 3. MMS 侧：initializeGlobal 共享 + 活引用 ==');
+    const reg = window.__globalRegistry.MMSImages;
+    assert(!!reg && typeof reg.resolveAvatar === 'function', "MMSImages 已注册且带 resolveAvatar");
+    assert(reg && reg.resolveAvatar('爱德华') === eddie, 'MMS 侧 resolveAvatar 自洽');
+    assert(reg && reg.avatarMap && reg.avatarMap['爱德华'] === eddie, '共享 avatarMap 可读内置表');
+    // 名册覆盖：MMS 自己把名册 avatar 合并进 AVATAR_MAP（原位写键）
+    mmsEval("MMS.applyRosterAvatars({ characters: [ { name: '周云', avatar: 'https://example.com/avatar/zhouyun.png' }, { name: '林有声', avatar: '林有声' } ] })");
+    assert(reg.avatarMap['周云'] === 'https://example.com/avatar/zhouyun.png', '名册覆盖后共享表即时可见（活引用，无需重新注册）');
+    assert(typeof reg.resolveAvatar('林有声') === 'string' && /^https?:/.test(reg.resolveAvatar('林有声')), '名册「名称键」经 MMS 表解析为 URL');
+    await new Promise(r => setTimeout(r, 400)); // 等导出键防抖落盘
+
+    log('== 4. ShopBlock 侧：非 demo4 角色（用户报的回归点） ==');
+    shopEval('loadMmsAvatarMap()');
+    const aEddie = avatarOf("{ name: '爱德华' }");
+    assert(aEddie === eddie, '「爱德华」→ MMS 权威 URL（非首字占位）');
+    const aEmoji = avatarOf("{ name: ' 🔮埃利奥特' }");
+    assert(/^https?:/.test(String(aEmoji)), 'emoji 前缀名「🔮埃利奥特」仍能命中 → ' + String(aEmoji).slice(0, 56));
+    const aLin = avatarOf("{ name: '林有声' }");
+    assert(/^https?:/.test(String(aLin)), '「林有声」→ MMS 权威 URL');
+
+    log('== 5. ShopBlock 侧：名册原值三种形态 ==');
+    const aByName = avatarOf("{ name: '某个未入表角色', avatar: '爱德华' }");
+    assert(aByName === eddie, '名册值=名称键 → 解析为表内 URL（不再拼本地路径）');
+    const full = 'https://example.com/avatar/zhouyun.png';
+    const aFull = avatarOf(`{ name: '某个未入表角色', avatar: '${full}' }`);
+    assert(aFull === full, '名册值=完整 URL → 直通');
+    const aFile = avatarOf("{ name: '某个未入表角色', avatar: 'Eil.png' }");
+    assert(/\/Eil\.png$/.test(String(aFile)), '名册值=裸文件名 → 拼 avatarBase 兜底 → ' + String(aFile));
+
+    log('== 6. 断点 B 回归：绝不产生本地坏链 ==');
+    const bad = [];
+    for (const n of ['爱德华', '林有声', '烈阳剑尊', '某个未入表角色']) {
+        const u = avatarOf(`{ name: '${n}' }`);
+        if (u && /\/头像\/[^/]*[\u4e00-\u9fa5]/.test(String(u)) && !/^https?:/.test(String(u))) bad.push(n + '→' + u);
+    }
+    assert(bad.length === 0, '中文名不再被拼成 8766/头像/<中文名> 坏链' + (bad.length ? '：' + bad.join('，') : ''));
+    const aUnknown = avatarOf("{ name: '某个未入表角色', avatar: '表里没有的中文名' }");
+    assert(aUnknown === null, '未入表的中文名册值 → null（交渲染层首字占位），实得 ' + String(aUnknown));
+
+    log('== 7. 本地 my_assets 兜底仍作为最后一路 ==');
+    const aLocal = shopEval(`(function () {
+        const _img = mmsImages, _map = mmsAvatarMap;
+        mmsImages = null; mmsAvatarMap = null;
+        const r = resolveMemberAvatar({ name: '弗兰克' });
+        mmsImages = _img; mmsAvatarMap = _map;
+        return r;
+    })()`);
+    assert(/\/Frank\.png$/.test(String(aLocal)), 'MMS 全不可读时回退本地映射 → ' + String(aLocal));
+
+    log('== 8. 渲染层接入：底栏角色卡 ==');
+    shopEval("renderPartyDeck([{ name: '爱德华', role: '', avatar: '' }, { name: '林有声', role: '', avatar: '林有声' }, { name: '某个未入表角色', role: '', avatar: '' }])");
+    const cards = Array.from(shopWin().document.querySelectorAll('#partyDeck .party-card'));
+    const cardImgs = cards.map(c => { const i = c.querySelector('img.party-avatar-img'); return i ? i.getAttribute('src') : null; });
+    assert(cardImgs[0] === eddie, '底栏「爱德华」卡片用 MMS 头像');
+    assert(/^https?:/.test(String(cardImgs[1])), '底栏「林有声」卡片用 MMS 头像（名册名称键）');
+    assert(cardImgs[2] === null, '未入表角色走首字占位（无 img）');
+    const heroSrc = shopWin().document.getElementById('currentHeroAvatar').getAttribute('src');
+    assert(String(heroSrc) === eddie, '输入栏当前发言人头像同源');
+
+    log('== 9. 归属面板同源解析 ==');
+    shopEval(`
+        activeSpeaker = partyMembers[0];
+        playerState.cart.push({ id: 9999, item: { id: 9999, name: '测试商品', price: 1, emoji: '🧪' }, quantity: 1 });
+    `);
+    await shopEval('openAssignPanel()');
+    await new Promise(r => setTimeout(r, 200));
+    const at = Array.from(shopWin().document.querySelectorAll('#assignTargets button'));
+    const tImgs = at.map(b => { const i = b.querySelector('img'); return i ? i.getAttribute('src') : null; });
+    assert(at.length > 0, '归属面板有目标（' + at.length + ' 个）');
+    assert(tImgs.some(s => s === eddie), '面板中「爱德华」用 MMS 头像（修掉裸 avatarUrl 旁路）');
+    assert(!tImgs.some(s => s && /\/头像\/[^/]*[\u4e00-\u9fa5]/.test(s) && !/^https?:/.test(s)), '面板内无本地坏链');
+
+    const summary = document.getElementById('summary');
+    summary.textContent = `结果: ${passCount} passed, ${failCount} failed`;
+    summary.style.color = failCount ? '#c0605a' : '#7a9a5a';
+    log(`\n== 完成: ${passCount} passed, ${failCount} failed ==`, failCount ? 'fail' : 'pass');
+}
+
+document.getElementById('btnRun').addEventListener('click', async () => {
+    try { await runFlow(); }
+    catch (e) {
+        failCount++;
+        log('流程中断: ' + e.message, 'fail');
+        const summary = document.getElementById('summary');
+        summary.textContent = `结果: ${passCount} passed, ${failCount} failed（异常中断）`;
+        summary.style.color = '#c0605a';
+    }
+});
+log('就绪。点击「跑头像链断言」。需以 http 服务打开（服务根须同时可访问 MiniMapStatus/ 与 ShopBlock/）。');
+</script>
+</body>
+</html>
