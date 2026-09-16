@@ -80,4 +80,4 @@
 
 | 提交 | 内容 |
 |---|---|
-| （待回填） | M12：楼层块自动捕获（RpgCombat startSTPolling 同构）+ MMS 三态提示（缺失/零匹配不再静默）+ 现钞回显 + updateUI/同步竞态双修（poll-harness 35/35，product 10/10、duo 25/25、narrow 15/15 回归全绿） |
+| cd72b60 | M12：楼层块自动捕获（RpgCombat startSTPolling 同构）+ MMS 三态提示（缺失/零匹配不再静默）+ 现钞回显 + updateUI/同步竞态双修（poll-harness 35/35，product 10/10、duo 25/25、narrow 15/15 回归全绿） |
