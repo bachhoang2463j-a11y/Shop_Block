@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock 产物端到端验证（产物→酒馆管线模拟→boot）</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    #phone { width: 375px; height: 740px; border: 4px solid #382417; border-radius: 10px; overflow: hidden; background: #0b0908; }
+    #phone iframe { width: 100%; height: 100%; border: none; display: block; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 12px; max-height: 300px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h3>产物端到端验证：产物 JSON → 酒馆 engine.js 语义替换 → 实体解码 → 375px iframe boot → 点击</h3>
+<div style="margin-bottom: 8px;">
+    <button id="btnRun">▶ 跑产物端到端断言</button>
+    <span id="summary"></span>
+</div>
+<div id="phone"><iframe id="shopFrame"></iframe></div>
+<div id="log"></div>
+
+<script>
+// =====================================================================
+// 取 ../regex-商店Block.json 的 replaceString，走与酒馆 engine.js 同构的
+// 替换语义（$数字→捕获组/空串、{{match}}→$0）+ 全局实体解码，
+// 再以带引号换行的攻击型楼层做 Shop_block 替换，最后在 375px iframe 里
+// 以 mock 酒馆 API 实际 boot 并点击商品格。
+// =====================================================================
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+let passCount = 0, failCount = 0;
+function assert(cond, label) {
+    if (cond) { passCount++; log('  ✓ ' + label, 'pass'); }
+    else { failCount++; log('  ✗ ' + label, 'fail'); }
+}
+
+const shopWin = () => document.getElementById('shopFrame').contentWindow;
+function shopEval(code) { return shopWin().eval(code); }
+
+async function runFlow() {
+    logBox.innerHTML = '';
+    passCount = failCount = 0;
+    document.getElementById('summary').textContent = '';
+
+    log('== 1. 取产物 + 酒馆语义替换 ==');
+    const entry = await fetch('../regex-商店Block.json').then(r => r.json());
+    const fm = entry.findRegex.match(/^\/([\s\S]*)\/([a-z]*)$/);
+    const re = new RegExp(fm[1], fm[2]);
+    const floor = '楼层前文"引号"测试。\n<Shop_block>\n商店数据:\n  店名: "出征杂货铺"\n</Shop_block>\n楼层后文带换行\n第二行长'.repeat(3) + '。';
+    const regexed = floor.replace(re, function (match) {
+        const args = [...arguments];
+        let cur = match;
+        const rs0 = entry.replaceString.replace(/{{match}}/gi, '$0');
+        return rs0.replace(/\$(\d+)|\$<([^>]+)>/g, (_, num) => {
+            if (num) cur = args[Number(num)] != null ? args[Number(num)] : undefined;
+            if (!cur) return '';
+            return cur;
+        });
+    });
+    assert(regexed.includes('```html'), '替换后产出围栏包裹的组件体');
+    // 酒馆管线实体解码（全局），剥围栏
+    const decoded = regexed.replace(/&amp;/g, '&');
+    const body5 = decoded.slice(decoded.indexOf('```html\n') + 8, decoded.lastIndexOf('\n```'));
+    assert(body5.includes('id="woodenCabinet"'), '结构哨兵 woodenCabinet 幸存');
+    // srcdoc 体：&#36; 还原为 $（浏览器实体解码语义）
+    const srcdocBody = body5.replace(/&#36;/g, '$');
+    assert(srcdocBody.includes('>$280.00<'), '静态占位 $280.00 幸存（$数字未被吞）');
+
+    log('== 2. 375px iframe 注入 mock boot ==');
+    const mockScript = `<script>
+window.getCurrentMessageId = function () { return 7; };
+window.getLastMessageId = function () { return 7; };
+window.getChatMessages = function () { return []; };
+window.getVariables = function () { return {}; };
+window.insertOrAssignVariables = function () { return Promise.resolve(true); };
+window.replaceVariables = function () { return Promise.resolve(true); };
+window.eventOn = function () {};
+window.eventEmit = function () {};
+window.alert = function () {};
+window.confirm = function () { return true; };
+<\/script>`;
+    document.getElementById('shopFrame').srcdoc = srcdocBody.replace('<head>', '<head>' + mockScript);
+    const t0 = Date.now();
+    let ready = false;
+    while (Date.now() - t0 < 20000) {
+        await new Promise(r => setTimeout(r, 400));
+        try { ready = shopEval('document.readyState === "complete" && typeof onShopDataReceived === "function"'); } catch (e) {}
+        if (ready) break;
+    }
+    assert(ready, '组件 boot（主脚本执行，onShopDataReceived 就绪）');
+
+    log('== 3. 渲染与点击 ==');
+    const g = shopEval(`(function () {
+        const doc = document;
+        const cab = doc.getElementById('woodenCabinet');
+        return {
+            cells: cab ? cab.children.length : -1,
+            cash: doc.getElementById('cashDisplay') ? doc.getElementById('cashDisplay').textContent : null,
+            cols: cab ? getComputedStyle(cab).gridTemplateColumns.split(' ').length : -1,
+            zeroStr: (function () { try { return "$0.00" === "\\u00240.00"; } catch (e) { return false; } })()
+        };
+    })()`);
+    assert(g.cells >= 15, '商品格渲染 ' + g.cells + ' 件（demo 全量）');
+    assert(g.cash === '$280.00', '现钞显示 $280.00（$ 被吃 bug 已修，实际「' + g.cash + '」）');
+    assert(g.cols === 3, '窄屏货柜 3 列（实际 ' + g.cols + '）');
+    assert(g.zeroStr, '"\\u0024" 与 "$" 语义等价');
+    // 点击第一格 → 单件直入购物车（监听器存活 = 按钮可用）
+    shopEval(`(function () {
+        document.querySelector('.shelf-cell').click();
+    })()`);
+    await new Promise(r => setTimeout(r, 500));
+    const cartN = shopEval('playerState.cart.length');
+    assert(cartN >= 1, '点击商品格入车（监听器存活，按钮可用，cart=' + cartN + '）');
+    const popVisible = shopEval(`(function () {
+        const b = document.getElementById('bossSpeechBubble');
+        return b ? b.classList.contains('show') : false;
+    })()`);
+    assert(popVisible, '商品介绍气泡弹出（点击链路完整）');
+
+    const total = passCount + failCount;
+    document.getElementById('summary').textContent = failCount === 0
+        ? '✅ ' + passCount + '/' + total + ' 全绿'
+        : '❌ ' + failCount + ' 失败 / ' + total;
+    log('== 完成：' + passCount + ' 通过, ' + failCount + ' 失败 ==', failCount ? 'fail' : 'pass');
+}
+
+document.getElementById('btnRun').addEventListener('click', () => {
+    runFlow().catch(e => log('流程异常：' + (e && e.message), 'fail'));
+});
+</script>
+</body>
+</html>
