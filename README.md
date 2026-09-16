@@ -180,7 +180,8 @@
 - `integration-test/poll-harness.html`：楼层块自动捕获 + MMS 三态（在场/缺失/零匹配）回归，走产物管线（35 断言）。
 - `integration-test/avatar-harness.html`：头像取值链回归（27 断言）。验证：MMS 生效表导出落盘且只含 avatar、initializeGlobal 共享句柄活引用（名册覆盖后即时可见）、ShopBlock 侧六级链（共享表 → 导出键 → 旧快照 → 名册原值 → 本地映射 → 首字占位）、名册值三种形态（名称键/完整 URL/裸文件名）、中文名不再拼成本地坏链、归属面板与底栏同源。IAB 内用 parent 注册表实现同语义 stub。
 - `integration-test/midwide-harness.html`：中屏/短视高回归（78 断言）。853×760/600/480、700×600 与 920×760 保持预期列数；横屏有限视高时顶栏/底栏固定在组件视口，主陈列区内部纵向滚动，150% 缩放不再裁掉底部 UI。
-- `integration-test/llm-history-harness.html`：LLM/ADD/购物记录/头像气泡回归（14 断言）。覆盖 ADD 跑通期开关、非法价格明示、截断 commands 补问、记录筛选、body 级气泡清理、三级上下文退化与共享请求锁。
+- `integration-test/llm-history-harness.html`：LLM/ADD/购物记录/头像气泡/世界观人设回归（25 断言）。覆盖 ADD 跑通期开关、非法价格明示、截断 commands 补问、记录筛选、body 级气泡清理、三级上下文退化、共享请求锁、世界观默认/存量迁移/自定义注入、出场人设裁剪、进店熟客信号。
+- **LLM 设置说明**：设置页提示词框现在是「世界观提示词」（通用时代/氛围背景，始终注入）；店主人设由块内「店主性格」+ 立绘类型演绎。出场角色人设在新文本区按「角色名：人设」填写，只注入当前出场名单。旧版固定老板文本在读取时自动迁移为世界观默认。
 - 立绘资源：本地服务器 `D:\Project\my_assets\shop_resources\`（8766 端口），头像 `D:\Project\my_assets\头像\`。
 
 ### 构建与导入

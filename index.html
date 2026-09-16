@@ -2183,8 +2183,13 @@
             </div>
 
             <div class="form-group">
-                <label class="form-label">老板系统人设 (System Persona):</label>
-                <textarea class="form-textarea" id="llmSystemPrompt" rows="3">你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。</textarea>
+                <label class="form-label">世界观提示词 (Worldview):</label>
+                <textarea class="form-textarea" id="llmSystemPrompt" rows="3">世界观：1926年禁酒令时期的美国，克苏鲁神话跑团氛围——私酒、黑帮、纸醉金迷与不可名状的古老恐惧并存。所有对话、商品与言行都要贴合这个时代的质感，语气带洛夫克拉夫特式的阴郁。具体店主与商店设定以正文块和立绘为准，不要套用任何固定的老板模板。</textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">出场角色人设（每行「角色名：人设」，只注入在场成员）:</label>
+                <textarea class="form-textarea" id="llmPartyPersonas" rows="3" placeholder="埃利奥特：私家侦探，谨慎多疑，随身带研究手札&#10;弗兰克：一战老兵，讲义气，看不惯花哨货"></textarea>
             </div>
 
             <div class="form-group">
@@ -2239,7 +2244,10 @@
             '占卜商妇': '市侩精明，爱顺口看个手相说两句吉祥话，算盘打得噼啪响'
         };
 
-        // 设置页人设框出厂默认值（两版措辞都视同“未自定义”，不注入 prompt）
+        // 世界观默认文本：通用时代/氛围背景，始终注入；具体店主由块内性格 + 立绘类型演绎
+        const DEFAULT_WORLDVIEW = "世界观：1926年禁酒令时期的美国，克苏鲁神话跑团氛围——私酒、黑帮、纸醉金迷与不可名状的古老恐惧并存。所有对话、商品与言行都要贴合这个时代的质感，语气带洛夫克拉夫特式的阴郁。具体店主与商店设定以正文块和立绘为准，不要套用任何固定的老板模板。";
+
+        // 旧版“老板人设”出厂文本（存量为兼容保留）：出现在设置框时视同“未自定义”，不注入 prompt
         const BUILTIN_PERSONA_DEFAULTS = [
             "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。客人向你询问武器、讲价或打探黑道情报时，以暗黑地牢/洛夫克拉夫特式的语气简明回答，字数在60字以内。",
             "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，你都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。"
@@ -2585,27 +2593,55 @@
         }
 
         // 组装 system prompt（四场景共用骨架）
-        // 人设三层：①块内「店主性格」优先 ②立绘语气锚随 portrait 变 ③设置页人设框=全局补充（默认老布莱克伍德文本视同未改，不注入）
+        // 人设层次：①世界观=设置页文本框（通用时代氛围，始终注入） ②店主人设=块内「店主性格」+ 立绘类型语气锚（LLM 自行演绎）
+        // ③出场角色人设=设置页人设表按在场名单裁剪注入；好感度决定态度基调
         function buildShopSystemPrompt() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             const persona = (shopState && shopState.keeperPersona) || '精明谨慎的店主';
+            const portrait = shopState ? shopState.portrait : '';
             const tone = (shopState && PORTRAIT_TONE[shopState.portrait]) || '';
-            const customPersona = (llmConfig.systemPrompt || '').trim();
-            const hasCustomPersona = customPersona && !BUILTIN_PERSONA_DEFAULTS.includes(customPersona);
+            const rawWorldview = (llmConfig.systemPrompt || '').trim();
+            const worldview = (rawWorldview && !BUILTIN_PERSONA_DEFAULTS.includes(rawWorldview)) ? rawWorldview : DEFAULT_WORLDVIEW;
             const affection = shopState ? (window.__shopAffection != null ? window.__shopAffection : 30) : 30;
             const attitude = affection >= 80 ? '熟络热络' : affection >= 50 ? '客气有礼' : affection >= 20 ? '公事公办' : '冷淡戒备';
             const whitelist = Array.from(buildSpeakerWhitelist(false)).join('、');
+            const partyPersonas = buildPartyPersonaBlock();
             const parts = [
                 `你扮演1920年代克苏鲁跑团商店场景中的店主「${keeper}」与随行队友。`,
-                `店主人设：${persona}${tone ? '说话风格：' + tone + '。' : ''}当前店主对玩家的好感度：${affection}/100（态度基调：${attitude}，好感越高越热情，越低越不耐烦）。`,
+                `【世界观】${worldview}`,
+                `店主人设：${persona}${tone ? '；说话风格：' + tone : ''}。店主形象由块内性格与立绘类型${portrait ? '「' + portrait + '」' : ''}自行演绎，不要套用其他商店的老板模板。`,
+                `当前店主对玩家的好感度：${affection}/100（态度基调：${attitude}，好感越高越热情，越低越不耐烦）。`,
                 `你可以让这些角色说话：${whitelist}。当前由玩家操控的角色除外——你绝对不能替玩家操控的角色发言，他的台词由玩家自己输入。`,
                 `输出必须是纯 JSON 本体，禁止 markdown 围栏和任何解释文字。schema：`,
                 `{"dialogue":[{"speaker":"说话人","text":"台词(≤60字)"}],"affection":-5到5的整数(玩家言行对店主好感的影响，无玩家台词时省略),"commands":[]}`,
                 `dialogue 1~4 条，店主先说，队友可插话。玩家明确询问店内没有的商品时，优先在 commands 中给出 add，不要静默拒绝；先保证 name/category/price 字段完整。` +
                 `add 的 name 必须带 emoji 前缀（格式"🧪 名字"，如"🍾 肯塔基私酿玉米酒"，emoji 贴合商品、无合适时可省略，前端无前缀默认📦）。`
             ];
-            if (hasCustomPersona) parts.splice(2, 0, `【全局补充人设（店主自定义，优先级低于本次块内人设）】${customPersona}`);
+            if (partyPersonas) parts.splice(5, 0, partyPersonas);
             return parts.join('\n');
+        }
+
+        // 出场角色人设表：设置页每行「角色名：人设」，只注入当前出场名单，防提示词膨胀
+        function buildPartyPersonaBlock() {
+            const raw = (llmConfig.partyPersonas || '').trim();
+            if (!raw) return '';
+            // 出场名单以底栏实际渲染的小队为准（MMS 交集后的最终名单），无底栏时退回块内「在场成员」
+            const roster = partyMembers.length
+                ? partyMembers.map(p => p.name)
+                : (shopState ? shopState.presentMembers.slice() : []);
+            if (!roster.length) return '';
+            const lines = [];
+            raw.split('\n').forEach(line => {
+                if (lines.length >= 8) return;
+                const sep = line.search(/[：:]/);
+                if (sep <= 0) return;
+                const name = line.slice(0, sep).trim();
+                const persona = line.slice(sep + 1).trim().slice(0, 120);
+                if (!name || !persona) return;
+                const hit = roster.find(p => p === name || p.includes(name) || name.includes(p));
+                if (hit) lines.push(`  ${hit}：${persona}`);
+            });
+            return lines.length ? `【出场角色补充人设】\n${lines.join('\n')}` : '';
         }
 
         // 场景触发器
@@ -2616,7 +2652,14 @@
                 ? shopState.items.filter(i => i.category !== '独家私藏').map(i => `${i.name}(${i.priceText})`).join('、') || '（暂无）'
                 : '（货架陈列中的商品）';
             const base = `【在场成员】${present}\n【店内商品】${goods}`;
-            if (scene === 'enter') return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue，队友可插话。无玩家台词，省略affection。]`;
+            if (scene === 'enter') {
+                // 熟客感来自好感度：仅当好感度仍贴近初始值时明确“初次会面”，防 LLM 演绎成老主顾
+                const aff = (typeof window.__shopAffection === 'number') ? window.__shopAffection : SHOP_AFFECTION_INIT;
+                const familiarity = aff <= SHOP_AFFECTION_INIT + 2
+                    ? '这是店主与这批客人的初次会面（或交情尚浅），不要把他们当熟客或老主顾。'
+                    : '店主与这批小队已有旧交情（好感度见 system），可按熟客口吻演绎。';
+                return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue，队友可插话。无玩家台词，省略affection。${familiarity}]`;
+            }
             if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度），队友可插话，affection按玩家爽快程度判定。]`;
             if (scene === 'chat') return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应，队友可插话，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。]`;
             if (scene === 'bargain') return `${base}\n\n[系统指令：${extra}]`;
@@ -3923,12 +3966,18 @@
             model: "gpt-4o-mini",
             portraitBase: "",
             avatarBase: "",
-            systemPrompt: "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。客人向你询问武器、讲价或打探黑道情报时，以暗黑地牢/洛夫克拉夫特式的语气简明回答，字数在60字以内。"
+            systemPrompt: DEFAULT_WORLDVIEW,
+            partyPersonas: ""
         };
 
         try {
             const saved = localStorage.getItem('dd_llm_config');
-            if (saved) llmConfig = JSON.parse(saved);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                // 存量迁移：旧版存的是「老板人设」出厂文本，改版后换成世界观默认值
+                if (BUILTIN_PERSONA_DEFAULTS.includes(String(parsed.systemPrompt || '').trim())) parsed.systemPrompt = DEFAULT_WORLDVIEW;
+                llmConfig = Object.assign(llmConfig, parsed);
+            }
         } catch(e) {}
 
         // 原生 Web Audio API 音效
@@ -4037,6 +4086,7 @@
         const llmApiKey = document.getElementById('llmApiKey');
         const llmModel = document.getElementById('llmModel');
         const llmSystemPrompt = document.getElementById('llmSystemPrompt');
+        const llmPartyPersonas = document.getElementById('llmPartyPersonas');
         const llmDebugToggle = document.getElementById('llmDebugToggle');
         const llmSaveBtn = document.getElementById('llmSaveBtn');
         const llmResetBtn = document.getElementById('llmResetBtn');
@@ -4615,6 +4665,7 @@
             llmPortraitBase.value = llmConfig.portraitBase;
             llmAvatarBase.value = llmConfig.avatarBase;
             llmSystemPrompt.value = llmConfig.systemPrompt;
+            llmPartyPersonas.value = llmConfig.partyPersonas || '';
             llmDebugToggle.checked = LLM_DEBUG;
             llmModal.classList.add('show');
         });
@@ -4628,6 +4679,7 @@
             llmConfig.portraitBase = llmPortraitBase.value.trim();
             llmConfig.avatarBase = llmAvatarBase.value.trim();
             llmConfig.systemPrompt = llmSystemPrompt.value.trim();
+            llmConfig.partyPersonas = llmPartyPersonas.value.trim();
             localStorage.setItem('dd_llm_config', JSON.stringify(llmConfig));
             localStorage.setItem('shopblock_llm_debug', llmDebugToggle.checked ? '1' : '0');
             sound.playWoodClick();
@@ -4644,7 +4696,8 @@
             llmModel.value = "gpt-4o-mini";
             llmPortraitBase.value = "";
             llmAvatarBase.value = "";
-            llmSystemPrompt.value = "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，你都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。";
+            llmSystemPrompt.value = DEFAULT_WORLDVIEW;
+            llmPartyPersonas.value = "";
         });
 
         btnFullscreen.addEventListener('click', () => {

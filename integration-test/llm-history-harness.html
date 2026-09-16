@@ -59,6 +59,29 @@ assert(Array.isArray(floors)&&floors.some(x=>x.includes('剧情')),'楼层 API �
 w.eval(`shopLlmRequesting=true`);
 let locked=false;try{await w.eval(`callShopLLM('chat','并发测试')`)}catch(e){locked=String(e.message).includes('请求进行中')}finally{w.eval(`shopLlmRequesting=false`)}
 assert(locked,'共享 LLM 请求锁阻止并发入口');
+log('== 世界观 / 人设拼装 ==','head');
+const sysDefault=w.eval(`buildShopSystemPrompt()`);
+assert(sysDefault.includes('【世界观】'),'system prompt 含世界观段落');
+assert(sysDefault.includes('1926')&&sysDefault.includes('克苏鲁'),'默认世界观注入时代与神话氛围');
+assert(!sysDefault.includes('黑市军火贩子'),'默认不再注入固定老板模板');
+assert(sysDefault.includes('店主人设：')&&sysDefault.includes('自行演绎'),'店主交由块内性格+立绘演绎');
+w.eval(`llmConfig.systemPrompt=BUILTIN_PERSONA_DEFAULTS[0]`);
+assert(!w.eval(`buildShopSystemPrompt()`).includes('黑市军火贩子'),'存量旧老板文本视同未自定义，回落世界观');
+w.eval(`llmConfig.systemPrompt='世界观：蒸汽朋克废土'`);
+assert(w.eval(`buildShopSystemPrompt()`).includes('蒸汽朋克废土'),'用户自定义世界观正常注入');
+w.eval(`llmConfig.partyPersonas='埃利奥特：谨慎多疑的侦探\\n不存在的人：不该出现\\n弗兰克：一战老兵'`);
+w.eval(`partyMembers=[{name:'埃利奥特'}]`);
+const sysParty=w.eval(`buildShopSystemPrompt()`);
+assert(sysParty.includes('埃利奥特：谨慎多疑的侦探'),'在场角色人设注入');
+assert(!sysParty.includes('不该出现'),'不在场角色人设不注入');
+assert(!sysParty.includes('弗兰克：一战老兵'),'不在场队友人设不注入');
+w.eval(`llmConfig.partyPersonas=''`);
+log('== 进店熟客感 ==','head');
+w.eval(`window.__shopAffection=30`);
+assert(w.eval(`buildSceneTrigger('enter')`).includes('初次会面'),'好感度初始时进店标注初次会面');
+w.eval(`window.__shopAffection=70`);
+assert(w.eval(`buildSceneTrigger('enter')`).includes('旧交情'),'好感度高时进店允许熟客口吻');
+w.eval(`window.__shopAffection=30`);
 const total=pass+fail;document.getElementById('summary').textContent=fail?'❌ '+fail+' 失败 / '+total:'✅ '+pass+'/'+total+' 全绿';log('== 完成：'+pass+' 通过, '+fail+' 失败 ==',fail?'fail':'pass')}
 document.getElementById('btnRun').addEventListener('click',()=>run().catch(e=>{fail++;log('异常: '+e.stack,'fail')}));
 </script>
