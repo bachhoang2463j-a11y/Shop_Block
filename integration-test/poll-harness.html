@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock 楼层自动捕获 + MMS 三态验证</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    #phone { width: 375px; height: 740px; border: 4px solid #382417; border-radius: 10px; overflow: hidden; background: #0b0908; }
+    #phone iframe { width: 100%; height: 100%; border: none; display: block; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 12px; max-height: 320px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; } .head { color: #dfb06c; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h3>楼层 &lt;Shop_block&gt; 自动捕获 + MMS 三态：产物 JSON → 酒馆 engine.js 语义替换 → 实体解码 → boot 断言</h3>
+<div style="margin-bottom: 8px;">
+    <button id="btnRun">▶ 跑楼层捕获断言</button>
+    <span id="summary"></span>
+</div>
+<div id="phone"><iframe id="shopFrame"></iframe></div>
+<div id="log"></div>
+
+<script>
+// =====================================================================
+// 与 product-harness 同一条产物管线（M11 的教训：风险在构建/管线层），
+// 用四个场景重灌同一 iframe：
+//   A 自动捕获（楼层含块 + MMS 在场）  B MMS 缺失（无 stat_data）
+//   C 零匹配（块在场成员不在名册）      D 无酒馆 API（纯源码，零副作用）
+// 轮询用 shopEval('pollFloorTick()') 确定性驱动，不依赖真实定时器
+// （IAB 页面不可见时 setInterval 会被节流，等 5s 提示必然不稳定）。
+// =====================================================================
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+let passCount = 0, failCount = 0;
+function assert(cond, label) {
+    if (cond) { passCount++; log('  ✓ ' + label, 'pass'); }
+    else { failCount++; log('  ✗ ' + label, 'fail'); }
+}
+const shopWin = () => document.getElementById('shopFrame').contentWindow;
+function shopEval(code) { return shopWin().eval(code); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// 轮询等待组件内状态（boot 首 tick 是异步的，就绪≠已应用）
+async function waitFor(code, ms) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < (ms || 8000)) {
+        try { if (shopEval(code)) return true; } catch (e) { /* 未就绪 */ }
+        await sleep(200);
+    }
+    return false;
+}
+
+// ---------- 测试数据 ----------
+const MMS_STAT = {
+    '状态栏': {
+        '角色列表': [
+            { '角色': { '名字': ' 🔮埃利奥特', '属性': '[❤️HP:10/10]', '物品': '[💼] [研究手札]' } },
+            { '角色': { '名字': '弗兰克', '属性': '[❤️HP:12/12]', '物品': '[💼] [军牌]' } },
+            { '角色': { '名字': '玛德琳', '属性': '[❤️HP:12/12]', '物品': '[💼] [笔记]' } }
+        ],
+        '据点': { '名称': '澳大利亚酒店', '现金': '4744.70美元' },
+        '载具': { '名称': '防弹轿车', '杂物': '[📦] [备用轮胎]' }
+    }
+};
+
+function makeBlock(members, shopName) {
+    return '<Shop_block>\n商店数据:\n' +
+        '  店名: "' + shopName + '"\n' +
+        '  店主: "塔尼亚婆婆"\n' +
+        '  立绘: "占卜商妇"\n' +
+        '  店主性格: "吉普赛流浪商妇，见钱眼开"\n' +
+        '  在场成员:\n' + members.map(m => '    - "' + m + '"\n').join('') +
+        '  分类商品:\n' +
+        '    补给:\n' +
+        '      - 商品:\n          名字: "基廷氏杀虫粉"\n          价格: "2.50美元"\n          数量: 12\n          单位: "罐"\n          标签: "[消耗品][医用物资]"\n          介绍: "教会特供的强效杀虫粉。"\n' +
+        '      - 商品:\n          名字: "石炭酸皂"\n          价格: "0.80美元"\n          数量: 20\n          单位: "块"\n          介绍: "石炭酸浸透的粗皂。"\n' +
+        '    香料:\n' +
+        '      - 商品:\n          名字: "土耳其安神熏香"\n          价格: "3.20美元"\n          数量: 8\n          单位: "盒"\n          介绍: "点上一支，噩梦就进不了门。"\n' +
+        '</Shop_block>';
+}
+
+const BLOCK_AUTO = makeBlock(['埃利奥特', '弗兰克'], '铜铃杂货铺');
+const BLOCK_MISMATCH = makeBlock(['张三', '李四'], '铜铃杂货铺');
+
+// ---------- mock 注入 ----------
+// opts: { floorText, stat }  stat 为 null/省略 → 无 MMS 数据
+function mockScript(opts) {
+    opts = opts || {};
+    const t = JSON.stringify(opts.floorText || '小队推开杂货铺的门。');
+    const lines = [
+        'window.getCurrentMessageId = function () { return 7; };',
+        'window.getLastMessageId = function () { return 7; };',
+        'window.getChatMessages = function (id, n) { var t = ' + t + '; return [{ message: t, raw_content: t, role: "assistant", is_user: false, is_system: false }]; };',
+        'window.__alerts = [];',
+        'window.alert = function (m) { window.__alerts.push(String(m)); };',
+        'window.confirm = function () { return true; };',
+        'window.eventOn = function () {};',
+        'window.eventEmit = function () {};',
+        'window.insertOrAssignVariables = function () { return Promise.resolve(true); };',
+        'window.replaceVariables = function () { return Promise.resolve(true); };'
+    ];
+    if (opts.stat) {
+        lines.push('var STAT = ' + JSON.stringify(opts.stat) + ';');
+        lines.push('window.getVariables = function (opt) { opt = opt || {};' +
+            ' if (opt.type === "message") { return opt.message_id === 7 ? { stat_data: JSON.parse(JSON.stringify(STAT)), "$mms_meta": { hash: "h7", ts: Date.now(), mesId: 7 } } : {}; }' +
+            ' return {}; };');
+    } else {
+        lines.push('window.getVariables = function () { return {}; };');
+    }
+    return '<script>' + lines.join('\n') + '<\/script>';
+}
+
+// ---------- 产物管线（与 product-harness 同构） ----------
+let srcdocBody = null;
+async function buildSrcdocBody() {
+    const entry = await fetch('../regex-商店Block.json').then(r => r.json());
+    const fm = entry.findRegex.match(/^\/([\s\S]*)\/([a-z]*)$/);
+    const re = new RegExp(fm[1], fm[2]);
+    const floor = '楼层前文"引号"测试。\n' + BLOCK_AUTO + '\n楼层后文带换行\n第二行长';
+    const regexed = floor.replace(re, function (match) {
+        const args = [...arguments];
+        let cur = match;
+        const rs0 = entry.replaceString.replace(/{{match}}/gi, '$0');
+        return rs0.replace(/\$(\d+)|\$<([^>]+)>/g, (_, num) => {
+            if (num) cur = args[Number(num)] != null ? args[Number(num)] : undefined;
+            if (!cur) return '';
+            return cur;
+        });
+    });
+    assert(regexed.includes('```html') && regexed.includes('id="woodenCabinet"'), '产物替换后围栏包裹 + 结构哨兵幸存');
+    const decoded = regexed.replace(/&amp;/g, '&');
+    const body5 = decoded.slice(decoded.indexOf('```html\n') + 8, decoded.lastIndexOf('\n```'));
+    return body5.replace(/&#36;/g, '$');
+}
+
+async function boot(opts, timeoutMs) {
+    const f = document.getElementById('shopFrame');
+    f.srcdoc = srcdocBody.replace('<head>', '<head>' + (opts && opts.noMock ? '' : mockScript(opts || {})));
+    const t0 = Date.now();
+    while (Date.now() - t0 < (timeoutMs || 20000)) {
+        await sleep(300);
+        try {
+            if (shopEval('document.readyState === "complete" && typeof onShopDataReceived === "function"')) return true;
+        } catch (e) { /* 未就绪 */ }
+    }
+    return false;
+}
+
+function deckInfo() {
+    return shopEval(`(function () {
+        const deck = document.getElementById('partyDeck');
+        const cards = deck ? deck.querySelectorAll('.party-card').length : -1;
+        const ph = deck ? deck.querySelector('.party-empty') : null;
+        return { cards: cards, empty: ph ? ph.textContent : null };
+    })()`);
+}
+function noticeText() {
+    return shopEval(`(function () {
+        const n = document.getElementById('envNotice');
+        return n ? (n.classList.contains('show') ? n.textContent : '') : '<missing>';
+    })()`);
+}
+
+async function runFlow() {
+    logBox.innerHTML = '';
+    passCount = failCount = 0;
+    document.getElementById('summary').textContent = '';
+
+    log('== 0. 产物 + 酒馆语义替换 ==', 'head');
+    srcdocBody = await buildSrcdocBody();
+
+    // ============ A. 自动捕获（楼层含块 + MMS 在场） ============
+    log('== A. 楼层块自动捕获（无需手动粘贴） ==', 'head');
+    const okA = await boot({ floorText: '小队推开杂货铺的门。\n' + BLOCK_AUTO + '\n塔尼亚婆婆抬起头。', stat: MMS_STAT });
+    assert(okA, '组件 boot（产物管线无 $ 吞噬、主脚本可执行）');
+    const autoA = await waitFor('appliedFloorBlockText !== null', 8000);
+    assert(autoA, 'boot 首 tick 自动捕获楼层 Block（appliedFloorBlockText 已置，全程未手动粘贴）');
+    const afterA = shopEval(`(function () {
+        const h1 = document.querySelector('.shop-title-text h1');
+        return {
+            title: h1 ? h1.textContent : null,
+            keeper: document.getElementById('bubbleTitleName') ? document.getElementById('bubbleTitleName').textContent : null,
+            items: shopState ? shopState.items.length : -1,
+            cash: document.getElementById('cashDisplay').textContent,
+            members: shopState ? shopState.presentMembers.join('/') : null,
+            hasState: typeof shopState !== 'undefined' && !!shopState
+        };
+    })()`);
+    assert(afterA.hasState && afterA.title && afterA.title.includes('铜铃杂货铺'), '标题随块变为「' + afterA.title + '」（demo 布莱克伍德已被替换）');
+    assert(afterA.keeper === '塔尼亚婆婆', '店主气泡名 = 塔尼亚婆婆（实际 ' + afterA.keeper + '）');
+    assert(afterA.items === 3, '块内 3 件商品进柜（实际 ' + afterA.items + '）');
+    assert(afterA.members === '埃利奥特/弗兰克', '块在场成员解析 = ' + afterA.members);
+    assert(afterA.cash === '$4744.70', '现钞栏回显 MMS 现金（实际 ' + afterA.cash + '，demo 基线 $280.00）');
+    const deckA = deckInfo();
+    assert(deckA.cards === 2, '底栏 = 块在场成员 ∩ 名册 = 2 张（名册 3 人，实际 ' + deckA.cards + '）');
+    assert(String(noticeText()).includes('已从楼层载入'), '提示条报「已从楼层载入」：「' + noticeText() + '」');
+
+    const hitA2 = await shopEval('pollFloorTick()');
+    assert(hitA2 === false, '同块二次 tick 不重复应用（返回 false，保护购物车/会话态）');
+
+    // 手动导入优先：粘另一块后轮询不得覆盖
+    const manual = await shopWin().onShopDataReceived(makeBlock(['埃利奥特'], '手动粘贴铺子'));
+    await sleep(200);
+    const hitA3 = await shopEval('pollFloorTick()');
+    const titleAfterManual = shopEval("document.querySelector('.shop-title-text h1').textContent");
+    assert(manual === true && hitA3 === false && titleAfterManual.includes('手动粘贴铺子'),
+        '手动粘贴优先：轮询不再覆盖（标题仍「' + titleAfterManual + '」）');
+    shopEval('stopFloorPolling()');
+    assert(shopEval('floorPollTimer === null') === true, 'stopFloorPolling 后无残留定时器');
+
+    // ============ B. MMS 缺失 ============
+    log('== B. MMS 缺失：提示不静默、数据不假装 ==', 'head');
+    const okB = await boot({ floorText: '小队进屋。\n' + BLOCK_AUTO + '\n静悄悄。' });
+    assert(okB, '组件 boot（无 stat_data 环境）');
+    await waitFor('mmsDataState === "unavailable" && document.getElementById("envNotice").classList.contains("show")', 8000);
+    assert(shopEval('mmsDataState') === 'unavailable', 'mmsDataState = unavailable（实际 ' + shopEval('mmsDataState') + '）');
+    assert(String(noticeText()).includes('MMS'), '常驻提示条说明缺少 MMS：「' + noticeText() + '」');
+    const deckB = deckInfo();
+    assert(deckB.cards === 4, '底栏回示例 4 人（实际 ' + deckB.cards + '）');
+    assert(shopEval("document.getElementById('cashDisplay').textContent") === '$280.00', '现钞保持示例金额 $280.00（无 MMS 不假装真实现金）');
+    const boxB = shopEval(`(function () {
+        const n = document.getElementById('envNotice');
+        const r = n.getBoundingClientRect();
+        const d = document.documentElement;
+        return { left: Math.round(r.left), right: Math.round(r.right), vw: d.clientWidth,
+                 overflowX: d.scrollWidth - d.clientWidth, shown: n.classList.contains('show') };
+    })()`);
+    assert(boxB.shown && boxB.left >= -1 && boxB.right <= boxB.vw + 1 && boxB.overflowX <= 1,
+        '常驻提示条落在 375px 视口内且不引起横向溢出（left=' + boxB.left + ' right=' + boxB.right + ' vw=' + boxB.vw + '）');
+
+    // ============ C. 零匹配 ============
+    log('== C. 块在场成员与名册零匹配：底栏置空 + 提示 ==', 'head');
+    const okC = await boot({ floorText: '陌生两人进店。\n' + BLOCK_MISMATCH + '\n婆婆眯起眼。', stat: MMS_STAT });
+    assert(okC, '组件 boot（零匹配环境）');
+    await waitFor('mmsDataState === "mismatch" && document.querySelectorAll(".party-card").length === 0', 8000);
+    assert(shopEval('mmsDataState') === 'mismatch', 'mmsDataState = mismatch（实际 ' + shopEval('mmsDataState') + '）');
+    const deckC = deckInfo();
+    assert(deckC.cards === 0, '底栏不显示名册（实际 ' + deckC.cards + ' 张卡，改动前会显示全部 3 人）');
+    assert(deckC.empty && deckC.empty.includes('不匹配'), '底栏占位说明：「' + deckC.empty + '」');
+    assert(String(noticeText()).includes('不匹配'), '提示条说明零匹配：「' + noticeText() + '」');
+    assert(shopEval('activeSpeaker === null') === true, '无在场角色 → activeSpeaker 置空（发言入口由守卫拦下）');
+    assert(shopEval("document.getElementById('cashDisplay').textContent") === '$4744.70', '零匹配不影响现钞回显（MMS 仍可读）');
+
+    // 归属面板不崩 + 未分配提示带根因（走真实入车链路：点格 → 数量弹窗 → 确认）
+    const cartN = shopEval(`(function () {
+        document.querySelector('.shelf-cell').click();
+        const inp = document.getElementById('qtyNumberInput');
+        if (inp) inp.value = '1';
+        const btn = document.getElementById('qtyConfirmBtn');
+        if (btn) btn.click();
+        return playerState.cart.length;
+    })()`);
+    assert(cartN >= 1, '零匹配下仍可加购（cart=' + cartN + '）');
+    await sleep(300);
+    let assignErr = null;
+    try { await shopEval('openAssignPanel()'); } catch (e) { assignErr = String(e && e.message); }
+    assert(assignErr === null && shopEval('!!assignState') === true, '空底栏下归属面板不崩（assignState 建立，err=' + assignErr + '）');
+    try { await shopEval('checkoutCart()'); } catch (e) { /* 未分配 → alert 后 return */ }
+    await sleep(200);
+    const alerts = shopEval('JSON.stringify(window.__alerts)');
+    assert(String(alerts).includes('不匹配'), '未分配结算提示带根因（alerts=' + alerts + '）');
+
+    // ============ D. 无酒馆 API：零副作用 ============
+    log('== D. 无 TavernHelper API（纯 IAB / 静态打开）：零副作用 ==', 'head');
+    const okD = await boot({ noMock: true });
+    assert(okD, '组件 boot（无任何酒馆 API）');
+    await sleep(1200);
+    assert(shopEval('floorPollTimer === null') === true, '不建轮询定时器（floorPollTimer = null）');
+    assert(shopEval('appliedFloorBlockText === null') === true, '不读楼层、不应用任何块（appliedFloorBlockText = null）');
+    assert(shopEval('mmsDataState') === 'unavailable', 'mmsDataState = unavailable');
+    assert(shopEval("document.getElementById('woodenCabinet').children.length") >= 15, 'demo 商品柜照常渲染（≥15 件）');
+    assert(shopEval("document.getElementById('cashDisplay').textContent") === '$280.00', '现钞 demo $280.00 不变');
+
+    const total = passCount + failCount;
+    document.getElementById('summary').textContent = failCount === 0
+        ? '✅ ' + passCount + '/' + total + ' 全绿'
+        : '❌ ' + failCount + ' 失败 / ' + total;
+    log('== 完成：' + passCount + ' 通过, ' + failCount + ' 失败 ==', failCount ? 'fail' : 'pass');
+}
+
+document.getElementById('btnRun').addEventListener('click', () => {
+    runFlow().catch(e => log('流程异常：' + (e && e.message), 'fail'));
+});
+</script>
+</body>
+</html>

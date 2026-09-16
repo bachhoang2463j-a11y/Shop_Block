@@ -1,6 +1,6 @@
 # ShopBlock 商店模块 · 数据格式规范（SPEC）
 
-> 状态：格式规范定稿，待实施。本文档定义第四联动模块「商店 `<Shop_block>`」的全部数据契约。
+> 状态：M1-M9 格式契约已全部落地（现状见 README，施工史见 LOG）。本文档定义第四联动模块「商店 `<Shop_block>`」的全部数据契约。
 > 格式惯例对齐三件套：正文块 = `<Combat_block>` 式中文键 YAML（RpgCombat）；独立 LLM = 副导演式英文键 JSON；跨模块 = `$` 前缀聊天变量 + 事件回执 + 数值直连不走 LLM。
 > 联动对象：MiniMapStatus（mms 状态栏）、AssistantDirector（副导演：报纸/风声数据源）、RpgCombat（块解析惯例来源）。
 
@@ -8,7 +8,7 @@
 
 ## 一、正文 AI 原始 YAML：`<Shop_block>`
 
-标签 `<Shop_block>...</Shop_block>`（解析大小写不敏感），内部纯 YAML、无 markdown 围栏。解析沿用 RpgCombat 模式：`lastIndexOf` 取最后一个块 + 内联 js-yaml 4.1.0。
+标签 `<Shop_block>...</Shop_block>`（解析大小写不敏感），内部纯 YAML、无 markdown 围栏。解析沿用 RpgCombat 模式：`lastIndexOf` 取最后一个块 + 内联 js-yaml 4.1.0。取数通道同样对齐 RpgCombat：正则只替换 iframe 空壳，块数据由组件在 iframe 内轮询楼层自取（见下「读取通道」）。
 
 ```yaml
 <Shop_block>
@@ -77,6 +77,19 @@
 - 同义/重复类目由「重排商品」按钮解决（见第三节）。
 - 发给任何 LLM 前，正文上下文剥掉 `<Shop_block>` 与 `<Shop_Record>`（同 `<Combat_block>` 剥离惯例）。
 - 独家私藏在好感度 <100 时 UI 整类隐藏；独立 LLM 的 add 命令**禁止**写入此类目（私藏归正文 AI 管）。
+
+### 读取通道（楼层自动捕获，RpgCombat `startSTPolling` 同构）
+
+正则产物只负责把正文最后一个块整段替换成组件 iframe——`$1` 不传入组件（`$数字` 在构建期免疫，见 build-regex.cjs），**块数据由组件自己在 iframe 内取**：
+
+1. 启动首 tick 立即扫 + 每 800ms 轮询一次：读本层原文 `getChatMessages(getCurrentMessageId())`（字段兼容 `raw_content || message || mes`，跳过 `is_system`），退化通道 `getCurrentMessage()`；
+2. `extractShopBlock` 取最后一个块 → `onShopDataReceived` → 解析渲染 + `$shops` 持久化 + 进店反应；
+3. 命中即停表；已应用块文本去重（同块重复 tick 不再应用，保护购物车与砍价会话态）；
+4. **手动导入优先**：`onShopDataReceived` 成功后一律停轮询，粘过的块不会被随后的轮询覆盖；
+5. 5s 未扫到 → 提示条「未检测到 `<Shop_block>`，当前为示例商店，可手动粘贴」；30s 硬上限停表；
+6. 非酒馆环境（`getChatMessages` / `getCurrentMessageId` / `getCurrentMessage` 全缺）**不建定时器**，行为与纯手动版一致（独立 IAB / harness 零副作用）。
+
+**已知边界**：轮询钉「本 iframe 启动时的当前楼层」，不向前回溯找更早的块——重载聊天后旧楼层的 iframe 若当前楼层无块，会停在示例商店并给提示，走手动粘贴回退。取舍依据：宁可不显示数据，也不把别的楼的店显示到这一楼。重复渲染同一楼层会重复合并 `$shops`（按店名幂等，商品不重复追加）。
 
 ---
 
@@ -205,7 +218,8 @@
 ### 读取（进店时）
 
 - **团队在场/头像**：`getLastMessageId()` 向前回溯 ≤50 楼找 `$mms_meta.mesId` 匹配的 `stat_data`（必须校验 mesId 防 getVariables(message) 向前继承陷阱）；在场团队 = `stat_data.状态栏.角色列表`，与 Shop_block 的 `在场成员` 取交集定最终名单。头像按 MMS 三路取值：`AVATAR_MAP[纯名]` → 名册 `avatar` 字段解析 → `$mms_portrait_choice[纯名]` 覆盖，全空则首字 emoji 兜底。
-- **团队现金**：`stat_data` 第一个含 `现金` 字段的固定模块（NewDay 的 readStatusbarCash 同款回溯模式）。
+- **团队现金**：`stat_data` 第一个含 `现金` 字段的固定模块（NewDay 的 readStatusbarCash 同款回溯模式）；读到即回显到顶栏现钞（`playerState.cash`），结算写回成功后同步刷新，保证店内金额与状态栏一致。
+- **降级语义（不得静默）**：MMS 数据不可读（无 API / 本层及前 50 楼无 `stat_data`）→ 底栏保持示例 4 人、现钞保持示例金额，**提示条常驻**说明「未检测到 MMS 状态栏数据，结算不会写入状态栏」；块 `在场成员` 与名册**零匹配** → 底栏置空 + 占位说明 + 提示条常驻（发言与砍价入口随之关闭并给出原因），不再静默回退显示全部名册。两种状态由 `mmsDataState`（`ok`/`unavailable`/`mismatch`）标记，手动导入成功时同步回显该状态。
 
 ### 写入（结算时，玩家逐件选择归属：某角色 or 载具）
 

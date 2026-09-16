@@ -64,3 +64,20 @@
 | 提交 | 内容 |
 |---|---|
 | c235e8c | M11：build-regex `$数字` 分区免疫 + 酒馆管线真实现复刻断言 + product-harness 产物端到端 10/10 |
+
+## 2026-09-16 · M12 楼层块自动捕获 + MMS 降级不再静默
+
+- **缘起**：用户核对「ShopBlock 是否像 RpgCombat 一样在同层轮询抓块」。查证结论——**从来没有**：`setInterval` 在全部 27 个提交中零命中，`eventOn/eventSource` 零命中，`onShopDataReceived` 全文件只有「手动导入弹窗」一个生产调用点，首版（58e25ad）就写着"手动导入框"。这是 M1 设计阶段就漏掉的取数层（原始意图见 README M1"解析失败时显示手动粘贴回退框"——回退成了唯一入口），非中途删除。RpgCombat 的正则产物同样丢弃 `$1`，它的自动抓块完全靠 iframe 内 `startSTPolling()`（index.html:9767）。
+- **方案**：iframe 内加 `startFloorPolling()`（RpgCombat 同构但更严）——首 tick 立即扫 + 800ms `setInterval`；读 `getChatMessages(getCurrentMessageId())` 本层正文（字段兼容同 `collectRecentStoryFloors`，跳过 `is_system`），退化 `getCurrentMessage()`；命中即 `clearInterval`；`appliedFloorBlockText` 去重防重复应用清空购物车/砍价会话态；`floorPollBusy` 防并发重入；5s 未扫到给提示、30s 硬上限；**钉住启动时的当前楼层不向前回溯**（宁可不显示，也不把别的楼的店显示到这一楼）。非酒馆环境不建定时器（纯 IAB/harness 零副作用，product/narrow 两个既有 harness 行为不变）。
+- **手动导入优先**：`onShopDataReceived` 成功后一律 `stopFloorPolling()`，粘过的块不会被随后的轮询覆盖。
+- **顺带修掉的两处既有缺陷**（都是本轮才暴露）：
+  1. `updateUI()` 第 2 行写 `sanityText`/`sanityBar`，而商店 UI **根本没有这两个元素**（RpgCombat 状态栏的残留），函数从来就是抛异常退出——初始化尾部 `updateCartUI()` 一直没执行过，从 MMS 链调用它更会把 `syncPartyFromMms` 从中途炸断（现象：粘贴块后底栏仍是 demo 4 人）。改为 `if (el)` 守卫。
+  2. 初始化时 `syncPartyFromMms()`（那时还没有块）与轮询载入后的同步并发，旧结果可能后落地把底栏覆盖回去。加 `partySyncSeq` 序号守卫：过期同步直接丢弃；`mmsDataState` 的赋值随之移到守卫之后。
+- **MMS 降级不再静默**（用户诉求："mms 不在，粘贴不提示，显示默认 4 个 demo 角色有些奇怪"）：新增顶栏提示条 `#envNotice`（fixed 定位零布局位移、`width:max-content`+92vw 上限）。`mmsDataState = ok / unavailable / mismatch` 三态：`unavailable` → 常驻提示「未检测到 MMS 状态栏数据：底栏为示例角色、现钞为示例金额，结算不会写入状态栏」；`mismatch`（块「在场成员」与名册零匹配）→ 底栏置空 + 占位说明 + 常驻提示，`handleSendMessage`/砍价按钮加空发言人守卫，未分配结算的 alert 附带根因。手动导入成功文案同时回显该状态。
+- **现金回显**：`playerState.cash` 全文从未被赋值，顶栏现钞恒为 demo $280（MMS 在跑也一样，与 README 已知边界矛盾）。改为 `syncPartyFromMms` 读到 `ctx.cash` 即回显 + `updateUI()`，结算写回 `stat_data` 成功后同步扣减，店内金额与状态栏一致。
+- **验证**：新增 `integration-test/poll-harness.html`（产物管线 → 375px mock boot，四场景 A 自动捕获 / B MMS 缺失 / C 零匹配 / D 无酒馆 API，35 断言全绿）；回归 product-harness 10/10、duo-harness 25/25、narrow-harness 15/15。IAB 截图管道在降级态不可用（`screenshot activity capture failed for guest`），提示条几何用断言覆盖（375px 下 353×42 居中、文档横向溢出 0），目视确认留给真机。
+- **测试踩坑备查**：① harness 里点 `.shelf-cell` 遇到"数量>1"商品会走数量弹窗、不入车——断言入车要走「点格 → 填 `qtyNumberInput` → 点 `qtyConfirmBtn`」完整链路；② duo-harness 用 `../../MiniMapStatus/...` 跨项目取文件，静态服务器必须以 `D:\Project` 为根，否则 404 成 "nf" 导致两 iframe 全白（表现为借探测超时，极易误判为代码回归）；③ boot 首 tick 是异步的，"就绪"不等于"已应用"，harness 需 `waitFor('appliedFloorBlockText !== null')` 再断言。
+
+| 提交 | 内容 |
+|---|---|
+| （待回填） | M12：楼层块自动捕获（RpgCombat startSTPolling 同构）+ MMS 三态提示（缺失/零匹配不再静默）+ 现钞回显 + updateUI/同步竞态双修（poll-harness 35/35，product 10/10、duo 25/25、narrow 15/15 回归全绿） |

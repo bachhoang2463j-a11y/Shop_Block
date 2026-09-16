@@ -1375,6 +1375,38 @@
             to { opacity: 1; transform: scale(1); }
         }
 
+        /* 环境提示条：MMS 缺失（常驻）/ 楼层轮询结果（临时）共用；fixed 定位零布局位移 */
+        .env-notice {
+            position: fixed;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: max-content;   /* 否则 left:50% 会把可用宽度压成半屏，长文案折成多行 */
+            max-width: 92vw;
+            padding: 5px 14px;
+            border-radius: 14px;
+            background: rgba(26, 17, 10, 0.94);
+            border: 1px solid #5a3822;
+            color: #dfb06c;
+            font-size: 12px;
+            line-height: 1.5;
+            text-align: center;
+            white-space: pre-line;
+            z-index: 90;
+            pointer-events: none;
+            display: none;
+        }
+        .env-notice.show { display: block; }
+
+        /* 底栏在场角色为空（块内「在场成员」与 MMS 名册零匹配）时的占位 */
+        .party-empty {
+            color: #8c7360;
+            font-size: 12px;
+            line-height: 1.4;
+            max-width: 260px;
+            padding: 6px 4px;
+        }
+
         @media (max-width: 1200px) {
             main { grid-template-columns: 1fr; }
             .blacksmith-stage { min-height: 400px; }
@@ -1432,6 +1464,7 @@
             .bottom-console { padding: 8px 10px 10px 10px; gap: 8px; }
             .party-deck { gap: 6px; }
             .party-card { width: 72px; height: 80px; }
+            .env-notice { font-size: 11px; padding: 4px 10px; max-width: 94vw; }
             .cart-panel { padding: 6px 10px; }
             .cart-actions span { display: none; }
             .cart-total-label { font-size: 10px; }
@@ -1493,6 +1526,9 @@
             </div>
         </div>
     </header>
+
+    <!-- 环境提示条：MMS 数据缺失（常驻）/ 楼层块轮询结果（临时） -->
+    <div class="env-notice" id="envNotice"></div>
 
     <!-- ====================================================
          主展示区 (左侧展台带气泡 + 右侧方案2工匠实木托盘柜)
@@ -2743,18 +2779,50 @@
             return { members, cash, cashModule, vehicles };
         }
 
+        // ====================================================
+        // 环境提示条 + MMS 数据状态（降级不再静默）
+        // ====================================================
+        // mmsDataState: 'ok' | 'unavailable'（无 API / 无 stat_data）| 'mismatch'（块在场成员与名册零匹配）
+        let mmsDataState = 'unavailable';
+        const envNoticeEl = document.getElementById('envNotice');
+        let noticeMmsText = '';   // 常驻槽：MMS 数据缺失
+        let noticeTempText = '';  // 临时槽：轮询载入 / 未扫到块 / 无法发言
+        let noticeTempTimer = null;
+
+        function renderEnvNotice() {
+            const parts = [noticeMmsText, noticeTempText].filter(Boolean);
+            if (!parts.length) { envNoticeEl.classList.remove('show'); return; }
+            envNoticeEl.textContent = parts.join('\n');
+            envNoticeEl.classList.add('show');
+        }
+        function setMmsNotice(text) {
+            noticeMmsText = text || '';
+            renderEnvNotice();
+        }
+        // ms > 0 自动收起；ms 为 0/省略则保持显示
+        function setTempNotice(text, ms) {
+            noticeTempText = text || '';
+            if (noticeTempTimer) { clearTimeout(noticeTempTimer); noticeTempTimer = null; }
+            if (ms) noticeTempTimer = setTimeout(() => { noticeTempText = ''; noticeTempTimer = null; renderEnvNotice(); }, ms);
+            renderEnvNotice();
+        }
+
         // 在场团队 = stat_data 角色列表 ∩ Shop_block 在场成员（无块时全角色列表）
+        // 返回 null = 无 MMS 数据；state = 'ok' / 'mismatch'（由调用方在过期检查后落地）
         async function loadMmsContext() {
             const found = await findLatestStatData();
             if (!found) return null;
             const snap = extractMmsSnapshot(found.stat);
             let present = snap.members.map(m => m.name);
+            let state = 'ok';
             if (shopState && shopState.presentMembers.length) {
                 const blockSet = new Set(shopState.presentMembers.map(n => n.trim()));
                 const filtered = present.filter(n => blockSet.has(n) || Array.from(blockSet).some(b => n.includes(b) || b.includes(n)));
+                // 有交集用交集；块有在场成员但与名册零匹配 → 底栏置空（不再静默回退全名册）
                 if (filtered.length) present = filtered;
+                else { present = []; state = 'mismatch'; }
             }
-            return { floorId: found.floorId, stat: found.stat, members: snap.members, present, cash: snap.cash, cashModule: snap.cashModule, vehicles: snap.vehicles };
+            return { floorId: found.floorId, stat: found.stat, members: snap.members, present, cash: snap.cash, cashModule: snap.cashModule, vehicles: snap.vehicles, state: state };
         }
 
         // ====================================================
@@ -2840,7 +2908,11 @@
             if (!assignState) return;
             const unassigned = playerState.cart.filter(c => !assignState.assigned.some(a => a.entryId === c.id));
             if (unassigned.length) {
-                alert(`${unassigned.length} 件商品未分配归属：${unassigned.map(c => c.item.name).join('、')}。请先勾选并分配。`);
+                // 零匹配时归属列表没有角色可选，提示里点明根因，避免只看到「未分配」不得要领
+                const hint = mmsDataState === 'mismatch'
+                    ? '（当前块内「在场成员」与 MMS 名册不匹配、底栏已置空，角色归属不可选；请先修正正文块或状态栏名册）'
+                    : '';
+                alert(`${unassigned.length} 件商品未分配归属：${unassigned.map(c => c.item.name).join('、')}。请先勾选并分配。` + hint);
                 return;
             }
             const total = playerState.cart.reduce((s, e) => s + effPrice(e.item) * e.quantity, 0);
@@ -2936,6 +3008,9 @@
             playerState.cart = [];
             assignState = null;
             closeCartDetailModal();
+            // 现钞栏回显：结算已写回 stat_data → 店内金额与状态栏即时一致（写入失败保持原值）
+            if (written && ctx && ctx.cash != null) playerState.cash = ctx.cash - total;
+            updateUI();
             updateCartUI();
             renderCabinet();
         }
@@ -3025,6 +3100,7 @@
             playerState.cart = [];        // 换店/换块清空购物车
             addLandedThisSession = 0;     // 新会话重置 add 频率限制
             sessionDialogLog.length = 0;  // 新会话清空对话流水
+            stopFloorPolling();           // 块已落地 → 停楼层轮询（手动导入优先，防随后轮询覆盖）
             applyShopToUI();
             try {
                 const all = await readAllShops();
@@ -3035,7 +3111,7 @@
                 console.warn('[ShopBlock] $shops 持久化失败（非阻塞）:', e);
             }
             triggerEnterReaction();       // 进店反应（M4：LLM 失败回退内置文案）
-            syncPartyFromMms();           // 在场成员可能随块变化，重同步底栏
+            await syncPartyFromMms();     // 在场成员可能随块变化，重同步底栏（含 MMS 状态与现钞回显）
             return true;
         }
 
@@ -3197,12 +3273,16 @@
         ];
 
         // 玩家与小队：默认四人（MMS 在场时由 stat_data 角色列表动态覆盖，见 syncPartyFromMms）
-        let partyMembers = [
-            { id: 0, name: "埃利奥特", role: "私家侦探", avatar: "Eil.png" },
-            { id: 1, name: "弗兰克", role: "一战老兵", avatar: "Frank.png" },
-            { id: 2, name: "玛德琳", role: "密大调查员", avatar: "chen.png" },
-            { id: 3, name: "索恩", role: "秘术顾问", avatar: "suoen_compressed.png" }
-        ];
+        // 无 MMS 数据时的示例小队；底栏因零匹配置空后，MMS 转为不可读时用它复原
+        function demoPartyMembers() {
+            return [
+                { id: 0, name: "埃利奥特", role: "私家侦探", avatar: "Eil.png" },
+                { id: 1, name: "弗兰克", role: "一战老兵", avatar: "Frank.png" },
+                { id: 2, name: "玛德琳", role: "密大调查员", avatar: "chen.png" },
+                { id: 3, name: "索恩", role: "秘术顾问", avatar: "suoen_compressed.png" }
+            ];
+        }
+        let partyMembers = demoPartyMembers();
 
         // MMS 头像表：与 MMS 同源共享 localStorage（LLM 版的 mms_img_data_llm_v1 快照，
         // 完整版移植该方案后同 key 生效）。快照损坏静默回退空表 → 本地 my_assets 兜底。
@@ -3246,6 +3326,16 @@
         // 底栏角色卡由成员列表动态渲染（MMS stat_data 角色列表覆盖写死的四人）
         function renderPartyDeck(members) {
             partyMembers = members.map((m, i) => ({ id: i, name: m.name, role: m.role || '', avatar: m.avatar || '' }));
+            // 空底栏（块在场成员与 MMS 名册零匹配）：占位说明；发言入口由 handleSendMessage / 砍价按钮守卫关闭
+            if (!partyMembers.length) {
+                activeSpeaker = null;
+                partyDeck.innerHTML = '';
+                const ph = document.createElement('div');
+                ph.className = 'party-empty';
+                ph.textContent = '在场成员与 MMS 名册不匹配：请检查块内「在场成员」姓名（无在场角色时无法代为发言）。';
+                partyDeck.appendChild(ph);
+                return;
+            }
             if (!partyMembers.some(p => p === activeSpeaker)) activeSpeaker = partyMembers[0];
             partyDeck.innerHTML = '';
             partyMembers.forEach((m, i) => {
@@ -3276,10 +3366,29 @@
         }
 
         // MMS 在场角色 → 底栏（从 stat_data 读，含名册 avatar 字段合并）
+        // 序号守卫：初始化时的同步可能晚于轮询载入块的同步落地，过期结果直接丢弃
+        let partySyncSeq = 0;
         async function syncPartyFromMms() {
+            const seq = ++partySyncSeq;
             loadMmsAvatarMap(); // 每次同步重读快照（MMS 侧用户改图后无需刷新商店）
             const ctx = await loadMmsContext();
-            if (!ctx || !ctx.present.length) { renderPartyDeck(partyMembers); return; }
+            if (seq !== partySyncSeq) return; // 更晚的同步已接管，本次作废
+            // MMS 数据不可读：底栏回示例小队 + 常驻提示说明（不再静默装作正常数据）
+            if (!ctx) {
+                mmsDataState = 'unavailable';
+                setMmsNotice('未检测到 MMS 状态栏数据：底栏为示例角色、现钞为示例金额，结算不会写入状态栏。');
+                if (!partyMembers.length) renderPartyDeck(demoPartyMembers());
+                return;
+            }
+            mmsDataState = ctx.state;
+            // 零匹配属于必须人工修正的数据不一致：底栏占位 + 提示条常驻（双通道，避免再次静默）
+            setMmsNotice(ctx.state === 'mismatch'
+                ? '块内「在场成员」与 MMS 名册不匹配：底栏已置空，请检查块内姓名与状态栏名册。'
+                : '');
+            // 现钞栏回显：以 MMS 现金为准（无 MMS 数据时保持示例金额）
+            if (ctx.cash != null) { playerState.cash = ctx.cash; updateUI(); }
+            // 块在场成员与名册零匹配：底栏置空（loadMmsContext 已判定）
+            if (ctx.state === 'mismatch') { renderPartyDeck([]); return; }
             // 名册 avatar 字段（$mms_roster.characters[].avatar：可能是 URL 或表键名）
             let rosterAvatars = {};
             try {
@@ -4037,6 +4146,7 @@
 
         // 砍价模式开关：点按钮进入，再点退出
         btnBargain.addEventListener('click', () => {
+            if (!activeSpeaker) { setTempNotice('到场角色为空（块内「在场成员」与 MMS 名册不匹配），无法代为砍价。', 6000); return; }
             bargainMode = !bargainMode;
             btnBargain.classList.toggle('active', bargainMode);
             sound.playWoodClick();
@@ -4053,6 +4163,8 @@
         });
 
         async function handleSendMessage() {
+            // 底栏为空（零匹配置空）：没有代言者，禁止发言（否则 activeSpeaker.name 取不到）
+            if (!activeSpeaker) { setTempNotice('到场角色为空（块内「在场成员」与 MMS 名册不匹配），无法代为发言。', 6000); return; }
             let text = chatInput.value.trim();
             if (!text) return;
             chatInput.value = '';
@@ -4151,7 +4263,11 @@
                 return;
             }
             if (await onShopDataReceived(text)) {
-                importBlockMsg.textContent = `✓ 已载入「${shopState.shopName}」：店主 ${shopState.keeper}，${shopState.items.length} 件商品，${shopState.categories.length} 个类目${shopState.hasExclusive ? ' + 独家私藏' : ''}。`;
+                // MMS 状态后缀：粘贴当场就能看到降级原因，不用等轮询提示
+                const mmsSuffix = mmsDataState === 'unavailable'
+                    ? ' 未检测到 MMS 状态栏数据：底栏角色与现钞为示例值，结算不会写入状态栏。'
+                    : (mmsDataState === 'mismatch' ? ' 块内「在场成员」与 MMS 名册不匹配，底栏已置空。' : '');
+                importBlockMsg.textContent = `✓ 已载入「${shopState.shopName}」：店主 ${shopState.keeper}，${shopState.items.length} 件商品，${shopState.categories.length} 个类目${shopState.hasExclusive ? ' + 独家私藏' : ''}。` + mmsSuffix;
                 importBlockMsg.style.color = '#7a9a5a';
                 setTimeout(() => importBlockModal.classList.remove('show'), 800);
             } else {
@@ -4175,8 +4291,88 @@
 
         function updateUI() {
             cashDisplay.textContent = `$${playerState.cash.toFixed(2)}`;
-            sanityText.textContent = `${playerState.sanity} / ${playerState.maxSanity}`;
-            sanityBar.style.width = `${(playerState.sanity / playerState.maxSanity) * 100}%`;
+            // 商店 UI 无 SAN 元素（sanityText/sanityBar 不存在）：必须守卫，
+            // 否则本函数在第 2 行抛异常，初始化尾部与 syncPartyFromMms 都会被截断
+            if (sanityText) sanityText.textContent = `${playerState.sanity} / ${playerState.maxSanity}`;
+            if (sanityBar) sanityBar.style.width = `${(playerState.sanity / playerState.maxSanity) * 100}%`;
+        }
+
+        // ====================================================
+        // 楼层 <Shop_block> 自动捕获（RpgCombat startSTPolling 同构）
+        // 轮询本 iframe 所在楼层正文，抓到最后一个 <Shop_block> 即载入；
+        // 非酒馆环境（无 TavernHelper API）不建定时器，行为与旧版一致。
+        // ====================================================
+        const FLOOR_POLL_INTERVAL = 800;   // 轮询间隔
+        const FLOOR_POLL_HINT_AT = 5000;   // 未扫到块的提示时刻
+        const FLOOR_POLL_MAX = 30000;      // 轮询硬上限（超时静默停表）
+        let floorPollTimer = null;
+        let floorPollHintTimer = null;
+        let floorPollDeadline = 0;
+        let floorPollBusy = false;
+        let appliedFloorBlockText = null;  // 已应用块文本（防重复应用清空购物车/砍价会话态）
+
+        function floorApiAvailable() {
+            return (typeof getChatMessages === 'function' && typeof getCurrentMessageId === 'function')
+                || typeof getCurrentMessage === 'function';
+        }
+
+        // 单层正文读取（字段兼容与 collectRecentStoryFloors 一致）
+        async function readFloorRawText(id) {
+            const msgs = await getChatMessages(id, 1);
+            const m = Array.isArray(msgs) ? msgs[0] : msgs;
+            if (!m || m.is_system) return null;
+            return (m.raw_content || m.message || m.mes || '').toString();
+        }
+
+        function stopFloorPolling() {
+            if (floorPollTimer) { clearInterval(floorPollTimer); floorPollTimer = null; }
+            if (floorPollHintTimer) { clearTimeout(floorPollHintTimer); floorPollHintTimer = null; }
+        }
+
+        // 单次扫描：命中并载入返回 true（harness 可直接驱动，规避后台定时器节流）
+        async function pollFloorTick() {
+            if (floorPollBusy) return false;
+            floorPollBusy = true;
+            try {
+                let text = null;
+                if (typeof getChatMessages === 'function' && typeof getCurrentMessageId === 'function') {
+                    const id = getCurrentMessageId();
+                    if (id !== undefined && id !== null) text = await readFloorRawText(id);
+                }
+                if (!text && typeof getCurrentMessage === 'function') {
+                    const cur = getCurrentMessage();
+                    const m = Array.isArray(cur) ? cur[0] : cur;
+                    if (m) text = (m.raw_content || m.message || m.mes || '').toString();
+                }
+                if (!text) return false;
+                const block = extractShopBlock(text);
+                if (!block || block === appliedFloorBlockText) return false;
+                if (await onShopDataReceived(text)) {
+                    appliedFloorBlockText = block;
+                    setTempNotice(`已从楼层载入「${shopState.shopName}」（自动捕获，无需手动粘贴）。`, 4000);
+                    return true;
+                }
+                return false;
+            } catch (e) {
+                console.warn('[ShopBlock] 楼层扫描失败:', e);
+                return false;
+            } finally {
+                floorPollBusy = false;
+            }
+        }
+
+        function startFloorPolling() {
+            if (!floorApiAvailable()) return; // 纯 IAB / harness：零副作用
+            floorPollDeadline = Date.now() + FLOOR_POLL_MAX;
+            floorPollTimer = setInterval(async () => {
+                if (Date.now() > floorPollDeadline) { stopFloorPolling(); return; }
+                if (await pollFloorTick()) stopFloorPolling();
+            }, FLOOR_POLL_INTERVAL);
+            floorPollHintTimer = setTimeout(() => {
+                if (shopState) return; // 已载入块 → 不打扰
+                setTempNotice('未检测到 <Shop_block>：当前为示例商店，可用右上「导入商店块」手动粘贴。');
+            }, FLOOR_POLL_HINT_AT);
+            pollFloorTick().then(hit => { if (hit) stopFloorPolling(); }); // 首 tick 立即扫（真机楼层渲染时块已在正文里）
         }
 
         // 初始化
@@ -4189,6 +4385,7 @@
         renderCabinet();
         updateUI();
         updateCartUI();
+        startFloorPolling();   // 楼层 <Shop_block> 自动捕获（无酒馆 API 时内部直接返回，零副作用）
     </script>
 </body>
 </html>
