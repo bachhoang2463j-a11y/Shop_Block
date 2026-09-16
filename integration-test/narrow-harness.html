@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock 窄屏布局 Harness (375×740)</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    #stage { display: flex; gap: 16px; align-items: flex-start; }
+    #phone { width: 375px; height: 740px; border: 4px solid #382417; border-radius: 10px; overflow: hidden; background: #0b0908; flex-shrink: 0; }
+    #phone iframe { width: 100%; height: 100%; border: none; display: block; }
+    #side { flex: 1; min-width: 320px; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; max-height: 660px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h3>ShopBlock 窄屏布局验证（375×740 手机竖屏视口，断点 640px）</h3>
+<div style="margin-bottom: 8px;">
+    <button id="btnRun">▶ 跑窄屏断言</button>
+    <span id="summary"></span>
+</div>
+<div id="stage">
+    <div id="phone"><iframe id="shopFrame"></iframe></div>
+    <div id="side"><div id="log"></div></div>
+</div>
+
+<script>
+// ============================================================
+// 窄屏 harness：单 iframe 375px srcdoc 加载 ShopBlock，
+// 断言 @media (max-width:640px) 断点下的布局契约：
+//   无横向溢出 / 货柜 3 列 + 柜内滚动保持 / 顶栏底栏输入栏
+//   均不溢出 / 输入栏按钮图标化 / 立绘展台压矮。
+// mock 注入模式与 duo-harness 一致（代理到本页共享 STORE/BUS）。
+// ============================================================
+const VW = 375;
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+// ---------- 共享数据层（与 duo-harness 同构的最小 mock） ----------
+const FLOOR_ID = 7;
+const mockStat = {
+    '状态栏': {
+        '角色列表': [
+            { '角色': { '名字': ' 🔮埃利奥特', '属性': '[❤️HP:10/10]', '物品': '[💼] [研究手札]' } },
+            { '角色': { '名字': '弗兰克', '属性': '[❤️HP:12/12]', '物品': '[💼] [军牌]' } }
+        ],
+        '据点': { '名称': '澳大利亚酒店', '现金': '4762.90美元' },
+        '载具': { '名称': '防弹轿车', '杂物': '[📦] [备用轮胎]' }
+    }
+};
+const STORE = { chat: {}, global: {}, message: {} };
+STORE.message[FLOOR_ID] = {
+    stat_data: JSON.parse(JSON.stringify(mockStat)),
+    '$mms_meta': { hash: 'h1', ts: Date.now(), mesId: FLOOR_ID }
+};
+const BUS = { listeners: {} };
+function busOn(name, cb) { (BUS.listeners[name] = BUS.listeners[name] || []).push(cb); }
+function busEmit(name, data) { (BUS.listeners[name] || []).forEach(cb => { try { cb(data); } catch (e) {} }); }
+window.__sharedStore = STORE;
+window.__sharedBus = { on: busOn, emit: busEmit };
+window.__harnessLog = [];
+window.__eventSeen = [];
+
+const floorText = '小队推开杂货铺的门。\n【状态栏标记点】';
+
+function buildMockScript() {
+    return `<script>
+(function () {
+    var P = window.parent;
+    var STORE = P.__sharedStore;
+    var BUS = P.__sharedBus;
+    window.getCurrentMessageId = function () { return ${FLOOR_ID}; };
+    window.getLastMessageId = function () { return ${FLOOR_ID}; };
+    window.getChatMessages = function (id, n) {
+        return [{ message: ${JSON.stringify(floorText)}, raw_content: ${JSON.stringify(floorText)}, role: 'assistant', is_user: false, is_system: false }];
+    };
+    window.getVariables = function (opt) {
+        opt = opt || {};
+        var t = opt.type === 'global' ? STORE.global
+              : opt.type === 'message' ? (STORE.message[opt.message_id] || {})
+              : STORE.chat;
+        return JSON.parse(JSON.stringify(t));
+    };
+    window.insertOrAssignVariables = function (obj, opt) {
+        opt = opt || {};
+        var t = opt.type === 'global' ? STORE.global
+              : opt.type === 'message' ? (STORE.message[opt.message_id] = STORE.message[opt.message_id] || {})
+              : STORE.chat;
+        Object.keys(obj).forEach(function (k) { t[k] = JSON.parse(JSON.stringify(obj[k])); });
+        return Promise.resolve(true);
+    };
+    window.replaceVariables = function (obj, opt) {
+        opt = opt || {};
+        if (opt.type === 'global') STORE.global = JSON.parse(JSON.stringify(obj));
+        else if (opt.type === 'message') STORE.message[opt.message_id] = JSON.parse(JSON.stringify(obj));
+        else STORE.chat = JSON.parse(JSON.stringify(obj));
+        return Promise.resolve(true);
+    };
+    window.eventOn = function (name, cb) { BUS.on(name, cb); };
+    window.eventEmit = function (name, data) {
+        P.__eventSeen.push(name);
+        BUS.emit(name, JSON.parse(JSON.stringify(data || {})));
+    };
+    window.alert = function (msg) { P.__harnessLog.push('alert: ' + String(msg).slice(0, 120)); };
+    window.confirm = function (msg) { P.__harnessLog.push('confirm: ' + String(msg).slice(0, 80)); return true; };
+})();
+<\/script>`;
+}
+
+// ---------- 加载组件 ----------
+const shopWin = () => document.getElementById('shopFrame').contentWindow;
+function shopEval(code) { return shopWin().eval(code); }
+
+async function loadFrame() {
+    const shopHtml = await fetch('../index.html').then(r => r.text());
+    document.getElementById('shopFrame').srcdoc = shopHtml.replace('<head>', '<head>' + buildMockScript());
+    const t0 = Date.now();
+    let lastState = '';
+    while (Date.now() - t0 < 20000) {
+        await new Promise(r => setTimeout(r, 400));
+        let ready = false;
+        try { ready = shopEval('document.readyState === "complete" && typeof onShopDataReceived === "function"'); } catch (e) {}
+        const s = 'ready=' + ready;
+        if (s !== lastState) { log('  [探测] ' + s + ' @' + Math.round((Date.now() - t0) / 1000) + 's'); lastState = s; }
+        if (ready) break;
+    }
+    // 头像卡/货柜首帧渲染稳定余量
+    await new Promise(r => setTimeout(r, 800));
+}
+
+// ---------- 断言工具 ----------
+let passCount = 0, failCount = 0;
+function assert(cond, label) {
+    if (cond) { passCount++; log('  ✓ ' + label, 'pass'); }
+    else { failCount++; log('  ✗ ' + label, 'fail'); }
+}
+
+// ---------- 全链路 ----------
+async function runFlow() {
+    logBox.innerHTML = '';
+    passCount = failCount = 0;
+    document.getElementById('summary').textContent = '';
+
+    log('== 1. 加载组件（375px 手机竖屏视口） ==');
+    await loadFrame();
+    assert(shopEval('typeof onShopDataReceived === "function"'), '组件 boot 无崩溃（onShopDataReceived 就绪）');
+
+    log('== 2. 窄屏断点布局契约 ==');
+    const g = shopEval(`(function () {
+        const doc = document;
+        const cab = doc.getElementById('woodenCabinet');
+        const cs = getComputedStyle(cab);
+        const header = doc.querySelector('header');
+        const deck = doc.getElementById('partyDeck');
+        const cart = doc.querySelector('.cart-panel');
+        const bar = doc.querySelector('.chat-input-bar');
+        const fsBtn = doc.getElementById('btnFullscreen');
+        const lastCard = deck ? deck.lastElementChild : null;
+        const tipSpan = doc.querySelector('.cabinet-tip > span');
+        const narrText = doc.querySelector('#btnNarratorToggle span:last-child');
+        const stage = doc.querySelector('.blacksmith-stage');
+        return {
+            vw: doc.documentElement.clientWidth,
+            docOverflowX: doc.documentElement.scrollWidth - doc.documentElement.clientWidth,
+            cols: cs.gridTemplateColumns.split(' ').length,
+            cabMaxH: cs.maxHeight,
+            cellCount: cab.children.length,
+            cabScrollable: cab.scrollHeight > cab.clientHeight + 1,
+            headerOverflowX: header ? header.scrollWidth - header.clientWidth : 999,
+            fsBtnRight: fsBtn ? Math.round(fsBtn.getBoundingClientRect().right) : -1,
+            deckOverflowX: deck ? deck.scrollWidth - deck.clientWidth : 999,
+            lastCardRight: lastCard ? Math.round(lastCard.getBoundingClientRect().right) : -1,
+            cartOverflowX: cart ? cart.scrollWidth - cart.clientWidth : 999,
+            barOverflowX: bar ? bar.scrollWidth - bar.clientWidth : 999,
+            tipHidden: tipSpan ? getComputedStyle(tipSpan).display === 'none' : false,
+            narrHidden: narrText ? getComputedStyle(narrText).display === 'none' : false,
+            stageH: stage ? Math.round(stage.getBoundingClientRect().height) : -1
+        };
+    })()`);
+
+    assert(g.vw > 340 && g.vw <= VW, 'iframe 视口宽 ' + g.vw + 'px（窄屏区间，基线 ' + VW + ' 含纵向滚动条让位）');
+    assert(g.docOverflowX <= 1, '文档无横向溢出（差 ' + g.docOverflowX + 'px）');
+    assert(g.cols === 3, '货柜 3 列（实际 ' + g.cols + ' 列，桌面基线 5 列）');
+    assert(g.cabMaxH === '456px', '货柜可视高 456px（实际 ' + g.cabMaxH + '，桌面基线 496px）');
+    assert(g.cellCount >= 15, '商品格渲染 ' + g.cellCount + ' 件（demo 全量）');
+    assert(g.cabScrollable, '柜内独立滚动保持（3 列下 20 件超 4 行可视）');
+    assert(g.headerOverflowX <= 1, '顶栏无内部溢出（差 ' + g.headerOverflowX + 'px）');
+    assert(g.fsBtnRight <= VW + 1, '顶栏按钮不被切边（全屏钮右缘 ' + g.fsBtnRight + 'px ≤ ' + (VW + 1) + '）');
+    assert(g.deckOverflowX <= 1 && g.lastCardRight <= VW + 1, '头像卡一行放下（末卡右缘 ' + g.lastCardRight + 'px）');
+    assert(g.cartOverflowX <= 1, '购物车面板无溢出（差 ' + g.cartOverflowX + 'px）');
+    assert(g.barOverflowX <= 1, '输入栏无溢出（差 ' + g.barOverflowX + 'px）');
+    assert(g.narrHidden, '输入栏动作按钮文字已隐藏（图标化生效）');
+    assert(g.tipHidden, '分类头操作提示已隐藏（只留重排按钮）');
+    assert(g.stageH > 0 && g.stageH <= 340, '立绘展台压矮（实际 ' + g.stageH + 'px，桌面基线 ≥400px）');
+
+    const total = passCount + failCount;
+    document.getElementById('summary').textContent = failCount === 0
+        ? '✅ ' + passCount + '/' + total + ' 全绿'
+        : '❌ ' + failCount + ' 失败 / ' + total;
+    log('== 完成：' + passCount + ' 通过, ' + failCount + ' 失败 ==', failCount ? 'fail' : 'pass');
+}
+
+document.getElementById('btnRun').addEventListener('click', runFlow);
+</script>
+</body>
+</html>

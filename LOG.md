@@ -34,3 +34,16 @@
 - **围栏纪律**：源码内正则/注释的 ``` 一律 `\u0060` 转义，build-regex 断言 0 裸围栏。
 - **据点≠载具**：载具判定需排除含"现金"字段的模块（MMS 据点有名称+杂物+现金）。
 - **MMS 刷新契约**：eventEmit('mms:status-updated', {message_id}) 的 id 必须等于 MMS 自身 floorId 才触发 refreshFromVars。
+
+## 2026-09-16 · M10 窄屏适配（手机竖屏 / 酒馆侧栏挤压）
+
+- **诊断**：用户截图"窄屏乱码"实为 360-420px 视口布局崩坏——顶栏单行 flex 被 `body{overflow-x:hidden}` 切边（齿轮钮剩半、现钞剩 `.00`）、货柜 5 列每列仅 ~60px、party-card 4×90px 溢出、输入栏 nowrap 按钮挤扁输入框；层叠"商店数据"文字实为组件外聊天原文与塌陷 iframe 的视觉混杂，非组件 UI。
+- **方案**（移植 RpgCombat 三原则）：单断点 `@media (max-width:640px)` 纯 CSS 追加覆盖；零 JS 宽度检测（iframe 内媒体查询按 iframe 视口自动响应，酒馆侧栏挤压自动生效）；不做整体 scale（点击错位）。`renderCabinet` 无空托盘补位等 JS 几何假设，改列数纯 CSS 即可。
+- **覆盖明细**：顶栏 wrap/字号压缩；main padding 24→8；立绘展台 min-height 400→280、立绘 380→230；cabinet-header wrap + 隐藏"单件直入"提示；货柜 5列→3列、行高 114→104、可视高 496→456（保持柜内滚动）；party-card 90×96→72×80；隐藏购物车提示文字；输入栏动作按钮只留图标（btnNarratorToggle/btnBargain 补 title 悬停语义）；parchment-card 补 `max-height:86vh + overflow-y:auto` 纵向兜底（横向 92vw 已有）。
+- **narrow-harness**：`integration-test/narrow-harness.html`，375×740 手机视口 srcdoc 加载组件，15 断言。首跑 14/15——唯一失败为 harness 基线断言写死 375px，实际纵向滚动条占 15px（clientWidth=360），放宽为窄屏区间断言后 15/15。
+- **验证**：narrow-harness 15/15；duo-harness 回归 25/25（桌面 780px 零回归）；子代理目视截图确认顶栏换行合理、3 列卡无重叠、无横向溢出（立绘展台空白为 harness 无立绘数据的预期回退）。
+- **IAB 经验**：降级态 rAF 节流使 playwright click 的 actionability 检查永久挂起（count()=1 仍 click 超时）→ 改 `evaluate` 页面内 `btn.click()` 直接派发；宿主会随机重置 IAB 标签到 about:blank，reload 即可。
+
+| 提交 | 内容 |
+|---|---|
+| (本次) | M10：640px 窄屏断点 ~70 行 CSS 覆盖 + narrow-harness 15 断言全绿（duo 回归 25/25） |
