@@ -1480,6 +1480,23 @@
             .parchment-card { padding: 14px; }
             .modal-item-name { font-size: 15px; }
         }
+
+        /* ====================================================
+           全屏强制横屏：150% 缩放全屏 CSS 宽被压缩仍保持左右双栏，
+           覆盖 1200px 断点的单栏。非全屏/手机/侧栏挤压原样走断点。
+        ==================================================== */
+        :root:fullscreen main, :fullscreen main {
+            grid-template-columns: minmax(340px, 430px) minmax(0, 1fr);
+        }
+        :root:fullscreen .cabinet-section, :fullscreen .cabinet-section {
+            min-width: 0;
+        }
+        :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage {
+            min-height: 520px;
+        }
+        :root:fullscreen .console-upper-row, :fullscreen .console-upper-row {
+            grid-template-columns: auto 1fr;
+        }
     </style>
 </head>
 <body>
