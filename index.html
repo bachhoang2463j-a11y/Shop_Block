@@ -342,6 +342,28 @@
             font-style: italic;
         }
 
+        /* 对话流水区：立绘展台底部常驻，气泡 6s 收起后仍可回看 */
+        .dialogue-log {
+            position: relative;
+            z-index: 5;
+            margin: 8px 12px 12px;
+            padding: 8px 12px;
+            min-height: 54px;
+            max-height: 130px;
+            overflow-y: auto;
+            background: rgba(12, 8, 6, 0.88);
+            border: 1px solid #3d291c;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #d8cbb8;
+        }
+        .dialogue-log:empty::before {
+            content: '（与店主交谈，对话将显示在这里）';
+            color: #6b5644;
+            font-style: italic;
+        }
+
         /* 右侧：方案2 简约无边框 · 工匠实木托盘 (Artisan Floating Trays) */
         .cabinet-section {
             display: flex;
@@ -1610,6 +1632,9 @@
                      alt="店主立绘"
                      title="点击与店主交谈">
             </div>
+
+            <!-- 对话流水区：handleSendMessage / applyLLMResult 双写（气泡 6s 收起后仍可回看） -->
+            <div class="dialogue-log" id="dialogueText"></div>
         </section>
 
         <!-- 右侧：4x5 实木货柜 (方案2: 工匠实木托盘) -->
@@ -2030,6 +2055,26 @@
             '占卜商妇': 'shop.png'
         };
 
+        // 立绘语气锚：换立绘即换说话风格（随块内「立绘」字段变动，拼入 system prompt）
+        const PORTRAIT_TONE = {
+            '铁匠机械师': '说话像铁砧砸锤，直来直去，爱夸自己的手艺，看不上娇气客人',
+            '黑市贩子': '压低声音、神神秘秘，开口闭口都是门路、风险和“这可是看在交情上”',
+            '古籍书商': '咬文嚼字、引经据典，慢条斯理，动不动就从故纸堆里翻出道理',
+            '酒馆老板': '热情招呼、爱讲街坊八卦，劝酒式推销，来者都是客',
+            '荒野猎人': '话少干脆，满口山林行话，不耐烦磨叽，信奉一分钱一分货',
+            '奢品商人': '优雅挑剔、讲究体面，言语间带着对穷酸的轻慢，只认出手阔绰的客人',
+            '秘石商人': '神神叨叨，爱讲水晶灵性与命运征兆，报价像是在转述天意',
+            '药剂修女': '温柔耐心，带着劝人保重的唠叨，卖药先问伤情',
+            '布道神父': '三句不离主与救赎，悲天悯人，连砍价都像在做告解',
+            '占卜商妇': '市侩精明，爱顺口看个手相说两句吉祥话，算盘打得噼啪响'
+        };
+
+        // 设置页人设框出厂默认值（两版措辞都视同“未自定义”，不注入 prompt）
+        const BUILTIN_PERSONA_DEFAULTS = [
+            "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。客人向你询问武器、讲价或打探黑道情报时，以暗黑地牢/洛夫克拉夫特式的语气简明回答，字数在60字以内。",
+            "你是在1926年禁酒令时期的芝加哥军械店老板‘老布莱克伍德’。你是一名经历过一战的老兵兼黑市军火贩子，性格冷峻阴郁、老练多疑，对深渊异象有所察觉。无论客人是想买枪、砍价还是打探黑道情报，你都要以暗黑地牢/洛夫克拉夫特式的语气回答，字数在60字以内。"
+        ];
+
         // 当前商店会话状态（解析结果驱动；无块时回退 demo 数据）
         let shopState = null;
 
@@ -2349,21 +2394,27 @@
         }
 
         // 组装 system prompt（四场景共用骨架）
+        // 人设三层：①块内「店主性格」优先 ②立绘语气锚随 portrait 变 ③设置页人设框=全局补充（默认老布莱克伍德文本视同未改，不注入）
         function buildShopSystemPrompt() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             const persona = (shopState && shopState.keeperPersona) || '精明谨慎的店主';
+            const tone = (shopState && PORTRAIT_TONE[shopState.portrait]) || '';
+            const customPersona = (llmConfig.systemPrompt || '').trim();
+            const hasCustomPersona = customPersona && !BUILTIN_PERSONA_DEFAULTS.includes(customPersona);
             const affection = shopState ? (window.__shopAffection != null ? window.__shopAffection : 30) : 30;
             const attitude = affection >= 80 ? '熟络热络' : affection >= 50 ? '客气有礼' : affection >= 20 ? '公事公办' : '冷淡戒备';
             const whitelist = Array.from(buildSpeakerWhitelist(false)).join('、');
-            return [
+            const parts = [
                 `你扮演1920年代克苏鲁跑团商店场景中的店主「${keeper}」与随行队友。`,
-                `店主人设：${persona}。当前店主对玩家的好感度：${affection}/100（态度基调：${attitude}，好感越高越热情，越低越不耐烦）。`,
+                `店主人设：${persona}${tone ? '说话风格：' + tone + '。' : ''}当前店主对玩家的好感度：${affection}/100（态度基调：${attitude}，好感越高越热情，越低越不耐烦）。`,
                 `你可以让这些角色说话：${whitelist}。当前由玩家操控的角色除外——你绝对不能替玩家操控的角色发言，他的台词由玩家自己输入。`,
                 `输出必须是纯 JSON 本体，禁止 markdown 围栏和任何解释文字。schema：`,
                 `{"dialogue":[{"speaker":"说话人","text":"台词(≤60字)"}],"affection":-5到5的整数(玩家言行对店主好感的影响，无玩家台词时省略),"commands":[]}`,
                 `dialogue 1~4 条，店主先说，队友可插话。commands 仅在玩家问到店里没有的常规补给品时用 add 命令上架（你不是许愿机，违禁品/神话物品/大宗军火必须拒绝）。` +
                 `add 的 name 必须带 emoji 前缀（格式"🧪 名字"，如"🍾 肯塔基私酿玉米酒"，emoji 贴合商品、无合适时可省略，前端无前缀默认📦）。`
-            ].join('\n');
+            ];
+            if (hasCustomPersona) parts.splice(2, 0, `【全局补充人设（店主自定义，优先级低于本次块内人设）】${customPersona}`);
+            return parts.join('\n');
         }
 
         // 场景触发器
@@ -2544,14 +2595,15 @@
             }
         }
 
-        // 购买回应（buy 场景，M7）：LLM 失败静默不回退（购买结果已由 Shop_Record 承载）
+        // 购买回应（buy 场景，M7）：无 Key/LLM 失败时用内置成交词回退，不再静默
         async function triggerBuyReaction(buySummary) {
-            if (!llmConfig.apiKey) return;
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             let result = null;
-            for (let attempt = 0; attempt < 2 && !result; attempt++) {
-                try { result = await callShopLLM('buy', buySummary); }
-                catch (e) { console.warn(`[ShopBlock] 购买回应 LLM 第${attempt + 1}次失败:`, e.message); }
+            if (llmConfig.apiKey) {
+                for (let attempt = 0; attempt < 2 && !result; attempt++) {
+                    try { result = await callShopLLM('buy', buySummary); }
+                    catch (e) { console.warn(`[ShopBlock] 购买回应 LLM 第${attempt + 1}次失败:`, e.message); }
+                }
             }
             if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
                 await applyLLMResult(result);
@@ -2564,12 +2616,17 @@
         async function applyLLMResult(result) {
             const whitelist = buildSpeakerWhitelist(true); // 排除当前玩家角色
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
-            const lines = (result.dialogue || [])
+            const rawLines = (result.dialogue || [])
                 .filter(d => d && typeof d.text === 'string' && d.text.trim())
-                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim().slice(0, 80) }))
-                .filter(d => whitelist.has(d.speaker) || d.speaker === keeper)
-                .slice(0, 4);
-            if (!lines.length) { showKeeperDialogue(keeper, '……', true); return; }
+                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim().slice(0, 80) }));
+            const dropped = rawLines.filter(d => !(whitelist.has(d.speaker) || d.speaker === keeper));
+            if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
+            const lines = rawLines.filter(d => whitelist.has(d.speaker) || d.speaker === keeper).slice(0, 4);
+            if (!lines.length) {
+                showKeeperDialogue(keeper, '……', true);
+                dialogueText.innerHTML = `<span style="color:#c9a86a;">【${keeper}】：“……”</span><br><span style="color:#8c7360;font-size:11px;">（店主欲言又止——LLM 返回的发言人不在白名单，已被过滤，详见控制台）</span>`;
+                return;
+            }
             // 逐条展示：店主走立绘气泡+对话框，队友走对话框
             const html = [];
             for (const line of lines) {
@@ -3608,8 +3665,8 @@
         const sanityText = document.getElementById('sanityText');
         const blacksmithImg = document.getElementById('blacksmithImg');
         const stageBg = document.getElementById('stageBg');
-        // 左下角对话框元素在骨架中不存在（demo 遗留），null 兜底防 7 处调用抛错；店主回应主渠道是立绘气泡
-        const dialogueText = document.getElementById('dialogueText') || { set textContent(v) {}, set innerHTML(v) {} };
+        // 对话流水区：展台底部常驻节点，LLM/回退/砍价统一双写于此
+        const dialogueText = document.getElementById('dialogueText');
 
         // 老板气泡
         const bossSpeechBubble = document.getElementById('bossSpeechBubble');
@@ -4262,12 +4319,20 @@
 
         btnSendChat.addEventListener('click', handleSendMessage);
         chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') handleSendMessage();
+            if (e.key === 'Enter' && !e.isComposing) handleSendMessage();
         });
 
+        // 对话单锁：LLM 在途中时拒绝并发发送（RpgCombat isRequesting 同款）
+        let shopChatRequesting = false;
+
         async function handleSendMessage() {
-            // 底栏为空（零匹配置空）：没有代言者，禁止发言（否则 activeSpeaker.name 取不到）
-            if (!activeSpeaker) { setTempNotice('到场角色为空（块内「在场成员」与 MMS 名册不匹配），无法代为发言。', 6000); return; }
+            // 底栏为空（零匹配置空）：没有代言者，拒绝前同样在流水区留痕，避免“点了没反应”
+            if (!activeSpeaker) {
+                dialogueText.innerHTML = `<span style="color:#c0605a;">（到场角色为空：块内「在场成员」与 MMS 名册不匹配，无法代为发言。请检查块内姓名。）</span>`;
+                setTempNotice('到场角色为空（块内「在场成员」与 MMS 名册不匹配），无法代为发言。', 6000);
+                return;
+            }
+            if (shopChatRequesting) { setTempNotice('店主正在回话，稍等……', 2000); return; }
             let text = chatInput.value.trim();
             if (!text) return;
             chatInput.value = '';
@@ -4299,6 +4364,7 @@
             dialogueText.innerHTML = speakerPrefix + `<span style="color:#a38c75;">（${keeper}正在沉吟……）</span>`;
 
             // M4 通道：自由对话场景（chat），失败回退旧 demo 关键词库
+            shopChatRequesting = true;
             let result = null;
             if (llmConfig.apiKey) {
                 for (let attempt = 0; attempt < 2 && !result; attempt++) {
@@ -4306,6 +4372,7 @@
                     catch (e) { console.warn(`[ShopBlock] 对话 LLM 第${attempt + 1}次失败:`, e.message); }
                 }
             }
+            shopChatRequesting = false;
             if (result && Array.isArray(result.dialogue) && result.dialogue.length) {
                 const savedNarrator = playerState.narratorEnabled;
                 playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
@@ -4332,6 +4399,8 @@
                     reply = `“${randomQuotes[Math.floor(Math.random() * randomQuotes.length)]}”`;
                 }
                 dialogueText.innerHTML = speakerPrefix + reply;
+                showKeeperDialogue(keeper, reply, true); // 无 Key 回退同样上气泡，不再静默只写流水
+                logSessionDialog(keeper, reply);
             }, 300);
         }
 
