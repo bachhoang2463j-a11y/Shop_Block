@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock 回访/好感/商品编辑/并发结算 独立 mock harness</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    .note { font-size: 11px; color: #8c7360; margin: 6px 0 3px; }
+    #phone { width: 375px; height: 740px; border: 4px solid #382417; border-radius: 10px; overflow: hidden; background: #0b0908; }
+    #phone iframe { width: 100%; height: 100%; border: none; display: block; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 12px; max-height: 360px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    #result { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 8px; max-height: 260px; overflow: auto; font-size: 11px; color: #9ab06c; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; } .cap { color: #c9a86a; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+    #send_textarea { width: 100%; height: 54px; background: #1a120c; color: #e5d7c3; border: 1px solid #382417; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<h3>回访（仅店名恢复 / 未知拒绝）· 好感钳制与 HUD · 商品编辑持久化 · 并发结算幂等</h3>
+<div style="margin-bottom: 8px;">
+    <button id="btnRun">▶ 跑全部断言</button>
+    <span id="summary"></span>
+</div>
+<div class="note">父页面模拟酒馆输入框 #send_textarea（Shop_Record 注入目标）：</div>
+<textarea id="send_textarea"></textarea>
+<div id="phone"><iframe id="shopFrame"></iframe></div>
+<div id="log"></div>
+<pre id="result"></pre>
+
+<script>
+// =====================================================================
+// 独立 iframe mock harness：真实源 fetch('../index.html') → 在 <head> 注入
+// mock（localStorage / fetch / matchMedia / TavernHelper 变量 API）→ 于 375px
+// iframe 内 boot，用主代理约定的新接口做断言。不复制任何业务函数。
+//
+// mock 保真要点：
+//   1) insertOrAssignVariables 为「深合并」（对象递归合并、数组/原子整体替换），
+//      不能用 Object.assign 模拟——否则删键/清类目类 bug 会被浅替换掩盖；
+//   2) replaceVariables 为「完整替换」并按 message_id 计数；
+//   3) 隔离本地 LLM 配置：localStorage 返回 null（apiKey 为空），frame 内 fetch
+//      被 mock 成 reject，绝不发出真实 LLM 网络请求；
+//   4) matchMedia('(hover: hover) and (pointer: fine)') 可 mock（__hoverSupported）。
+//
+// 断言分两类：contract='existing'（现状应已满足）/ 'planned'（主代理计划落地的新约定）。
+// 计划接口尚未落地时 → pending（待对齐），并在 capabilities 里逐条列出。
+// =====================================================================
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+const R = { pass: 0, fail: 0, pending: 0, tests: [] };
+// 能力探针：静态用类型/元素检查，行为用「小剂量试跑 + 复原」，
+// 只有探针确认落地才跑对应新约定断言，否则记为待对齐 —— 避免把平行开发中的半成品误判成失败。
+const CAPS = {};
+const CAP_REASON = {
+    saveGoodsEdit: 'saveGoodsEdit(shopName, originalCategory, originalIndex, fields) 未暴露',
+    hover: 'supportsHoverProductPreview() 未暴露',
+    hud: '#keeperAffectionValue / #keeperRelationship / affectionRelationship() / applyAffectionUi() 未就位',
+    hudByApply: 'applyLLMResult 尚未同步 HUD（applyAffectionUi 未接入）',
+    hudDelta: 'applyLLMResult 尚未把好感变化写入 #keeperAffectionDelta（HUD 未接线）',
+    nameOnly: 'parseShopBlockYaml 对「仅店名块」尚未返回对象（回访恢复链路未落地）',
+    affClamp: 'applyLLMResult 尚未对 affection 做 -5..+1 整数硬钳制',
+    affEnter: 'applyLLMResult 尚未按 options.scene==="enter" 跳过好感',
+    updateSync: 'updateShopAffection 自身未同步运行态 window.__shopAffection（当前同步由 changeShopAffection 承担，二选一对齐即可）',
+    hudSync: 'updateShopAffection 自身未同步 HUD（值/关系档位）（当前同步由 changeShopAffection 承担，二选一对齐即可）',
+    bubbleEmoji: 'keeperDisplayName(name, delta) 的 🙂/😠 尚未接入老板气泡名称'
+};
+
+function flush() {
+    const total = R.pass + R.fail + R.pending;
+    document.getElementById('summary').textContent =
+        (R.fail === 0 ? '✅ ' : '❌ ') + R.pass + ' 通过 / ' + R.fail + ' 失败 / ' + R.pending + ' 待对齐（共 ' + total + '）';
+    const plannedFailing = R.tests.filter(t => t.contract === 'planned' && t.status !== 'pass')
+        .map(t => ({ name: t.name, status: t.status, detail: t.detail }));
+    window.__harnessResult = {
+        ok: R.fail === 0,
+        pass: R.pass, fail: R.fail, pending: R.pending, total: total,
+        capabilities: CAPS,
+        plannedNotGreen: plannedFailing,
+        tests: R.tests
+    };
+    document.getElementById('result').textContent = JSON.stringify(window.__harnessResult, null, 2);
+}
+
+function record(name, status, contract, detail) {
+    R.tests.push({ name: name, status: status, contract: contract, detail: detail || '' });
+    if (status === 'pass') R.pass++; else if (status === 'fail') R.fail++; else R.pending++;
+    const mark = status === 'pass' ? '✓' : status === 'fail' ? '✗' : '…';
+    log(mark + ' [' + (contract === 'planned' ? '新约定' : '既有') + '] ' + name + (detail ? ' — ' + detail : ''),
+        status === 'pass' ? 'pass' : status === 'fail' ? 'fail' : 'info');
+    flush();
+}
+
+async function check(name, contract, cap, fn) {
+    if (cap && !CAPS[cap]) { record(name, 'pending', contract, '待对齐：' + CAP_REASON[cap]); return; }
+    try {
+        const res = await fn();
+        if (res === true || res === undefined || res === null) record(name, 'pass', contract, '');
+        else if (res && typeof res === 'object' && res.pending) record(name, 'pending', contract, res.pending);
+        else record(name, 'fail', contract, String(res));
+    } catch (e) {
+        record(name, 'fail', contract, '异常: ' + ((e && e.message) || e));
+    }
+}
+
+// 软断言：结果不符时报「待对齐」而非失败，用于无法静态探测的能力（如并发幂等）
+async function checkSoft(name, cap, reason, fn) {
+    if (cap && !CAPS[cap]) { record(name, 'pending', 'planned', '待对齐：' + CAP_REASON[cap]); return; }
+    try {
+        const res = await fn();
+        if (res === true || res === undefined || res === null) record(name, 'pass', 'planned', '');
+        else record(name, 'pending', 'planned', (reason || '待对齐') + '：' + String(res));
+    } catch (e) {
+        record(name, 'pending', 'planned', (reason || '待对齐') + '：异常 ' + ((e && e.message) || e));
+    }
+}
+
+// ---------------- frame 通信 ----------------
+const frameEl = () => document.getElementById('shopFrame');
+const W = () => frameEl().contentWindow;
+const E = (code) => W().eval(code);
+const EA = async (code) => await W().eval(code);
+const J = JSON.stringify;
+
+async function waitUntil(fn, timeout = 6000) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+        let ok = false;
+        try { ok = await fn(); } catch (e) { /* 尚未就绪 */ }
+        if (ok) return true;
+        await new Promise(r => setTimeout(r, 100));
+    }
+    return false;
+}
+
+// ------ 测试夹具 ------
+const SHOP = '铜铃杂货铺';
+const Y_FULL1 = [
+    '商店数据:',
+    '  店名: "铜铃杂货铺"',
+    '  店主: "塔尼亚婆婆"',
+    '  立绘: "占卜商妇"',
+    '  店主性格: "市侩精明的商妇"',
+    '  在场成员: ["埃利奥特", "弗兰克"]',
+    '  分类商品:',
+    '    杂货:',
+    '      - 商品:',
+    '          名字: "🧪 精炼枪油"',
+    '          价格: "1.20美元"',
+    '          数量: 1',
+    '          单位: "罐"',
+    '          介绍: "加量的分装货"',
+    '    工具:',
+    '      - 商品:',
+    '          名字: "🔧 黄铜扳手"',
+    '          价格: "20.00美元"',
+    '          数量: 1',
+    '          单位: "把"',
+    '          介绍: "结实的旧扳手"',
+    '  独家私藏:',
+    '    - 商品:',
+    '        名字: "🗝️ 密大银钥匙"',
+    '        价格: "99.00美元"',
+    '        数量: 1',
+    '        单位: "件"',
+    '        介绍: "柜子深处的东西"'
+].join('\n') + '\n';
+
+const Y_FULL2 = [
+    '商店数据:',
+    '  店名: "铜铃杂货铺"',
+    '  店主: "塔尼亚婆婆"',
+    '  立绘: "占卜商妇"',
+    '  店主性格: "新块人设B"',
+    '  在场成员: ["埃利奥特", "弗兰克"]',
+    '  分类商品:',
+    '    补给:',
+    '      - 商品:',
+    '          名字: "📦 油布雨披"',
+    '          价格: "3.00美元"',
+    '          数量: 1',
+    '          单位: "件"',
+    '          介绍: "防水油布"'
+].join('\n') + '\n';
+
+const Y_NAME_ONLY = '商店数据:\n  店名: "铜铃杂货铺"\n';
+const Y_NAME_UNKNOWN = '商店数据:\n  店名: "从未见过的店"\n';
+
+// 商品编辑字段契约：{name, category, price, count, unit, desc, tag}
+function goodsFields(o) {
+    return Object.assign({ name: '', category: '', price: 1, count: 1, unit: '件', desc: '', tag: '' }, o);
+}
+
+// ------ 读持久层（frame 内 __hStore.chat['$shops']） ------
+async function readShops() {
+    return JSON.parse(await E('JSON.stringify(window.__hStore.chat["$shops"] || null)') || 'null');
+}
+function persistedExpr(shop) {
+    return '(function(){var s=(window.__hStore.chat["$shops"]||{})[' + J(shop) + '];if(!s)return "null";' +
+        'var c=s["分类商品"]||{};var cats={};for(var k in c){cats[k]=(c[k]||[]).map(function(e){var g=e["商品"]||e;return String(g["名字"]);});}' +
+        'var ex=(s["独家私藏"]||[]).map(function(e){var g=e["商品"]||e;return String(g["名字"]);});' +
+        'return JSON.stringify({cats:cats,exclusive:ex,aff:s["好感度"],meta:s["$meta"]||null,persona:s["店主性格"]||""});})()';
+}
+async function readPersisted(shop) {
+    return JSON.parse(await E(persistedExpr(shop)));
+}
+function cleanCatsExpr(shop) {
+    return '(function(){var s=(window.__hStore.chat["$shops"]||{})[' + J(shop) + '];if(!s)return "null";' +
+        'var c=s["分类商品"]||{};var out={};var all=[];for(var k in c){(c[k]||[]).forEach(function(e){var g=e["商品"]||e;var n=getCleanNameAndEmoji(g["名字"]).name;out[k]=out[k]||[];out[k].push(n);all.push(n);});}' +
+        '(s["独家私藏"]||[]).forEach(function(e){var g=e["商品"]||e;var n=getCleanNameAndEmoji(g["名字"]).name;out["独家私藏"]=out["独家私藏"]||[];out["独家私藏"].push(n);all.push(n);});' +
+        'return JSON.stringify({cats:out,all:all});})()';
+}
+async function readCleanCats(shop) {
+    return JSON.parse(await E(cleanCatsExpr(shop)));
+}
+async function runtimeNames() {
+    return JSON.parse(await E('JSON.stringify(shopState ? shopState.items.map(function(i){return i.name;}) : null)'));
+}
+async function persistedAff(shop) {
+    const s = await readShops();
+    return (s && s[shop]) ? s[shop]['好感度'] : null;
+}
+// 只改持久层（不动运行态），用于验证「恢复」链路
+async function setPersistedAff(shop, v) {
+    return await E('(async function(){var all=await readAllShops();if(!all[' + J(shop) + '])return null;' +
+        'all[' + J(shop) + ']["好感度"]=' + v + ';await writeAllShops(all);return all[' + J(shop) + ']["好感度"];})()');
+}
+async function setBothAff(shop, v) {
+    await setPersistedAff(shop, v);
+    return await E('(window.__shopAffection = ' + v + ')');
+}
+// 键序无关的规范化快照（失败不落地对比：避免等价对象因键序不同被误判为「已改动」）
+const CANON_FN = '(function c(o){if(Array.isArray(o))return "["+o.map(c).join(",")+"]";' +
+    'if(o&&typeof o==="object")return "{"+Object.keys(o).sort().map(function(k){return JSON.stringify(k)+":"+c(o[k]);}).join(",")+"}";' +
+    'return JSON.stringify(o===undefined?null:o);})';
+async function canonShops() { return await E(CANON_FN + '(window.__hStore.chat["$shops"])'); }
+async function canonRuntime() { return await E(CANON_FN + '(shopState.items)'); }
+
+async function loadShop(yaml) {
+    return await EA('onShopDataReceived(' + J(yaml) + ')');
+}
+async function readStat() {
+    return JSON.parse(await E('JSON.stringify((window.__hStore.m7||{}).stat_data||null)') || 'null');
+}
+function cashOf(stat) {
+    try {
+        const raw = stat['状态栏']['团队资金']['现金'];
+        const m = String(raw).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+        return m ? parseFloat(m[0]) : null;
+    } catch (e) { return null; }
+}
+function itemsOf(stat, who) {
+    try {
+        const list = stat['状态栏']['角色列表'];
+        const hit = list.find(e => {
+            const c = e['角色'] || e['用户'];
+            return c && String(c['名字']).includes(who);
+        });
+        return ((hit['角色'] || hit['用户'])['物品']) || '';
+    } catch (e) { return null; }
+}
+function countSub(str, sub) {
+    if (!str) return 0;
+    return str.split(sub).length - 1;
+}
+async function hudValue() { return await E('(document.getElementById("keeperAffectionValue")||{}).textContent'); }
+async function hudRel() { return await E('(document.getElementById("keeperRelationship")||{}).textContent'); }
+async function hudDelta() { return await E('(document.getElementById("keeperAffectionDelta")||{}).textContent'); }
+async function bubbleNameText() {
+    // 只取「名称」位置：老板气泡标题 + 头像对话气泡名称；不取气泡正文（商品介绍可能自带 emoji 造成假阳性）
+    return await E('(function(){var t="";var bt=document.getElementById("bubbleTitleName");if(bt)t+=bt.textContent+" ";' +
+        'document.querySelectorAll(".avatar-chat-bubble .avatar-chat-name").forEach(function(n){t+=n.textContent+" ";});return t;})()');
+}
+// 气泡基线复位：清掉残留头像气泡 + 把老板气泡标题还原为店名（上一次 emoji 有 2.4s 自复位定时器）
+async function resetBubbleBaseline() {
+    await clearBubbles();
+    await E('(function(){var bt=document.getElementById("bubbleTitleName");if(bt)bt.textContent=(shopState?shopState.keeper:"店主");})()');
+}
+async function clearBubbles() {
+    await E('(function(){document.querySelectorAll(".avatar-chat-bubble").forEach(function(n){n.remove();});' +
+        'var bs=document.getElementById("bossSpeechBubble");if(bs)bs.classList.remove("show");})()');
+}
+
+// =====================================================================
+// 主流程
+// =====================================================================
+async function runFlow() {
+    logBox.innerHTML = '';
+    document.getElementById('result').textContent = '';
+    R.pass = R.fail = R.pending = 0; R.tests.length = 0;
+    flush();
+
+    // ---------------- A. boot（真实源 + boot 前 mock） ----------------
+    log('== A. 真实源加载 + boot 前 mock 注入 ==');
+    const mockScript = [
+        '<script>',
+        '(function(){',
+        '  // boot 前注入：变量 API（深合并 insert / 完整替换 replace）、楼层 API、媒体查询、localStorage、网络隔离',
+        '  window.__hStats = { chatInsert: 0, chatReplace: 0, msgInsert: {}, msgReplace: {}, llmFetch: 0, fetchUrls: [], lsSet: [], lsGet: [], emits: [], slashCalls: [], alerts: [], mediaQueries: [] };',
+        '  window.__hoverSupported = true;',
+        '  window.__hStore = { chat: {}, m7: null };',
+        '  function clone(v){ return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }',
+        '  function plain(o){ return o && typeof o === "object" && !Array.isArray(o); }',
+        '  function merge(t, s){ for (var k in s){ if (!Object.prototype.hasOwnProperty.call(s, k)) continue; var v = s[k]; if (v === undefined) continue; if (plain(v) && plain(t[k])) merge(t[k], v); else t[k] = clone(v); } return t; }',
+        '  window.__hBootId = (window.__hBootId || 0) + 1;',
+        '  window.__hResetMms = function(){ window.__hStore.m7 = { stat_data: { "状态栏": { "团队资金": { "现金": "100.00美元" }, "角色列表": [ { "角色": { "名字": "埃利奥特", "物品": "" } }, { "角色": { "名字": "弗兰克", "物品": "" } } ] } }, "$mms_meta": { mesId: 7 } }; };',
+        '  window.__hResetMms();',
+        '  window.getCurrentMessageId = function(){ return 7; };',
+        '  window.getLastMessageId = function(){ return 7; };',
+        '  window.getVariables = function(opts){ var isMsg = opts && opts.type === "message"; var key = isMsg ? ("m" + opts.message_id) : "chat"; var src = window.__hStore[key]; return Promise.resolve(src ? clone(src) : (isMsg ? null : {})); };',
+        '  window.insertOrAssignVariables = function(obj, opts){ if (!obj || typeof obj !== "object") return Promise.resolve(false); if (opts && opts.type === "message"){ var mk = "m" + opts.message_id; window.__hStats.msgInsert[mk] = (window.__hStats.msgInsert[mk] || 0) + 1; window.__hStore[mk] = merge(window.__hStore[mk] || {}, obj); } else { window.__hStats.chatInsert++; window.__hStore.chat = merge(window.__hStore.chat || {}, obj); } return Promise.resolve(true); };',
+        '  window.replaceVariables = function(obj, opts){ if (opts && opts.type === "message"){ var mk = "m" + opts.message_id; window.__hStats.msgReplace[mk] = (window.__hStats.msgReplace[mk] || 0) + 1; window.__hStore[mk] = clone(obj) || {}; } else { window.__hStats.chatReplace++; window.__hStore.chat = clone(obj) || {}; } return Promise.resolve(true); };',
+        '  window.eventOn = function(){};',
+        '  window.eventEmit = function(name, payload){ window.__hStats.emits.push({ name: name, payload: payload }); };',
+        '  window.alert = function(msg){ window.__hStats.alerts.push(String(msg)); };',
+        '  window.confirm = function(){ return true; };',
+        '  window.triggerSlash = function(cmd){ window.__hStats.slashCalls.push(String(cmd)); return Promise.resolve(true); };',
+        '  window.fetch = function(url){ window.__hStats.llmFetch++; window.__hStats.fetchUrls.push(String(url)); return Promise.reject(new Error("harness: 网络已在 mock 中禁用")); };',
+        '  window.matchMedia = function(q){ window.__hStats.mediaQueries.push(q); var isHover = String(q).indexOf("hover: hover") !== -1; return { media: q, matches: isHover ? !!window.__hoverSupported : false, onchange: null, addListener: function(){}, removeListener: function(){}, addEventListener: function(){}, removeEventListener: function(){}, dispatchEvent: function(){ return false; } }; };',
+        '  var lsData = {};',
+        '  Object.defineProperty(window, "localStorage", { configurable: true, value: { get length(){ return Object.keys(lsData).length; }, getItem: function(k){ window.__hStats.lsGet.push(k); return Object.prototype.hasOwnProperty.call(lsData, k) ? lsData[k] : null; }, setItem: function(k, v){ window.__hStats.lsSet.push(k); lsData[k] = String(v); }, removeItem: function(k){ delete lsData[k]; }, clear: function(){ lsData = {}; }, key: function(i){ return Object.keys(lsData)[i] || null; } } });',
+        '})();',
+        '<\/script>'
+    ].join('\n');
+    const src = await fetch('../index.html').then(r => r.text());
+    // 真实源只做一次 <head> 前置注入；mock 依赖的 __hStats/__hStore/__hoverSupported 全部在组件脚本之前就位
+    frameEl().srcdoc = src.replace('<head>', '<head>' + mockScript);
+    const booted = await waitUntil(() => E(
+        'document.readyState === "complete" && typeof onShopDataReceived === "function" && typeof applyLLMResult === "function"'
+        + ' && typeof parseShopBlockYaml === "function" && typeof checkoutCart === "function"'
+        + ' && typeof saveShopEdits === "function" && typeof updateShopAffection === "function"'
+    ), 20000);
+    await check('组件 boot 就绪（入口/解析/LLM/结算/编辑函数可用）', 'existing', null, () => booted || 'boot 超时');
+
+    // ---------------- A2. 能力探针（静态） ----------------
+    log('== A2. 能力探针（静态）：哪些新约定已落地 ==');
+    CAPS.saveGoodsEdit = await E('typeof saveGoodsEdit === "function"');
+    CAPS.hover = await E('typeof supportsHoverProductPreview === "function"');
+    CAPS.hud = await E('(function(){try{return typeof affectionRelationship === "function"'
+        + ' && typeof applyAffectionUi === "function"'
+        + ' && !!document.getElementById("keeperAffectionValue")'
+        + ' && !!document.getElementById("keeperRelationship")'
+        + ' && !!document.getElementById("keeperAffectionDelta");}catch(e){return false;}})()');
+    CAPS.bubbleEmoji = await E('(function(){try{'
+        + 'if (typeof keeperDisplayName !== "function") return false;'
+        + 'var s = String(applyLLMResult) + String(showKeeperDialogue) + String(showAvatarChatBubble) + String(popBossSpeechBubble);'
+        + 'return s.indexOf("keeperDisplayName") !== -1;'
+        + '}catch(e){ return false; }})()');
+    CAPS.nameOnly = await E('(function(){try{var p=parseShopBlockYaml(' + J(Y_NAME_ONLY) + ');return !!(p && p.shopName);}catch(e){return false;}})()');
+    for (const k of Object.keys(CAP_REASON)) {
+        log('   探针[' + k + '] = ' + (CAPS[k] === true ? '已落地' : CAPS[k] === false ? '未落地' : '行为探针待 D 段'), CAPS[k] === true ? 'pass' : 'info');
+    }
+
+    // ---------------- B. mock 保真自检 ----------------
+    log('== B. mock 保真自检（深合并 / 完整替换 / LLM 网络隔离） ==');
+    await check('LLM 隔离：frame 内 fetch 零调用、apiKey 为空、localStorage 未命中真实配置', 'existing', null, async () => {
+        const llmFetch = await E('__hStats.llmFetch');
+        const apiKey = await E('llmConfig.apiKey');
+        const lsHit = await E('__hStats.lsGet.indexOf("dd_llm_config") !== -1');
+        if (llmFetch !== 0) return 'frame 内发生了 ' + llmFetch + ' 次 fetch：' + (await E('JSON.stringify(__hStats.fetchUrls)'));
+        if (apiKey) return 'llmConfig.apiKey 非空：' + apiKey;
+        if (!lsHit) return 'localStorage.getItem 未被调用（mock 未生效）';
+        return true;
+    });
+
+    await check('mock：insertOrAssignVariables 为深合并（嵌套键不被整体替换）', 'existing', null, async () => {
+        await E('(function(){ __hStore.chat = { "$shops": { "探针店": { "好感度": 30, "分类商品": { "杂货": [ { "商品": { "名字": "探针" } } ] }, "$meta": { version: 1, personaOverride: false } } } } })()');
+        await E('insertOrAssignVariables({ "$shops": { "探针店": { "好感度": 55 } } }, { type: "chat" })');
+        const probe = await E('(function(){var s=__hStore.chat["$shops"]["探针店"];return JSON.stringify({aff:s["好感度"],cat:!!(s["分类商品"]&&s["分类商品"]["杂货"]),meta:!!(s["$meta"]&&s["$meta"].personaOverride===false)});})()');
+        const p = JSON.parse(probe);
+        if (p.aff !== 55) return '原子值未更新：好感=' + p.aff;
+        if (!p.cat) return '深合并丢失嵌套键 分类商品（疑似 Object.assign 浅替换）';
+        if (!p.meta) return '深合并丢失嵌套键 $meta（疑似 Object.assign 浅替换）';
+        await E('(function(){ __hStore.chat = {} })()');
+        return true;
+    });
+
+    await check('mock：replaceVariables 完整替换并计数', 'existing', null, async () => {
+        await E('(function(){ __hStore.chat = { "$shops": { "甲": {} }, "other": 1 }; __hStats.chatReplace = 0; })()');
+        await E('replaceVariables({ "other": 2 }, { type: "chat" })');
+        const after = JSON.parse(await E('JSON.stringify(__hStore.chat)'));
+        const cnt = await E('__hStats.chatReplace');
+        await E('(function(){ __hStore.chat = {} })()');
+        if (cnt !== 1) return 'replaceVariables 计数=' + cnt + '（期望 1）';
+        if ('$shops' in after) return '完整替换后仍残留 $shops（未整体替换）';
+        return true;
+    });
+
+    // ---------------- C. 解析 ----------------
+    log('== C. parseShopBlockYaml ==');
+    await check('完整块 → 返回对象（店名/商品数正确）', 'existing', null, async () => {
+        const r = await E('(function(){var p=parseShopBlockYaml(' + J(Y_FULL1) + ');return p?JSON.stringify({name:p.shopName,n:p.items.length,ex:p.hasExclusive}):"null";})()');
+        if (r === 'null') return '完整块解析返回 null';
+        const o = JSON.parse(r);
+        return (o.name === SHOP && o.n === 3 && o.ex === true) || ('店名/数量异常：' + r);
+    });
+    await check('仅店名块 → 返回对象（回访恢复的前提）', 'planned', 'nameOnly', async () => {
+        const r = await E('(function(){var p=parseShopBlockYaml(' + J(Y_NAME_ONLY) + ');return p?JSON.stringify({name:p.shopName,referenceOnly:p.referenceOnly}):"null";})()');
+        const parsed = JSON.parse(r);
+        return (parsed.name === SHOP && parsed.referenceOnly === true) || ('仅店名块识别异常：' + r);
+    });
+    await check('带店主但无商品的半截块 → null（不冒充仅店名恢复）', 'planned', null, async () => {
+        const r = await E('String(parseShopBlockYaml(' + J('商店数据:\n  店名: "铜铃杂货铺"\n  店主: "冒牌店主"\n') + '))');
+        return (r === 'null') || ('半截块被误识别为引用：' + r);
+    });
+    await check('垃圾文本 → null（不抛异常）', 'existing', null, async () => {
+        const r = await E('(function(){try{return String(parseShopBlockYaml("这不是 YAML：<<< 无块"));}catch(e){return "THROW:"+e.message;}})()');
+        return (r === 'null') || ('期望 null，实际=' + r);
+    });
+
+    // ---------------- D. 完整块导入 ----------------
+    log('== D. 完整块导入：持久层 + 运行态一致 ==');
+    let importOK = false;
+    await check('完整块导入：$shops 落库 + 运行态就位 + 新店好感初始 30', 'existing', null, async () => {
+        importOK = (await loadShop(Y_FULL1)) === true;
+        if (!importOK) return 'onShopDataReceived 返回非 true';
+        const rtName = await E('shopState ? shopState.shopName : null');
+        const rt = (await runtimeNames() || []).slice().sort().join(',');
+        const paff = await persistedAff(SHOP);
+        const rtAff = await E('window.__shopAffection');
+        if (rtName !== SHOP) return '运行态店名=' + rtName;
+        // 干净名（剥 emoji 前缀）用组件自身的 getCleanNameAndEmoji 计算，避免手写 emoji 前缀与变体选择符（U+FE0F）判定差异
+        const expectRt = JSON.parse(await E('JSON.stringify(["🧪 精炼枪油","🔧 黄铜扳手","🗝️ 密大银钥匙"].map(function(x){return getCleanNameAndEmoji(x).name;}).sort())')).join(',');
+        if (rt !== expectRt) return '运行态商品=' + rt + '（期望 ' + expectRt + '）';
+        if (paff !== 30) return '持久层初始好感=' + paff + '（期望 30）';
+        if (rtAff !== 30) return '运行态好感=' + rtAff;
+        return true;
+    });
+    await check('完整块导入：运行态与持久层商品一致', 'existing', null, async () => {
+        if (!importOK) return '前置导入失败';
+        const rt = (await runtimeNames() || []).slice().sort().join(',');
+        const pc = await readCleanCats(SHOP);
+        const pd = (pc.all || []).slice().sort().join(',');
+        return (rt === pd) || ('运行态=' + rt + ' 持久层=' + pd);
+    });
+    await check('无 TavernHelper API 内存兜底不会因同引用整包写入而清空（行为验证）', 'planned', null, async () => {
+        // 临时摘除 mock 变量 API → readAllShops/writeAllShops 走 shopsMem 内存分支；
+        // readAllShops 返回 shopsMem 本体，若 writeAllShops 未先克隆，同引用写入会把源一起清空。
+        // 原函数存进 frame 内的临时对象按引用恢复——mock 闭包引用 IIFE 内部 helper，不能按源码字符串重建
+        await E('(function(){window.__hSavedApi={g:window.getVariables,i:window.insertOrAssignVariables,r:window.replaceVariables};delete window.getVariables;delete window.insertOrAssignVariables;delete window.replaceVariables;})()');
+        try {
+            await EA('(async function(){var seed={"$shops":{"内存铺":{"店名":"内存铺","好感度":42}}};await writeAllShops(seed);var x=await readAllShops();x["$shops"]["内存铺"]["好感度"]=55;await writeAllShops(x);})()');
+            const after = JSON.parse(await E('JSON.stringify(shopsMem)'));
+            if (!after['$shops'] || !after['$shops']['内存铺']) return '整包写入后 shopsMem 被清空（同引用 bug）';
+            if (after['$shops']['内存铺']['好感度'] !== 55) return '写入值丢失：' + JSON.stringify(after);
+            return true;
+        } finally {
+            const ok = await E('(function(){var s=window.__hSavedApi;window.getVariables=s.g;window.insertOrAssignVariables=s.i;window.replaceVariables=s.r;delete window.__hSavedApi;return String(typeof getVariables==="function"&&typeof insertOrAssignVariables==="function"&&typeof replaceVariables==="function");})()');
+            if (ok !== 'true') return 'mock 变量 API 恢复失败';
+        }
+    });
+
+    // ---------------- A3. 能力探针（行为，需已载店；每项试跑后复原） ----------------
+    log('== D2. 能力探针（行为）：affection 钳制 / enter / updateShopAffection 同步 ==');
+    if (importOK) {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 99 }) + ')');
+        const hi = await persistedAff(SHOP);
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: -99 }) + ')');
+        const lo = await persistedAff(SHOP);
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 0 }) + ')');
+        const zero = await persistedAff(SHOP);
+        CAPS.affClamp = (hi === 31 && lo === 25 && zero === 30);
+        if (!CAPS.affClamp) log('   affClamp 试跑：+99→' + hi + '（期望 31），-99→' + lo + '（期望 25），0→' + zero + '（期望 30）', 'info');
+
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 5 }) + ', ' + J({ scene: 'enter' }) + ')');
+        CAPS.affEnter = (await persistedAff(SHOP)) === 30;
+
+        await setBothAff(SHOP, 30);
+        await E('updateShopAffection(' + J(SHOP) + ', 7)');
+        const probeRt = await E('window.__shopAffection');
+        const probeHud = await hudValue();
+        CAPS.updateSync = (probeRt === 37);
+        CAPS.hudSync = CAPS.updateSync && String(probeHud || '').indexOf('37') !== -1;
+        await setBothAff(SHOP, 30);
+
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 3 }) + ')');
+        const probeHudAfter = (await hudValue() || '').trim();
+        CAPS.hudByApply = CAPS.hud && String(probeHudAfter).indexOf('31') !== -1;
+        CAPS.hudDelta = CAPS.hudByApply;
+        await setBothAff(SHOP, 30);
+        log('   探针[affClamp]=' + (CAPS.affClamp ? '已落地' : '未落地')
+            + '  [affEnter]=' + (CAPS.affEnter ? '已落地' : '未落地')
+            + '  [updateSync]=' + (CAPS.updateSync ? '已落地' : '未落地')
+            + '  [hudSync]=' + (CAPS.hudSync ? '已落地' : '未落地')
+            + '  [hudByApply]=' + (CAPS.hudByApply ? '已落地' : '未落地'), 'info');
+    } else {
+        for (const k of ['affClamp', 'affEnter', 'updateSync', 'hudSync', 'hudByApply', 'hudDelta', 'bubbleEmoji']) CAPS[k] = false;
+    }
+
+    // ---------------- E. 二次进店合并 ----------------
+    log('== E. 同名新块合并：保留旧商品 + 保留私藏 ==');
+    await check('同名新块合并：旧类目商品（精炼枪油/黄铜扳手）与新块商品（油布雨披）并存', 'existing', null, async () => {
+        const ok = await loadShop(Y_FULL2);
+        if (ok !== true) return '二次导入返回非 true';
+        const p = await readPersisted(SHOP);
+        const names = [];
+        ['杂货', '工具', '补给'].forEach(c => (p.cats[c] || []).forEach(n => names.push(n)));
+        const joined = names.join(',');
+        if (joined.indexOf('🧪 精炼枪油') === -1) return '旧商品 精炼枪油 丢失：' + joined;
+        if (joined.indexOf('🔧 黄铜扳手') === -1) return '旧类目商品 黄铜扳手 丢失：' + joined;
+        if (joined.indexOf('📦 油布雨披') === -1) return '新块商品 油布雨披 未入：' + joined;
+        return true;
+    });
+    await check('同名新块合并：新块未输出「独家私藏」→ 保留旧私藏', 'existing', null, async () => {
+        const p = await readPersisted(SHOP);
+        if ((p.exclusive || []).length !== 1) return '私藏条数=' + (p.exclusive || []).length;
+        return (p.exclusive[0] === '🗝️ 密大银钥匙') || ('私藏丢失/被替换：' + p.exclusive.join(','));
+    });
+
+    // ---------------- F/G. 仅店名恢复 / 未知拒绝 ----------------
+    log('== F/G. 回访：仅店名恢复 / 未知店拒绝 ==');
+    await check('仅店名（已存店）→ 恢复持久层商品与好感，覆盖运行态', 'planned', 'nameOnly', async () => {
+        const persistedSnap = await E('JSON.stringify(window.__hStore.chat["$shops"]["' + SHOP + '"])');
+        await setPersistedAff(SHOP, 77);
+        await E('(function(){ shopState = null; window.__shopAffection = 5; })()');
+        const ok = await loadShop(Y_NAME_ONLY);
+        const rtName = await E('shopState ? shopState.shopName : null');
+        const rtN = await E('shopState ? shopState.items.length : -1');
+        const rtAff = await E('window.__shopAffection');
+        if (ok !== true) return 'onShopDataReceived 未返回 true';
+        if (rtName !== SHOP) return '运行态未恢复，店名=' + rtName;
+        if (rtN !== 4) return '运行态商品数=' + rtN + '（期望 4：3 分类 + 1 私藏）';
+        if (rtAff !== 77) return '运行态好感=' + rtAff + '（期望恢复为持久层 77）';
+        const after = await readPersisted(SHOP);
+        if (after.aff !== 77) return '恢复后持久层好感被改写=' + after.aff;
+        if ((after.cats['杂货'] || []).length !== 1 || (after.cats['工具'] || []).length !== 1) return '恢复后持久层商品被改写';
+        if ((after.exclusive || []).length !== 1) return '恢复后私藏被改写';
+        return true;
+    });
+    await check('仅店名（未知店）→ 拒绝且不改运行态 / 不新增持久键', 'planned', 'nameOnly', async () => {
+        const keysBefore = Object.keys(await readShops() || {}).join(',');
+        const beforeName = await E('shopState ? shopState.shopName : null');
+        const beforeN = await E('shopState ? shopState.items.length : -1');
+        const ok = await loadShop(Y_NAME_UNKNOWN);
+        const keysAfter = Object.keys(await readShops() || {}).join(',');
+        const afterName = await E('shopState ? shopState.shopName : null');
+        const afterN = await E('shopState ? shopState.items.length : -1');
+        if (ok !== false) return '期望返回 false，实际=' + ok;
+        if (keysAfter !== keysBefore) return '持久层新增/变更键：' + keysBefore + ' → ' + keysAfter;
+        if (afterName !== beforeName || afterN !== beforeN) return '运行态被改动：' + beforeName + '/' + beforeN + ' → ' + afterName + '/' + afterN;
+        return true;
+    });
+
+    // ---------------- H. applyLLMResult 好感钳制 ----------------
+    log('== H. applyLLMResult：-5..+1 硬钳制 / enter 不加 / 无效值忽略 ==');
+    // F 段可能把运行态置空（试探恢复/拒绝语义），这里先重建一次有效商店，保证 H 段基线可用
+    await loadShop(Y_FULL2);
+    await check('affection 99（正越界）→ 硬钳制 +1', 'planned', 'affClamp', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 99 }) + ')');
+        const a = await persistedAff(SHOP), r = await E('window.__shopAffection');
+        return (a === 31 && r === 31) || ('期望 30→31（+1），实际持久=' + a + ' 运行态=' + r);
+    });
+    await check('affection -99（负越界）→ 硬钳制 -5', 'planned', 'affClamp', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: -99 }) + ')');
+        const a = await persistedAff(SHOP), r = await E('window.__shopAffection');
+        return (a === 25 && r === 25) || ('期望 30→25（-5），实际持久=' + a + ' 运行态=' + r);
+    });
+    await check('affection 4（默认 scene=chat）→ +1（不吞掉合法增量）', 'planned', 'affClamp', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 4 }) + ')');
+        const a = await persistedAff(SHOP);
+        return (a === 31) || ('期望 30→31，实际=' + a);
+    });
+    await check('affection 0 → 不落地（无本次变化）', 'planned', 'affClamp', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 0 }) + ')');
+        const a = await persistedAff(SHOP), r = await E('window.__shopAffection');
+        return (a === 30 && r === 30) || ('期望不变 30，实际持久=' + a + ' 运行态=' + r);
+    });
+    await check('无效 affection（"abc"/null/undefined/NaN）→ 不落地', 'planned', 'affClamp', async () => {
+        await setBothAff(SHOP, 30);
+        for (const bad of ['abc', null, NaN, '']) {
+            await EA('applyLLMResult(' + J({ dialogue: [], affection: bad }) + ')');
+            const a = await persistedAff(SHOP);
+            if (a !== 30) return '无效值 ' + JSON.stringify(String(bad)) + ' 被落地：好感=' + a;
+        }
+        return true;
+    });
+    await check('非整数 affection 绝不越界（1.5 → 截断或忽略，但 ≤+1；-7.9 → ≥-5）', 'planned', 'affClamp', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 1.5 }) + ')');
+        const hi = await persistedAff(SHOP);
+        if (hi !== 30 && hi !== 31) return '1.5 越界：好感=' + hi + '（允许 30 忽略 / 31 截断，不得更大）';
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: -7.9 }) + ')');
+        const lo = await persistedAff(SHOP);
+        return (lo === 30 || lo === 25) || ('-7.9 越界：好感=' + lo + '（允许 30 忽略 / 25 截断，不得更小）');
+    });
+    await check('scene=enter → 不加好感（进店不涨）', 'planned', 'affEnter', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 5 }) + ', {scene:"enter", allowAffection:false})');
+        const a = await persistedAff(SHOP);
+        return (a === 30) || ('进店违规好感被落地：' + a);
+    });
+    await check('scene=bargain → 同样受 -5..+1 钳制（叠加程序惩罚前的 LLM 侧）', 'planned', 'affClamp', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: -9 }) + ', {scene:"bargain"})');
+        const a = await persistedAff(SHOP);
+        return (a === 25) || ('bargain 场景 -9 未钳到 -5：好感=' + a);
+    });
+
+    // ---------------- I. HUD ----------------
+    log('== I. 好感 HUD（实际值 / 关系档位 / 本次变化 / 老板气泡 emoji） ==');
+    await check('HUD 实际值：#keeperAffectionValue 与 #keeperRelationship 与真实好感一致', 'planned', 'hudByApply', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 3 }) + ')');
+        const aff = await E('window.__shopAffection');
+        const v = (await hudValue() || '').trim();
+        const rel = (await hudRel() || '').trim();
+        const expectRel = await E('affectionRelationship(window.__shopAffection)');
+        if (String(v).indexOf(String(aff)) === -1) return 'HUD 数值="' + v + '" 实际好感=' + aff;
+        if (rel !== expectRel) return 'HUD 关系="' + rel + '" 期望="' + expectRel + '"';
+        return true;
+    });
+    await check('#keeperAffectionDelta 显示非零本次变化（正/负）', 'planned', 'hudDelta', async () => {
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 3 }) + ')');
+        const pos = (await hudDelta() || '').trim();
+        if (!/\d/.test(pos)) return '正向变化未显示：delta="' + pos + '"';
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: -5 }) + ')');
+        const neg = (await hudDelta() || '').trim();
+        if (!/\d/.test(neg)) return '负向变化未显示：delta="' + neg + '"';
+        if (neg.indexOf('-') === -1) return '负向变化缺少负号：delta="' + neg + '"';
+        return true;
+    });
+    await check('#keeperAffectionDelta 本次变化为 0 时不显示数字', 'planned', 'hudDelta', async () => {
+        // 先等 HUD 变化态自动消退（showAffectionChange 2.4s 后自清 delta），确保基线为空，
+        // 否则上一轮 -5 的残留会被误判成「0 变化仍显示数字」
+        await new Promise(r => setTimeout(r, 2700));
+        const base = (await hudDelta() || '').trim();
+        if (/\d/.test(base)) return 'HUD 变化态未自动消退，残留 delta="' + base + '"';
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: [], affection: 0 }) + ')');
+        const d = (await hudDelta() || '').trim();
+        return !/\d/.test(d) || ('0 变化仍显示数字：delta="' + d + '"');
+    });
+    const filteredDialogue = { dialogue: [{ speaker: '路人甲', text: '这条不在白名单，只用于触发气泡但不产生等待' }], affection: 3 };
+    await check('老板气泡名称：正变化带 🙂', 'planned', 'bubbleEmoji', async () => {
+        await resetBubbleBaseline();
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J(filteredDialogue) + ')');
+        const t = await bubbleNameText();
+        return (t.indexOf('🙂') !== -1) || ('未在老板气泡名称看到 🙂，实际文本="' + t.replace(/\s+/g, ' ').trim() + '"');
+    });
+    await check('老板气泡名称：负变化带 😠', 'planned', 'bubbleEmoji', async () => {
+        await resetBubbleBaseline();
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: filteredDialogue.dialogue, affection: -5 }) + ')');
+        const t = await bubbleNameText();
+        return (t.indexOf('😠') !== -1) || ('未在老板气泡名称看到 😠，实际文本="' + t.replace(/\s+/g, ' ').trim() + '"');
+    });
+    await check('老板气泡名称：0 变化不带 emoji', 'planned', 'bubbleEmoji', async () => {
+        // 先让上一个 emoji 的 2.4s 自复位定时器走完，再复位基线，避免把残留误判成「0 变化仍带 emoji」
+        await new Promise(r => setTimeout(r, 2700));
+        await resetBubbleBaseline();
+        await setBothAff(SHOP, 30);
+        await EA('applyLLMResult(' + J({ dialogue: filteredDialogue.dialogue, affection: 0 }) + ')');
+        const t = await bubbleNameText();
+        if (t.indexOf('🙂') !== -1 || t.indexOf('😠') !== -1) return '0 变化仍带 emoji："' + t.replace(/\s+/g, ' ').trim() + '"';
+        return true;
+    });
+    await check('affectionRelationship(value) 四档中文与边界（80/50/20）', 'planned', 'hud', async () => {
+        const got = JSON.parse(await E('JSON.stringify([affectionRelationship(100),affectionRelationship(80),affectionRelationship(79),affectionRelationship(50),affectionRelationship(49),affectionRelationship(20),affectionRelationship(19),affectionRelationship(0)])'));
+        const expected = ['熟络热络', '熟络热络', '客气有礼', '客气有礼', '公事公办', '公事公办', '冷淡戒备', '冷淡戒备'];
+        for (let i = 0; i < expected.length; i++) {
+            if (got[i] !== expected[i]) return '档位不匹配：' + JSON.stringify(got) + ' 期望 ' + JSON.stringify(expected);
+        }
+        return true;
+    });
+
+    // ---------------- J. updateShopAffection / saveShopEdits ----------------
+    log('== J. updateShopAffection 返回新值 + 同步；saveShopEdits 旧签名兼容 ==');
+    await check('updateShopAffection(+999) → 上界 100（返回新值）', 'existing', null, async () => {
+        await setBothAff(SHOP, 30);
+        const v = await E('updateShopAffection(' + J(SHOP) + ', 999)');
+        const p = await persistedAff(SHOP);
+        return (v === 100 && p === 100) || ('返回=' + v + ' 持久=' + p + '（期望 100）');
+    });
+    await check('updateShopAffection(-999) → 下界 0；未知店 → null', 'existing', null, async () => {
+        await setBothAff(SHOP, 30);
+        const v = await E('updateShopAffection(' + J(SHOP) + ', -999)');
+        const p = await persistedAff(SHOP);
+        const unk = await E('updateShopAffection(' + J('不存在店') + ', 5)');
+        if (v !== 0 || p !== 0) return '下界失败：返回=' + v + ' 持久=' + p;
+        if (unk !== null) return '未知店应返回 null，实际=' + unk;
+        return true;
+    });
+    await check('updateShopAffection 同步运行态 window.__shopAffection', 'planned', 'updateSync', async () => {
+        await setBothAff(SHOP, 30);
+        await E('updateShopAffection(' + J(SHOP) + ', 7)');
+        const r = await E('window.__shopAffection');
+        return (r === 37) || ('运行态未同步，window.__shopAffection=' + r + '（期望 37）');
+    });
+    await check('updateShopAffection 同步 HUD（值 + 档位）', 'planned', 'hudSync', async () => {
+        await setBothAff(SHOP, 30);
+        await E('updateShopAffection(' + J(SHOP) + ', 60)');
+        const v = (await hudValue() || '').trim();
+        const rel = (await hudRel() || '').trim();
+        if (String(v).indexOf('90') === -1) return 'HUD 数值="' + v + '"（期望 90）';
+        return (rel === '熟络热络') || ('HUD 关系="' + rel + '"（期望 熟络热络）');
+    });
+    await check('saveShopEdits 旧签名兼容：人设锁定 + 好感钳制 0..100 + 返回文字', 'existing', null, async () => {
+        await setBothAff(SHOP, 30);
+        const msg = await E('saveShopEdits(' + J(SHOP) + ', "手动人设X", 150)');
+        const p = await readPersisted(SHOP);
+        const meta = p.meta || {};
+        if (typeof msg !== 'string' || !msg.trim()) return '未返回文字反馈：' + msg;
+        if (p.aff !== 100) return '好感未钳制到 100：' + p.aff;
+        if (p.persona !== '手动人设X') return '人设未保存：' + p.persona;
+        if (meta.personaOverride !== true) return '$meta.personaOverride 未置 true';
+        const rtPersona = await E('shopState ? shopState.keeperPersona : null');
+        if (rtPersona !== '手动人设X') return '运行态人设未同步：' + rtPersona;
+        const rtAff = await E('window.__shopAffection');
+        if (rtAff !== 100) return '运行态好感未同步：' + rtAff;
+        return true;
+    });
+
+    // ---------------- K. saveGoodsEdit ----------------
+    log('== K. saveGoodsEdit：改名/改类目/介绍/价格/数量 持久 + 运行态同步 ==');
+    await check('改名 + 改类目：旧类目中的条目被清除，新类目就位，全店不重影', 'planned', 'saveGoodsEdit', async () => {
+        const fields = goodsFields({ name: '🧪 精炼枪油（改良）', category: '补给', price: 2.5, count: 3, unit: '桶', desc: '改良配方', tag: '补给' });
+        const msg = await EA('saveGoodsEdit(' + J(SHOP) + ', "杂货", 0, ' + J(fields) + ')');
+        if (typeof msg !== 'string' || !msg.trim()) return '未返回文字反馈：' + msg;
+        const cc = await readCleanCats(SHOP);
+        const inNew = (cc.cats['补给'] || []).indexOf('精炼枪油（改良）') !== -1;
+        const inOld = (cc.cats['杂货'] || []).indexOf('精炼枪油（改良）') !== -1;
+        const total = (cc.all || []).filter(n => n === '精炼枪油（改良）').length;
+        if (!inNew) return '新类目 补给 中未找到商品；持久层=' + JSON.stringify(cc.cats);
+        if (inOld) return '旧类目 杂货 中仍残留该商品（未清除）';
+        if (total !== 1) return '全店出现 ' + total + ' 次（应仅 1 次，疑深合并残留）';
+        const rt = JSON.parse(await E('JSON.stringify(shopState.items.filter(function(i){return i.name==="精炼枪油（改良）";}).map(function(i){return {cat:i.category,price:i.price,stock:i.stock};}))'));
+        if (rt.length !== 1) return '运行态未同步（命中 ' + rt.length + ' 条）';
+        if (rt[0].cat !== '补给' || rt[0].price !== 2.5 || rt[0].stock !== 3) return '运行态数值不符：' + JSON.stringify(rt[0]);
+        return true;
+    });
+    await check('价格/数量/单位/介绍（标签）持久且运行态同步', 'planned', 'saveGoodsEdit', async () => {
+        const fields = goodsFields({ name: '🔧 黄铜扳手', category: '工具', price: 22.5, count: 2, unit: '把', desc: '结实的旧扳手（已修）', tag: '工具' });
+        await EA('saveGoodsEdit(' + J(SHOP) + ', "工具", 0, ' + J(fields) + ')');
+        const p = await readPersisted(SHOP);
+        const raw = ((p.cats['工具'] || [])[0] || '');
+        const detail = JSON.parse(await E('(function(){var s=(window.__hStore.chat["$shops"]||{})[' + J(SHOP) + '];var e=(s["分类商品"]["工具"]||[])[0]||{};var g=e["商品"]||e;return JSON.stringify({price:parsePriceString(g["价格"]),count:g["数量"],unit:g["单位"],desc:g["介绍"],tag:g["标签"],rawName:g["名字"]});})()'));
+        if (detail.price !== 22.5) return '价格未持久（parse≈' + detail.price + '）';
+        if (detail.count !== 2) return '数量未持久：' + detail.count;
+        if (detail.unit !== '把') return '单位未持久：' + detail.unit;
+        if (detail.desc !== '结实的旧扳手（已修）') return '介绍未持久：' + detail.desc;
+        const rt = JSON.parse(await E('(function(){var i=shopState.items.filter(function(x){return x.name==="黄铜扳手";})[0];return JSON.stringify(i?{price:i.price,stock:i.stock,unit:i.unit,quote:i.quote,tag:i.tierText,cat:i.category}:null);})()'));
+        if (!rt) return '运行态未找到该商品';
+        if (rt.price !== 22.5 || rt.stock !== 2 || rt.unit !== '把' || rt.quote !== '结实的旧扳手（已修）') return '运行态数值不符：' + JSON.stringify(rt);
+        const tagOK = (detail.tag === '工具') || (rt.tag === '工具');
+        return tagOK || ('标签未持久且运行态 tierText 非 tag：持久标签=' + detail.tag + ' 运行态=' + rt.tag);
+    });
+    await check('失败不落地：价格 <0 / 数量 0 / 名称空 / 类目空 → 有文字反馈且数据零改动', 'planned', 'saveGoodsEdit', async () => {
+        const snapShops = await canonShops();
+        const snapRt = await canonRuntime();
+        const cases = [
+            { label: '价格 -1', cat: '工具', idx: 0, f: goodsFields({ name: '🔧 黄铜扳手', category: '工具', price: -1, count: 1, unit: '把', desc: 'x', tag: '工具' }) },
+            { label: '数量 0', cat: '工具', idx: 0, f: goodsFields({ name: '🔧 黄铜扳手', category: '工具', price: 20, count: 0, unit: '把', desc: 'x', tag: '工具' }) },
+            { label: '数量非整数 1.5', cat: '工具', idx: 0, f: goodsFields({ name: '🔧 黄铜扳手', category: '工具', price: 20, count: 1.5, unit: '把', desc: 'x', tag: '工具' }) },
+            { label: '名称空', cat: '工具', idx: 0, f: goodsFields({ name: '   ', category: '工具', price: 20, count: 1, unit: '把', desc: 'x', tag: '工具' }) },
+            { label: '类目空', cat: '工具', idx: 0, f: goodsFields({ name: '🔧 黄铜扳手', category: '', price: 20, count: 1, unit: '把', desc: 'x', tag: '工具' }) }
+        ];
+        for (const c of cases) {
+            // 契约只要求「有可读的文字反馈」：返回字符串或抛 Error 皆可（一览 UI 两条路都会把文字显示给用户），
+            // 硬要求是数据零改动 —— 抛裸值（非 Error）或静默通过会被判失败
+            const out = JSON.parse(await EA('(async function(){try{var m=await saveGoodsEdit(' + J(SHOP) + ', '
+                + J(c.cat) + ', ' + c.idx + ', ' + J(c.f) + ');return JSON.stringify({ok:true,msg:String(m==null?"":m)});}'
+                + 'catch(e){return JSON.stringify({ok:false,msg:String((e&&e.message)||""),isError:!!(e&&e.message)});}})()'));
+            if (!out.msg.trim()) return c.label + '：无任何文字反馈（未返回字符串也未抛 Error）';
+            if (!out.ok && !out.isError) return c.label + '：抛出非 Error 值，无文字反馈';
+            const nowShops = await canonShops();
+            const nowRt = await canonRuntime();
+            if (nowShops !== snapShops) return c.label + '：持久层被改动（失败未回滚）';
+            if (nowRt !== snapRt) return c.label + '：运行态被改动';
+        }
+        return true;
+    });
+
+    // ---------------- L. 当前店同步保留购物车 / id 不误匹配 ----------------
+    log('== L. 编辑当前店后：其它购物车商品保留，id 不误匹配 ==');
+    await check('编辑商品后购物车条目保留、id 与 item 自洽、无重影', 'planned', 'saveGoodsEdit', async () => {
+        await E('(function(){ playerState.cart = []; assignState = null; ' +
+            '["黄铜扳手","精炼枪油（改良）"].forEach(function(n){var it=shopState.items.filter(function(i){return i.name===n;})[0];if(it)addDirectToCart(it,1);}); })()');
+        const beforeN = await E('playerState.cart.length');
+        if (beforeN !== 2) return '前置失败：购物车条目=' + beforeN;
+        const fields = goodsFields({ name: '🔧 黄铜扳手', category: '工具', price: 20, count: 1, unit: '把', desc: '结实的旧扳手（再修）', tag: '工具' });
+        await EA('saveGoodsEdit(' + J(SHOP) + ', "工具", 0, ' + J(fields) + ')');
+        const st = JSON.parse(await E(
+            '(function(){var names=shopState.items.map(function(i){return i.name;});' +
+            'return JSON.stringify({cart:playerState.cart.map(function(e){return {id:e.id,name:e.item&&e.item.name,itemId:e.item&&e.item.id,' +
+            'selfConsistent:(function(){var h=shopState.items.filter(function(i){return i.id===e.id;});' +
+            'return h.length===1 && h[0].name===(e.item&&e.item.name);})(),' +
+            'inList:names.indexOf(e.item&&e.item.name)!==-1};}),n:playerState.cart.length,ids:playerState.cart.map(function(e){return e.id;})});})()'
+        ));
+        if (st.n !== 2) return '购物车条目被清/丢：' + st.n + '（期望 2）';
+        const names = st.cart.map(c => c.name).join(',');
+        if (names.indexOf('精炼枪油（改良）') === -1) return '未编辑的商品被丢弃：' + names;
+        for (const c of st.cart) {
+            if (!c.selfConsistent) return 'id 误匹配（entry.id=' + c.id + ' 指向了别的 item）';
+            if (!c.inList) return '条目 item 不在当前商品表中：' + c.name;
+        }
+        if (new Set(st.ids).size !== st.ids.length) return '购物车存在重复 id：' + JSON.stringify(st.ids);
+        return true;
+    });
+    await check('编辑商品后：其它商品的砍价锁价/限砍计数保留，归属面板 entryId 重挂', 'planned', 'saveGoodsEdit', async () => {
+        await E('(function(){ playerState.cart = []; assignState = null; ' +
+            'var w=shopState.items.filter(function(i){return i.name==="黄铜扳手";})[0];' +
+            'var o=shopState.items.filter(function(i){return i.name==="精炼枪油（改良）";})[0];' +
+            'o.dealPrice=0.99;o.dealBy="埃利奥特";o.bargainCount=1;o.lastBargainD=10;' +
+            'addDirectToCart(w,1);addDirectToCart(o,1); })()');
+        // 打开归属面板并分配其中一件，模拟「归属后编辑」
+        await E('btnExpandCart.click()');
+        const panelReady2 = await waitUntil(() => E('!!assignState && assignState.targets.length > 0'), 8000)
+            && await waitUntil(() => E('document.querySelectorAll("#cartDetailTableBody .cart-check").length === playerState.cart.length'), 8000);
+        if (!panelReady2) return '归属面板未就绪';
+        await E('(function(){var c=document.querySelector("#cartDetailTableBody .cart-check"); if(c) c.click();})()');
+        const picked = await waitUntil(() => E('!!assignState && assignState.picked.size === 1'), 3000);
+        if (!picked) return '勾选未生效';
+        await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return x.textContent.indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
+        const assignedOld = JSON.parse(await E('JSON.stringify(assignState.assigned.map(function(a){var e=playerState.cart.filter(function(c){return c.id===a.entryId;})[0];return e?e.item.name:null;}))'));
+        if (assignedOld.filter(Boolean).length !== 1) return '归属前置失败：' + JSON.stringify(assignedOld);
+        // 编辑已归属的那件（黄铜扳手）：entryId 会变，归属应按名重挂；未编辑的 精炼枪油 砍价态保留
+        const fields = goodsFields({ name: '🔧 黄铜扳手', category: '工具', price: 20, count: 1, unit: '把', desc: '扳手再改', tag: '工具' });
+        await EA('saveGoodsEdit(' + J(SHOP) + ', "工具", 0, ' + J(fields) + ')');
+        const after = JSON.parse(await E(
+            '(function(){var o=shopState.items.filter(function(i){return i.name==="精炼枪油（改良）";})[0];' +
+            'var ae=assignState.assigned.filter(function(a){var e=playerState.cart.filter(function(c){return c.id===a.entryId;})[0];return e&&e.item.name==="黄铜扳手";});' +
+            'return JSON.stringify({deal:o&&o.dealPrice,count:o&&o.bargainCount,assigned:ae.length});})()'));
+        if (!after || after.deal !== 0.99) return '砍价锁价丢失：' + JSON.stringify(after);
+        if (after.count !== 1) return '限砍计数丢失：' + JSON.stringify(after);
+        if (after.assigned !== 1) return '归属 entryId 未重挂：' + JSON.stringify(after);
+        await E('(function(){ playerState.cart = []; assignState = null; })()');
+        return true;
+    });
+
+    // ---------------- L2. 同名商品跨类目迁移（深合并删键回归，置于编辑用例后按当时夹具断言） ----------------
+    log('== L2. 同名商品跨类目迁移：持久层无旧副本 + 仅店名回访运行态唯一 ==');
+    await check('同名商品跨类目迁移：旧类目条目被删除（深合并不得残留旧副本）', 'planned', null, async () => {
+        // 当前夹具：补给含 精炼枪油（改良）+ 油布雨披；本块把 精炼枪油（改良）移到 弹药
+        const Y_MOVE = [
+            '商店数据:',
+            '  店名: "' + SHOP + '"',
+            '  店主: "塔尼亚婆婆"',
+            '  立绘: "占卜商妇"',
+            '  店主性格: "新块人设B"',
+            '  在场成员: ["埃利奥特", "弗兰克"]',
+            '  分类商品:',
+            '    弹药:',
+            '      - 商品:',
+            '          名字: "🧪 精炼枪油（改良）"',
+            '          价格: "9.99美元"',
+            '          数量: 7',
+            '          单位: "桶"',
+            '          介绍: "迁移后的枪油"'
+        ].join('\n') + '\n';
+        const ok = await loadShop(Y_MOVE);
+        if (ok !== true) return '迁移块导入返回非 true';
+        const cc = await readCleanCats(SHOP);
+        const hits = (cc.all || []).filter(n => n === '精炼枪油（改良）').length;
+        if (hits !== 1) return '精炼枪油（改良）在持久层出现 ' + hits + ' 次（深合并残留旧类目副本）';
+        if ((cc.cats['补给'] || []).indexOf('精炼枪油（改良）') !== -1) return '旧类目 补给 仍残留该商品';
+        if ((cc.cats['弹药'] || []).indexOf('精炼枪油（改良）') === -1) return '新类目 弹药 未就位：' + JSON.stringify(cc.cats);
+        // 仅店名回访：运行态也必须只有一份，且取新价
+        const rt = await EA('onShopDataReceived(' + J(Y_NAME_ONLY) + ').then(function(ok){if(!ok)return "load-false";return JSON.stringify(shopState.items.filter(function(i){return i.name==="精炼枪油（改良）";}).map(function(i){return i.price;}));})');
+        const prices = JSON.parse(rt);
+        if (prices.length !== 1) return '回访运行态该商品出现 ' + prices.length + ' 份';
+        if (Math.abs(prices[0] - 9.99) > 1e-6) return '回访运行态取到旧价 ' + prices[0] + '（期望 9.99）';
+        return true;
+    });
+
+    // ---------------- M. 并发结算幂等 ----------------
+    log('== M. 双击结算：扣款 / 加物品 / 购物好感 各只一次 ==');
+    await E('(function(){ playerState.cart = []; assignState = null; __hResetMms(); playerState.purchaseHistory = []; ' +
+        'delete window.__hStore.chat["$shop_deal_result"]; delete window.__hStore.chat["$shop_sync"]; })()');
+    // 以运行态实际单价推期望值，避免依赖前面编辑用例留下的价格
+    const MPRICE = await E('(function(){var i=shopState.items.filter(function(x){return x.name==="黄铜扳手";})[0];return i?i.price:null;})()');
+    const MCASH = 100 - MPRICE;
+    const MGAIN = Math.floor(MPRICE / 5);
+    const MAFF = 30 + MGAIN;
+    await setBothAff(SHOP, 30);
+    await E('(function(){var it=shopState.items.filter(function(i){return i.name==="黄铜扳手";})[0]; addDirectToCart(it,1);})()');
+    await E('(function(){ parent.document.getElementById("send_textarea").value = ""; })()');
+    const preMsgReplace = await E('(__hStats.msgReplace["m7"]||0)');
+    const preHist = await E('playerState.purchaseHistory.length');
+    await E('btnExpandCart.click()');
+    // 就绪判定必须看「状态」而不是 DOM：openAssignPanel 是异步的，且 #assignTargets 里可能残留上一轮
+    // 面板的按钮（innerHTML 只在 renderAssignPanel 里清），按 DOM 判定会抢在 assignState 建好之前点击，
+    // 导致 toggleCartEntry 静默早退、归属永远落不了地（IAB 降级态时序更易触发）。
+    const panelReady = await waitUntil(() => E('!!assignState && assignState.targets.length > 0'), 8000)
+        // 再等明细表按当前购物车重新渲染完毕，确保点到的是本轮的勾选框
+        && await waitUntil(() => E('document.querySelectorAll("#cartDetailTableBody .cart-check").length === playerState.cart.length'), 8000);
+    let assignOK = false;
+    if (panelReady) {
+        await E('(function(){var c=document.querySelector("#cartDetailTableBody .cart-check"); if(c) c.click();})()');
+        const pickedOK = await waitUntil(() => E('!!assignState && assignState.picked.size === 1'), 3000);
+        if (pickedOK) {
+            await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return x.textContent.indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
+            assignOK = await waitUntil(() => E('!!assignState && assignState.assigned.length === 1'), 3000);
+        }
+    }
+    const cartBefore = await E('playerState.cart.length');
+    // 断链诊断：勾选/归属失败时能直接看出断在哪一步（面板未渲染 / 未勾上 / 未分配）
+    const assignDiag = JSON.parse(await E('JSON.stringify({targets:document.querySelectorAll("#assignTargets button").length,'
+        + 'checks:document.querySelectorAll("#cartDetailTableBody .cart-check").length,picked:assignState?assignState.picked.size:null,'
+        + 'assigned:assignState?assignState.assigned.length:null,cart:playerState.cart.length})'));
+    // 并发双击：任一分支抛错（并发未防护时的典型表现：assignState 被前一次置空）不得让整轮 harness 崩掉，
+    // 收敛为 rejected 文本，交给下面的软断言报「待对齐」
+    const ckRejects = JSON.parse(await EA('Promise.all([checkoutCart(), checkoutCart()].map(function(p){'
+        + 'return Promise.resolve(p).then(function(){return "";}).catch(function(e){return String((e&&e.message)||e);});}))'
+        + '.then(function(list){return JSON.stringify(list.filter(Boolean));})'));
+    await waitUntil(() => E('playerState.cart.length === 0'), 5000);
+    const CK = {
+        panelReady: panelReady, assignOK: assignOK, cartBefore: cartBefore,
+        stat: await readStat(),
+        shops: await readShops(),
+        rtAff: await E('window.__shopAffection'),
+        msgReplace: (await E('(__hStats.msgReplace["m7"]||0)')) - preMsgReplace,
+        hist: (await E('playerState.purchaseHistory.length')) - preHist,
+        deal: JSON.parse(await E('JSON.stringify(window.__hStore.chat["$shop_deal_result"] || null)') || 'null'),
+        alerts: JSON.parse(await E('JSON.stringify(__hStats.alerts)')),
+        cartLeft: await E('playerState.cart.length'),
+        rejects: ckRejects, assignDiag: assignDiag
+    };
+    CK.cash = cashOf(CK.stat);
+    CK.items = itemsOf(CK.stat, '埃利奥特');
+    CK.aff = (CK.shops && CK.shops[SHOP]) ? CK.shops[SHOP]['好感度'] : null;
+
+    await check('结算前置：归属分配完成、购物车 1 件', 'existing', null, () => {
+        if (!(MPRICE > 0)) return '运行态未找到 黄铜扳手（单价=' + MPRICE + '）';
+        if (!CK.panelReady) return '结算面板未渲染出归属目标 ' + JSON.stringify(CK.assignDiag);
+        if (!CK.assignOK) return '归属未落地 ' + JSON.stringify(CK.assignDiag);
+        if (CK.cartBefore !== 1) return '购物车条目=' + CK.cartBefore;
+        if (CK.alerts.length) return '结算期间出现 alert：' + CK.alerts.join(' | ');
+        return true;
+    });
+    await check('双击结算：现金只扣一次（100 → ' + MCASH + '）', 'planned', null, () => {
+        const extra = CK.rejects.length ? '；并发分支抛错: ' + CK.rejects.join(' | ') : '';
+        return (CK.cash === MCASH) || ('团队现金=' + CK.cash + '（期望 ' + MCASH + '，实际扣款 ' + (CK.cash === null ? '?' : ((100 - CK.cash) / MPRICE).toFixed(1)) + ' 次）' + extra);
+    });
+    await check('双击结算：stat_data 物品只加一次', 'planned', null, () => {
+        const n = countSub(CK.items, '黄铜扳手');
+        return (n === 1) || ('物品串出现 ' + n + ' 次：' + CK.items);
+    });
+    await check('双击结算：购物好感奖励只加一次（30 → ' + MAFF + '，$' + MPRICE + '/5）', 'planned', null, () => {
+        if (CK.aff !== MAFF) return '持久好感=' + CK.aff + '（期望 ' + MAFF + '）';
+        if (CK.rtAff !== MAFF) return '运行态好感=' + CK.rtAff + '（期望 ' + MAFF + '）';
+        return true;
+    });
+    await check('双击结算：只生成一条成交（purchaseHistory +1 / $shop_deal_result 1 条）+ stat_data 写入一次', 'planned', null, () => {
+        if (CK.cartLeft !== 0) return '购物车未清空：' + CK.cartLeft;
+        if (CK.hist !== 1) return 'purchaseHistory 增量=' + CK.hist + '（期望 1）';
+        if (!CK.deal) return '$shop_deal_result 未写入';
+        if (!Array.isArray(CK.deal.purchases) || CK.deal.purchases.length !== 1) return '$shop_deal_result.purchases=' + JSON.stringify(CK.deal.purchases);
+        if (CK.msgReplace !== 1) return 'stat_data 写入（replaceVariables）次数=' + CK.msgReplace + '（期望 1）';
+        return true;
+    });
+
+    // ---------------- N. 悬停预览 ----------------
+    log('== N. 悬停预览：supportsHoverProductPreview + pointerenter/leave ==');
+    // 组件在 boot 时一次性取 matchMedia('(hover: hover) and (pointer: fine)') 的 MediaQueryList 并缓存，
+    // 所以「能力由 boot 时媒体查询决定」——本段验证正路，末段再以 __hoverSupported=false 重新 boot 验证降级路。
+    await check('supportsHoverProductPreview() 由 boot 时 matchMedia("(hover: hover) and (pointer: fine)") 决定', 'planned', 'hover', async () => {
+        const on = await E('supportsHoverProductPreview()');
+        if (on !== true) return 'boot 时 hover 能力为真，却返回 ' + on;
+        const queries = JSON.parse(await E('JSON.stringify(__hStats.mediaQueries)'));
+        const hit = queries.some(q => String(q).indexOf('hover: hover') !== -1 && String(q).indexOf('pointer: fine') !== -1);
+        if (!hit) return '未以 "(hover: hover) and (pointer: fine)" 查询媒体特性，实际=' + JSON.stringify(queries);
+        return true;
+    });
+    await check('pointerenter 弹出 bossSpeechBubble / pointerleave 收起', 'planned', 'hover', async () => {
+        await E('(function(){ shopState && (currentCategory = "all", renderCabinet()); })()');
+        const hasCell = await waitUntil(() => E('!!document.querySelector("#woodenCabinet .shelf-cell")'), 3000);
+        if (!hasCell) return '货柜无可悬停格子';
+        await clearBubbles();
+        const fire = (type) => E('(function(){var c=document.querySelector("#woodenCabinet .shelf-cell");'
+            + 'var ev;try{ev=new PointerEvent(' + J(type) + ');}catch(e){ev=new Event(' + J(type) + ');}c.dispatchEvent(ev);})()');
+        await fire('pointerenter');
+        const shown = await waitUntil(() => E('document.getElementById("bossSpeechBubble").classList.contains("show")'), 2500);
+        if (!shown) return 'pointerenter 未弹出 bossSpeechBubble';
+        await fire('pointerleave');
+        const hidden = await waitUntil(() => E('!document.getElementById("bossSpeechBubble").classList.contains("show")'), 2500);
+        return hidden || 'pointerleave 未收起 bossSpeechBubble';
+    });
+    if (CAPS.hover) {
+        await check('降级路（hover 能力为假）→ supportsHoverProductPreview() false，pointerenter 不弹气泡', 'planned', 'hover', async () => {
+            await E('(function(){ hoverProductMedia.matches = false; renderCabinet(); })()');
+            const off = await E('supportsHoverProductPreview()');
+            if (off !== false) return 'hover 能力为假时仍返回 ' + off;
+            await clearBubbles();
+            await E('(function(){var c=document.querySelector("#woodenCabinet .shelf-cell");'
+                + 'var ev;try{ev=new PointerEvent("pointerenter");}catch(e){ev=new Event("pointerenter");}c.dispatchEvent(ev);})()');
+            await new Promise(r => setTimeout(r, 600));
+            const shown = await E('document.getElementById("bossSpeechBubble").classList.contains("show")');
+            await E('hoverProductMedia.matches = true');
+            return (shown === false) || '降级路仍弹出了 bossSpeechBubble';
+        });
+    }
+    await clearBubbles();
+
+    const total = R.pass + R.fail + R.pending;
+    log('== 完成：' + R.pass + ' 通过 / ' + R.fail + ' 失败 / ' + R.pending + ' 待对齐（共 ' + total + '） ==',
+        R.fail ? 'fail' : 'pass');
+    flush();
+}
+
+document.getElementById('btnRun').addEventListener('click', () => {
+    runFlow().catch(e => {
+        log('流程异常：' + ((e && e.message) || e), 'fail');
+        record('harness 流程异常', 'fail', 'existing', String((e && e.stack) || e));
+    });
+});
+window.__runHarness = runFlow;
+</script>
+</body>
+</html>

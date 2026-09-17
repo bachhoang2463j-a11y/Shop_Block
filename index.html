@@ -257,6 +257,40 @@
             cursor: pointer;
         }
 
+        .keeper-affection-hud {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 18;
+            min-width: 112px;
+            padding: 7px 9px;
+            background: rgba(13, 9, 7, 0.9);
+            border: 1px solid #79562f;
+            border-radius: 4px;
+            box-shadow: 0 5px 16px rgba(0,0,0,0.72);
+            color: #dfb06c;
+            font-family: var(--font-title);
+            font-size: 12px;
+            line-height: 1.35;
+            pointer-events: none;
+        }
+
+        .keeper-affection-hud > div:first-child::before { content: '好感 '; color: #a48e78; }
+        #keeperAffectionValue { font-weight: 800; }
+        #keeperRelationship { color: #cfc0ad; font-size: 10px; margin-top: 2px; }
+        #keeperAffectionDelta { display: none; margin-right: 4px; font-weight: 800; }
+        .keeper-affection-hud.changing #keeperAffectionDelta { display: inline; }
+        .keeper-affection-hud.positive { border-color: #698c5d; }
+        .keeper-affection-hud.positive #keeperAffectionDelta { color: #9bc585; }
+        .keeper-affection-hud.negative { border-color: #a34f45; }
+        .keeper-affection-hud.negative #keeperAffectionDelta { color: #ec8c7e; }
+        .keeper-affection-hud.changing { animation: affectionPulse 0.75s ease both; }
+        @keyframes affectionPulse {
+            0% { opacity: 0.45; transform: translateY(-5px) scale(0.96); }
+            45% { opacity: 1; transform: translateY(0) scale(1.05); }
+            100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
         /* 气泡式台词弹窗 (商品介绍与老板反馈) */
         .boss-speech-bubble {
             position: absolute;
@@ -1124,7 +1158,9 @@
         .shop-acc-arrow { transition: transform 0.2s; color: #8c7360; flex-shrink: 0; }
         .shop-acc[open] .shop-acc-arrow { transform: rotate(180deg); }
         .shop-acc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+        .shop-acc-profile { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; align-items: end; }
         .shop-acc-body textarea,
+        .shop-acc-body input[type="text"],
         .shop-acc-body input[type="number"] {
             background: #1a120c;
             color: #e5d7c3;
@@ -1135,17 +1171,32 @@
             box-sizing: border-box;
         }
         .shop-acc-body textarea { font-family: Consolas, 'Courier New', monospace; line-height: 1.5; resize: vertical; }
+        .shop-acc-body input[type="text"], .shop-acc-body input[type="number"] { min-width: 0; width: 100%; }
         .shop-acc-label { font-size: 11px; color: #8c7360; }
-        .shop-goods-ro {
-            font-size: 11px;
-            line-height: 1.6;
-            color: #a48e78;
-            max-height: 120px;
-            overflow-y: auto;
-            background: rgba(12, 8, 6, 0.5);
-            border: 1px solid #2d1c12;
-            border-radius: 4px;
-            padding: 6px 8px;
+        .shop-goods-editor { display: flex; flex-direction: column; gap: 7px; max-height: 300px; overflow-y: auto; padding-right: 3px; }
+        .shop-good-edit { background: rgba(12, 8, 6, 0.62); border: 1px solid #2d1c12; border-radius: 4px; padding: 8px; }
+        .shop-good-grid { display: grid; grid-template-columns: minmax(110px, 1.5fr) minmax(80px, 1fr) 90px 72px 70px auto; gap: 6px; align-items: end; }
+        .shop-good-grid label { min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: #7f6a59; }
+        .shop-good-extra { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+        .shop-good-save { padding: 5px 9px; white-space: nowrap; }
+        .shop-settings-card { width: min(760px, 94vw) !important; overflow: hidden; padding: 0; display: flex; flex-direction: column; }
+        .shop-manager-card { width: min(920px, 95vw) !important; overflow: hidden; display: flex; flex-direction: column; }
+        .shop-manager-card #shopsListBody { max-height: 58vh !important; }
+        .shop-settings-card .modal-header { margin: 0; padding: 16px 18px 10px; }
+        .settings-scroll { overflow-y: auto; padding: 12px 18px; }
+        .settings-section { border: 1px solid #3a261a; border-radius: 4px; background: #140d0a; margin-bottom: 8px; }
+        .settings-section > summary { cursor: pointer; list-style: none; padding: 9px 11px; color: #c9a86a; font: 700 12px var(--font-title); display: flex; justify-content: space-between; }
+        .settings-section > summary::-webkit-details-marker { display: none; }
+        .settings-section > summary::after { content: '▾'; color: #7d6655; }
+        .settings-section:not([open]) > summary::after { transform: rotate(-90deg); }
+        .settings-section-body { border-top: 1px solid #342217; padding: 10px; }
+        .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .settings-grid .form-group { margin: 0; }
+        .settings-span-full { grid-column: 1 / -1; }
+        .settings-actions { flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 10px 18px 14px; border-top: 1px solid #3a261a; background: #130c09; }
+        @media (max-width: 640px) {
+            .shop-acc-profile, .shop-good-grid, .shop-good-extra, .settings-grid { grid-template-columns: 1fr; }
+            .shop-good-save { width: 100%; }
         }
         .shop-acc-btns { display: flex; flex-wrap: wrap; gap: 6px; }
         .shop-acc-btns .buy-btn, .shop-acc-btns .cart-clear-btn { font-size: 11px; padding: 3px 10px; }
@@ -1892,6 +1943,10 @@
             </div>
 
             <div class="portrait-wrapper">
+                <div class="keeper-affection-hud" id="keeperAffectionHud" aria-live="polite">
+                    <div><span id="keeperAffectionDelta"></span><span id="keeperAffectionValue">30</span></div>
+                    <div id="keeperRelationship">公事公办</div>
+                </div>
                 <img id="blacksmithImg" class="blacksmith-img"
                      src="" data-fallback-used=""
                      alt="店主立绘"
@@ -2174,7 +2229,7 @@
          弹窗 4：Shop_block 手动导入 (M1c: 粘贴含 <Shop_block> 的正文或裸 YAML)
     ==================================================== -->
     <div class="inspect-modal-backdrop" id="importBlockModal">
-        <div class="parchment-card" style="width: 620px;">
+        <div class="parchment-card shop-manager-card">
             <div class="modal-header">
                 <div class="modal-title-group">
                     <div style="font-size: 32px;">📚</div>
@@ -2187,7 +2242,7 @@
             </div>
 
             <div id="shopsListBody" style="padding: 0 4px; display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto;">
-                <!-- 持久化店铺手风琴（JS 渲染：人设/好感可编辑，商品只读） -->
+                <!-- 持久化店铺手风琴（JS 渲染：人设、好感与商品可编辑） -->
             </div>
 
             <div id="importBlockMsg" style="font-size: 12px; min-height: 18px; margin: 10px 0 0 4px; color: #8c7360;">
@@ -2266,7 +2321,7 @@
          弹窗 4：LLM 设置与人设配置 (参考图1 【LLM设置】)
     ==================================================== -->
     <div class="inspect-modal-backdrop" id="llmModal">
-        <div class="parchment-card" style="width: 520px;">
+        <div class="parchment-card shop-settings-card">
             <div class="modal-header">
                 <div class="modal-title-group">
                     <div style="font-size: 32px;">⚙️</div>
@@ -2278,69 +2333,76 @@
                 <button class="modal-close-btn" id="llmCloseBtn">&times;</button>
             </div>
 
-            <div class="form-group">
-                <label class="form-label">API 端点 (Base URL):</label>
-                <input type="text" class="form-input" id="llmApiBase" placeholder="https://api.openai.com/v1">
-            </div>
+            <div class="settings-scroll">
+                <details class="settings-section" open>
+                    <summary>连接与模型</summary>
+                    <div class="settings-section-body settings-grid">
+                        <div class="form-group settings-span-full">
+                            <label class="form-label">API 端点 (Base URL):</label>
+                            <input type="text" class="form-input" id="llmApiBase" placeholder="https://api.openai.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">API 密钥 (API Key):</label>
+                            <input type="password" class="form-input" id="llmApiKey" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">模型选择 (Model Name):</label>
+                            <input type="text" class="form-input" id="llmModel" placeholder="gpt-4o-mini 或 gemini-1.5-flash">
+                        </div>
+                    </div>
+                </details>
 
-            <div class="form-group">
-                <label class="form-label">API 密钥 (API Key):</label>
-                <input type="password" class="form-input" id="llmApiKey" placeholder="sk-...">
-            </div>
+                <details class="settings-section">
+                    <summary>资源地址</summary>
+                    <div class="settings-section-body settings-grid">
+                        <div class="form-group">
+                            <label class="form-label">立绘服务器根 URL:</label>
+                            <input type="text" class="form-input" id="llmPortraitBase" placeholder="http://127.0.0.1:8766/shop_resources">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">头像服务器根 URL:</label>
+                            <input type="text" class="form-input" id="llmAvatarBase" placeholder="http://127.0.0.1:8766/头像">
+                        </div>
+                    </div>
+                </details>
 
-            <div class="form-group">
-                <label class="form-label">模型选择 (Model Name):</label>
-                <input type="text" class="form-input" id="llmModel" placeholder="gpt-4o-mini 或 gemini-1.5-flash">
-            </div>
+                <details class="settings-section" open>
+                    <summary>叙事与角色</summary>
+                    <div class="settings-section-body">
+                        <div class="form-group">
+                            <label class="form-label">世界观提示词 (Worldview):</label>
+                            <textarea class="form-textarea" id="llmSystemPrompt" rows="3">世界观：1926年禁酒令时期的美国，克苏鲁神话跑团氛围——私酒、黑帮、纸醉金迷与不可名状的古老恐惧并存。所有对话、商品与言行都要贴合这个时代的质感，语气带洛夫克拉夫特式的阴郁。具体店主与商店设定以正文块和立绘为准，不要套用任何固定的老板模板。</textarea>
+                        </div>
+                        <details id="partyPersonasDetails" open style="background:#20150e;border:1px solid #5a3822;border-radius:4px;flex-shrink:0;">
+                            <summary style="cursor:pointer;padding:8px 10px;font-size:12px;font-weight:bold;color:#c9a86a;list-style:none;display:flex;align-items:center;justify-content:space-between;">
+                                <span>🎭 出场角色人设</span>
+                                <span id="ppCount" style="font-size:11px;color:#8c7360;background:#120b08;padding:2px 8px;border-radius:999px;"></span>
+                            </summary>
+                            <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px;border-top:1px solid #5a3822;">
+                                <div id="partyPersonasList" style="display:flex;flex-direction:column;gap:8px;"></div>
+                                <button type="button" class="buy-btn" id="ppAddBtn" style="align-self:flex-start;">＋ 添加角色人设</button>
+                                <div style="font-size:11px;color:#8c7360;line-height:1.4;">按角色名精确匹配当前在场名单，未在场角色的人设不会发给 LLM。人设可换行多段描述。</div>
+                            </div>
+                        </details>
+                    </div>
+                </details>
 
-            <div class="form-group">
-                <label class="form-label">立绘服务器根 URL (Portrait Base URL):</label>
-                <input type="text" class="form-input" id="llmPortraitBase" placeholder="http://127.0.0.1:8766/shop_resources（指向含10张店主立绘的目录）">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">头像服务器根 URL (Avatar Base URL):</label>
-                <input type="text" class="form-input" id="llmAvatarBase" placeholder="http://127.0.0.1:8766/头像（调查员头像目录，默认 my_assets 服务器）">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">世界观提示词 (Worldview):</label>
-                <textarea class="form-textarea" id="llmSystemPrompt" rows="3">世界观：1926年禁酒令时期的美国，克苏鲁神话跑团氛围——私酒、黑帮、纸醉金迷与不可名状的古老恐惧并存。所有对话、商品与言行都要贴合这个时代的质感，语气带洛夫克拉夫特式的阴郁。具体店主与商店设定以正文块和立绘为准，不要套用任何固定的老板模板。</textarea>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">出场角色人设（仅在场成员注入，可换行描述）:</label>
-                <details id="partyPersonasDetails" open style="background:#20150e;border:1px solid #5a3822;border-radius:4px;flex-shrink:0;">
-                    <summary style="cursor:pointer;padding:8px 10px;font-size:12px;font-weight:bold;color:#c9a86a;list-style:none;display:flex;align-items:center;justify-content:space-between;">
-                        <span>🎭 角色人设列表</span>
-                        <span id="ppCount" style="font-size:11px;color:#8c7360;background:#120b08;padding:2px 8px;border-radius:999px;"></span>
-                    </summary>
-                    <div style="padding:8px 10px;display:flex;flex-direction:column;gap:8px;border-top:1px solid #5a3822;">
-                        <div id="partyPersonasList" style="display:flex;flex-direction:column;gap:8px;"></div>
-                        <button type="button" class="buy-btn" id="ppAddBtn" style="align-self:flex-start;">＋ 添加角色人设</button>
-                        <div style="font-size:11px;color:#8c7360;line-height:1.4;">按角色名精确匹配当前在场名单，未在场角色的人设不会发给 LLM。人设可换行多段描述。</div>
+                <details class="settings-section">
+                    <summary>行为与调试</summary>
+                    <div class="settings-section-body settings-grid">
+                        <label style="display:flex;align-items:flex-start;gap:8px;color:#c9a86a;font-size:12px;cursor:pointer;">
+                            <input type="checkbox" id="llmGreetToggle" style="accent-color:#dfb06c;">
+                            <span>进店时请求 LLM 欢迎问候</span>
+                        </label>
+                        <label style="display:flex;align-items:flex-start;gap:8px;color:#c9a86a;font-size:12px;cursor:pointer;">
+                            <input type="checkbox" id="llmDebugToggle" style="accent-color:#dfb06c;">
+                            <span>输出最近请求的 prompt、response 和 finish_reason</span>
+                        </label>
                     </div>
                 </details>
             </div>
 
-            <div class="form-group">
-                <label class="form-label">开场问候:</label>
-                <label style="display:flex;align-items:center;gap:8px;color:#c9a86a;font-size:12px;cursor:pointer;">
-                    <input type="checkbox" id="llmGreetToggle" style="accent-color:#dfb06c;">
-                    进店时自动请求 LLM 欢迎问候（关闭则零 token 消耗，只显示内置迎宾）
-                </label>
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">LLM 调试日志:</label>
-                <label style="display:flex;align-items:center;gap:8px;color:#c9a86a;font-size:12px;cursor:pointer;">
-                    <input type="checkbox" id="llmDebugToggle" style="accent-color:#dfb06c;">
-                    输出最近一次请求的完整 prompt、response 和 finish_reason（保存后刷新生效；控制台过滤 [ShopBlock LLM] 展开分组查看）
-                </label>
-            </div>
-
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
-
+            <div class="settings-actions">
                 <button class="buy-btn" id="llmResetBtn" style="background:#20150e; border-color:#5a3822;">恢复默认</button>
                 <button class="buy-btn" id="llmSaveBtn">保存配置</button>
             </div>
@@ -2461,6 +2523,10 @@
                 return null;
             }
             const root = data && typeof data === 'object' ? (data['商店数据'] || data) : null;
+            return normalizeShopData(root);
+        }
+
+        function normalizeShopData(root) {
             if (!root || typeof root !== 'object') return null;
 
             const shopName = String(root['店名'] || '').trim();
@@ -2500,9 +2566,12 @@
                 ? root['独家私藏'].map(raw => normalizeGoodsItem(raw, '独家私藏', idCounter)).filter(Boolean)
                 : [];
             const allItems = items.concat(exclusive);
-            if (allItems.length === 0) return null;
+            const rootKeys = Object.keys(root);
+            const referenceOnly = rootKeys.length === 1 && rootKeys[0] === '店名';
+            if (allItems.length === 0 && !referenceOnly) return null;
 
             return {
+                referenceOnly: referenceOnly,
                 shopName: shopName,
                 keeper: keeper,
                 portrait: portrait,
@@ -2541,9 +2610,33 @@
                 await insertOrAssignVariables({ [SHOPS_VAR_KEY]: all }, { type: 'chat' });
                 return;
             }
-            // 内存兜底：整包替换模拟真实持久化
+            // 内存兜底：先克隆再清空，避免 all 与 shopsMem 是同一引用时把源一起清掉
+            const snapshot = JSON.parse(JSON.stringify(all || {}));
             Object.keys(shopsMem).forEach(k => delete shopsMem[k]);
-            Object.assign(shopsMem, JSON.parse(JSON.stringify(all)));
+            Object.assign(shopsMem, snapshot);
+        }
+
+        async function replaceAllShops(all) {
+            if (tavernVarsApiAvailable() && typeof replaceVariables === 'function') {
+                const vars = await getVariables({ type: 'chat' });
+                const next = Object.assign({}, vars || {}, { [SHOPS_VAR_KEY]: all });
+                await replaceVariables(next, { type: 'chat' });
+                return;
+            }
+            await writeAllShops(all);
+        }
+
+        function persistedShopToState(shop) {
+            if (!shop || typeof shop !== 'object') return null;
+            return normalizeShopData({
+                '店名': shop['店名'],
+                '店主': shop['店主'],
+                '立绘': shop['立绘'],
+                '店主性格': shop['店主性格'],
+                '在场成员': Array.isArray(shop['在场成员']) ? shop['在场成员'] : [],
+                '分类商品': shop['分类商品'] || {},
+                '独家私藏': Array.isArray(shop['独家私藏']) ? shop['独家私藏'] : []
+            });
         }
 
         // 合并规则（SPEC 第一节）：同名商品以新块 价格/介绍/标签 覆盖并迁移到新块类目；
@@ -2609,21 +2702,48 @@
             return payload;
         }
 
-        async function persistMergedShop(parsed) {
-            const all = await readAllShops();
-            const payload = mergeShopIntoAll(all, parsed);
-            await writeAllShops(all);
-            return payload; // 供调用方读取 override 结果同步运行态
+        function affectionRelationship(value) {
+            const affection = Number.isFinite(Number(value)) ? Number(value) : SHOP_AFFECTION_INIT;
+            if (affection >= 80) return '熟络热络';
+            if (affection >= 50) return '客气有礼';
+            if (affection >= 20) return '公事公办';
+            return '冷淡戒备';
         }
 
-        // 好感度增减（钳制 0~100），返回新值；店不存在返回 null
-        async function updateShopAffection(shopName, delta) {
+        function keeperDisplayName(name, delta = 0) {
+            return `${name || '店主'}${delta > 0 ? ' 🙂' : delta < 0 ? ' 😠' : ''}`;
+        }
+
+        function applyAffectionUi(delta, value, options = {}) {
+            const previous = Number.isFinite(Number(options.previous)) ? Number(options.previous) : value - delta;
+            const wasLocked = previous < 100;
+            window.__shopAffection = value;
+            if (typeof keeperAffectionValue !== 'undefined' && keeperAffectionValue) keeperAffectionValue.textContent = String(value);
+            if (typeof keeperRelationship !== 'undefined' && keeperRelationship) keeperRelationship.textContent = affectionRelationship(value);
+            if (delta && typeof showAffectionChange === 'function') showAffectionChange(delta, value);
+            if (wasLocked && value >= 100 && shopState && shopState.hasExclusive) {
+                buildCategoryTabs();
+                renderCabinet();
+                if (options.unlockDialogue !== false) showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true);
+            }
+        }
+
+        async function changeShopAffection(shopName, delta, options = {}) {
+            return updateShopAffection(shopName, delta, options);
+        }
+
+        // 好感度增减（钳制 0~100），返回新值；当前店同时刷新 HUD，店不存在返回 null
+        async function updateShopAffection(shopName, delta, options = {}) {
             const all = await readAllShops();
             const shop = all[shopName];
             if (!shop) return null;
-            const cur = Number.isFinite(shop['好感度']) ? shop['好感度'] : SHOP_AFFECTION_INIT;
-            shop['好感度'] = Math.max(0, Math.min(100, cur + delta));
+            const cur = Number.isFinite(Number(shop['好感度'])) ? Number(shop['好感度']) : SHOP_AFFECTION_INIT;
+            const change = Number.isFinite(Number(delta)) ? Number(delta) : 0;
+            shop['好感度'] = Math.max(0, Math.min(100, cur + change));
             await writeAllShops(all);
+            if (shopState && shopState.shopName === shopName) {
+                applyAffectionUi(shop['好感度'] - cur, shop['好感度'], { previous: cur, unlockDialogue: options.unlockDialogue });
+            }
             return shop['好感度'];
         }
 
@@ -2757,8 +2877,8 @@
                     ? `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主。`
                     : `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主和在场队友。`,
                 narratorOff
-                    ? `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~3 条，由店主独白；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到5的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`
-                    : `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说，队友可插话；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到5的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`,
+                    ? `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~3 条，由店主独白；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时台词必须明确体现店主不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`
+                    : `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说，队友可插话；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时店主台词必须明确体现不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`,
                 `## 二、世界观\n${worldview}`,
                 `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n说话风格：${tone}。` : ''),
                 `## 四、好感度\n当前店主对玩家的好感度：${affection}/100。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，0~19冷淡戒备。按当前分档（${attitude}）演绎，不得跳档。80以下视为初识，店主不知玩家姓名。`,
@@ -2938,7 +3058,7 @@
                     const sysSecs = splitShopPrompt(sysText, ['## 一、', '## 二、', '## 三、', '## 四、', '## 五、', '## 六、', '## 七、', '## 八、']);
                     console.info(`${tag} ── system（${sysText.length}字，分${sysSecs.length}节）──`);
                     sysSecs.forEach((s, i) => console.info(`  [sys ${i + 1}/${sysSecs.length}] ${s.title}（${s.body.length}字）\n${s.body}`));
-                    const userSecs = splitShopPrompt(userText, ['【最近剧情】', '【市面风声】', '【近日报纸】', '【在场成员】', '[系统指令']);
+                    const userSecs = splitShopPrompt(userText, ['【最近剧情】', '【市面风声】', '【近日报纸】', '【当前持久化商店】', '【在场成员】', '[系统指令']);
                     console.info(`${tag} ── user（${userText.length}字，分${userSecs.length}节）──`);
                     userSecs.forEach((s, i) => console.info(`  [user ${i + 1}/${userSecs.length}] ${s.title}（${s.body.length}字）\n${s.body}`));
                     console.info(`${tag} Final messages pretty-JSON:\n` + JSON.stringify(messages, null, 2));
@@ -2999,9 +3119,15 @@
                 const sys = buildShopSystemPrompt();
                 const floors = await collectRecentStoryFloors(2);
                 const optional = await collectOptionalContext();
+                let persistedContext = '';
+                try {
+                    const all = await readAllShops();
+                    const saved = shopState && all[shopState.shopName];
+                    if (saved) persistedContext = `\n【当前持久化商店】\n${jsyaml.dump(saved, { noRefs: true, lineWidth: 120 })}\n请以此店铺档案为准，除非本轮明确发生变化，不得擅自改写店主、人设或商品。\n`;
+                } catch (e) { /* 持久化上下文不可用时自动降级 */ }
                 const story = floors.length ? `\n【最近剧情】\n${floors.join('\n---\n')}\n` : '';
                 const optPart = optional ? `\n${optional}\n` : '';
-                const user = `${story}${optPart}${buildSceneTrigger(scene, extra)}`;
+                const user = `${story}${optPart}${persistedContext}${buildSceneTrigger(scene, extra)}`;
                 const requestId = nextShopLlmId();
                 const result = await requestShopLlm(sys, user, { maxTokens: 8192, scene, requestId });
                 const parsed = extractJsonLoose(result.text);
@@ -3111,7 +3237,7 @@
                 catch (e) { console.warn(`[ShopBlock] 进店反应 LLM 第${attempt + 1}次失败:`, e.message); }
             }
             if (hasLlmPayload(result)) {
-                await applyLLMResult(result);
+                await applyLLMResult(result, { scene: 'enter', allowAffection: false });
             } else {
                 // 内置文案回退
                 showKeeperDialogue(keeper, '欢迎光临。看看有什么合用的，尽管开口。', true);
@@ -3129,15 +3255,17 @@
                 }
             }
             if (hasLlmPayload(result)) {
-                await applyLLMResult(result);
+                await applyLLMResult(result, { scene: 'buy' });
             } else {
                 showKeeperDialogue(keeper, '（ Built-in 成交词 ）货款两讫，欢迎下次再来。', true);
             }
         }
 
         // LLM 结果落地：白名单过滤 → 渲染 → affection 落地
-        async function applyLLMResult(result) {
+        async function applyLLMResult(result, options = {}) {
             hideKeeperThinking(); // 兜底：对话渲染前确保等待气泡已移除
+            const scene = options.scene || 'chat';
+            const allowAffection = options.allowAffection !== false && scene !== 'enter';
             const whitelist = buildSpeakerWhitelist(true); // 排除当前玩家角色
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
@@ -3149,6 +3277,23 @@
             const dropped = rawLines.filter(d => !(whitelist.has(d.speaker) || d.speaker === keeper));
             if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
             const lines = rawLines.filter(d => whitelist.has(d.speaker) || d.speaker === keeper);
+            const rawAffection = Number(result.affection);
+            const affection = Number.isFinite(rawAffection) ? Math.max(-5, Math.min(1, Math.trunc(rawAffection))) : 0;
+            const currentAffection = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
+            const effectiveAffection = allowAffection ? Math.max(0, Math.min(100, currentAffection + affection)) - currentAffection : 0;
+            lines.forEach(line => {
+                if (line.speaker === keeper && effectiveAffection) line.displayName = keeperDisplayName(keeper, effectiveAffection);
+            });
+            // 在本轮台词播放前落地，使 HUD 与名字 emoji 和当前对话同步出现。
+            if (allowAffection && affection !== 0 && shopState) {
+                try {
+                    const nv = await changeShopAffection(shopState.shopName, affection);
+                    if (nv != null && effectiveAffection) {
+                        bubbleTitleName.textContent = keeperDisplayName(keeper, effectiveAffection);
+                        setTimeout(() => { if (shopState) bubbleTitleName.textContent = shopState.keeper; }, 2400);
+                    }
+                } catch (e) { console.warn('[ShopBlock] 好感落地失败:', e); }
+            }
             if (rawLines.length && !lines.length) {
                 showKeeperDialogue(keeper, '……', true);
                 logShopEvent('error', 'LLM 返回的发言人不在白名单，已全部过滤');
@@ -3157,14 +3302,6 @@
             if (lines.length) {
                 lines.forEach(line => logSessionDialog(line.speaker, line.text));
                 await showDialogueSequence(lines.slice(0, 4));
-            }
-            // affection 落地（钳制 0~100）
-            const aff = parseInt(result.affection, 10);
-            if (Number.isFinite(aff) && aff !== 0 && shopState) {
-                try {
-                    const nv = await updateShopAffection(shopState.shopName, aff);
-                    if (nv != null) { const wasLocked = !exclusiveUnlocked(); window.__shopAffection = nv; if (wasLocked && nv >= 100 && shopState && shopState.hasExclusive) { buildCategoryTabs(); renderCabinet(); showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true); } }
-                } catch (e) { console.warn('[ShopBlock] 好感落地失败:', e); }
             }
             // add 命令：跑通期只保留最小字段与正价格校验，结果必须可见
             if (Array.isArray(result.commands)) {
@@ -3218,7 +3355,7 @@
             const old = document.getElementById('keeperThinkingBubble');
             if (old) old.remove();
         }
-        function showAvatarChatBubble(speaker, text, duration = 3200) {
+        function showAvatarChatBubble(speaker, text, duration = 3200, displayName = speaker) {
             const anchor = findDialogueAnchor(speaker);
             if (!anchor || !text) return Promise.resolve(false);
             const rect = anchor.getBoundingClientRect();
@@ -3227,7 +3364,7 @@
             bubble.className = `avatar-chat-bubble ${speaker === keeper ? 'keeper' : 'ally'}`;
             const name = document.createElement('span');
             name.className = 'avatar-chat-name';
-            name.textContent = speaker;
+            name.textContent = displayName;
             bubble.appendChild(name);
             bubble.appendChild(document.createTextNode(text));
             document.body.appendChild(bubble);
@@ -3250,7 +3387,7 @@
             for (let i = 0; i < lines.length; i++) {
                 // 同一人连说两句时多等一拍，避免后气泡瞬间盖住前气泡
                 if (i) await sleep(lines[i].speaker === lines[i - 1].speaker ? 1200 : 600);
-                await showAvatarChatBubble(lines[i].speaker, lines[i].text);
+                await showAvatarChatBubble(lines[i].speaker, lines[i].text, 3200, lines[i].displayName || lines[i].speaker);
             }
         }
 
@@ -3422,8 +3559,7 @@
             // 程序贪婪惩罚落地（LLM 言辞判定由 applyLLMResult 叠加）
             if (res.penalty && shopState) {
                 try {
-                    const nv = await updateShopAffection(shopState.shopName, res.penalty);
-                    if (nv != null) { const wasLocked = !exclusiveUnlocked(); window.__shopAffection = nv; if (wasLocked && nv >= 100 && shopState && shopState.hasExclusive) { buildCategoryTabs(); renderCabinet(); showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true); } }
+                    await changeShopAffection(shopState.shopName, res.penalty, { unlockDialogue: false });
                 } catch (e) { console.warn('[ShopBlock] 砍价惩罚落地失败:', e); }
             }
 
@@ -3438,7 +3574,7 @@
                 }
             }
             if (hasLlmPayload(result)) {
-                await applyLLMResult(result);
+                await applyLLMResult(result, { scene: 'bargain' });
             } else {
                 const fallbackText = BARGAIN_FALLBACK[res.branch](keeper, discount);
                 showKeeperDialogue(keeper, fallbackText, true);
@@ -3630,8 +3766,27 @@
         // ====================================================
         // 结算写入：$shop_sync 幂等 + stat_data 直写 + $shop_deal_result + 购物好感 + Shop_Record
         // ====================================================
+        let checkoutInFlight = false;
+
         async function checkoutCart() {
-            if (!assignState) return;
+            if (checkoutInFlight) return false;
+            checkoutInFlight = true;
+            cartModalCheckoutBtn.disabled = true;
+            cartModalCheckoutBtn.textContent = '结算处理中…';
+            try {
+                return await performCheckoutCart() === true;
+            } finally {
+                checkoutInFlight = false;
+                if (assignState) renderCartDetailTable();
+                else {
+                    cartModalCheckoutBtn.disabled = true;
+                    cartModalCheckoutBtn.textContent = '确认结算 (CHECKOUT)';
+                }
+            }
+        }
+
+        async function performCheckoutCart() {
+            if (!assignState) return false;
             const unassigned = playerState.cart.filter(c => !assignState.assigned.some(a => a.entryId === c.id));
             if (unassigned.length) {
                 // 零匹配时归属列表没有角色可选，提示里点明根因，避免只看到「未分配」不得要领
@@ -3639,7 +3794,7 @@
                     ? '（当前块内「在场成员」与 MMS 名册不匹配、底栏已置空，角色归属不可选；请先修正正文块或状态栏名册）'
                     : '';
                 alert(`${unassigned.length} 件商品未分配归属：${unassigned.map(c => c.item.name).join('、')}。请先勾选并分配。` + hint);
-                return;
+                return false;
             }
             const total = playerState.cart.reduce((s, e) => s + effPrice(e.item) * e.quantity, 0);
             const ctx = assignState.mms;
@@ -3647,13 +3802,13 @@
             // 现金校验（有 MMS 时）
             if (ctx && ctx.cash != null && ctx.cash < total) {
                 alert(`团队现金不足：$${ctx.cash.toFixed(2)} < 应付 $${total.toFixed(2)}`);
-                return;
+                return false;
             }
 
-            const dealId = 'shop-' + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+            const dealId = assignState.checkoutId || (assignState.checkoutId = 'shop-' + Date.now().toString(36) + Math.floor(Math.random() * 1000));
             const chatVars = (typeof getVariables === 'function') ? await getVariables({ type: 'chat' }) : window.__mockVars || {};
             const sync = chatVars['$shop_sync'];
-            if (sync && sync.lastId === dealId) return;
+            if (sync && sync.lastId === dealId) return false;
 
             // purchases 明细（SPEC 载荷契约）
             const purchases = playerState.cart.map(e => {
@@ -3700,8 +3855,7 @@
                 try {
                     const gain = Math.floor(total / 5);
                     if (gain > 0) {
-                        const nv = await updateShopAffection(shopState.shopName, gain);
-                        if (nv != null) { const wasLocked = !exclusiveUnlocked(); window.__shopAffection = nv; if (wasLocked && nv >= 100 && shopState && shopState.hasExclusive) { buildCategoryTabs(); renderCabinet(); showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true); } }
+                        await changeShopAffection(shopState.shopName, gain);
                     }
                 } catch (e) { console.warn('[ShopBlock] 购物好感落地失败:', e); }
             }
@@ -3742,6 +3896,7 @@
             updateUI();
             updateCartUI();
             renderCabinet();
+            return true;
         }
 
         // 结算记录注入酒馆输入框（RpgCombat injectTextToTavern 同思路，但只填不发送：
@@ -3880,25 +4035,35 @@
             if (!yamlText || !yamlText.trim()) return false;
             const parsed = parseShopBlockYaml(yamlText);
             if (!parsed) return false;
-            shopState = parsed;
+
+            let persisted = null;
+            try {
+                const all = await readAllShops();
+                if (parsed.referenceOnly) {
+                    persisted = all[parsed.shopName];
+                    if (!persisted) return false;
+                } else {
+                    // 合并含"旧类目删空"等删键语义，必须整包替换落库（insertOrAssign 深合并删不掉键）
+                    persisted = mergeShopIntoAll(all, parsed);
+                    await replaceAllShops(all);
+                }
+            } catch (e) {
+                console.warn('[ShopBlock] $shops 持久化失败（降级为内存运行态）:', e);
+                // 持久化失败不阻塞渲染；仅店名恢复没有持久层可用，只能失败
+                if (parsed.referenceOnly) return false;
+                persisted = mergeShopIntoAll({}, parsed);
+            }
+
+            const restored = persistedShopToState(persisted);
+            if (!restored) return false;
+            shopState = restored;
+            window.__shopAffection = Number.isFinite(Number(persisted['好感度'])) ? Number(persisted['好感度']) : SHOP_AFFECTION_INIT;
             playerState.cart = [];        // 换店/换块清空购物车
             addLandedThisSession = 0;     // 新会话重置 add 频率限制
             sessionDialogLog.length = 0;  // 新会话清空对话流水
             shopEventHistory.length = 0;  // 新会话清空购物记录事件
             stopFloorPolling();           // 块已落地 → 停楼层轮询（手动导入优先，防随后轮询覆盖）
             applyShopToUI();
-            try {
-                const all = await readAllShops();
-                const saved = all[parsed.shopName];
-                window.__shopAffection = saved ? saved['好感度'] : SHOP_AFFECTION_INIT;
-                const merged = await persistMergedShop(parsed); // 持久化失败不阻塞渲染
-                // 人设锁定（一览手动修改优先）：新块导入不覆盖手动人设，运行态同步回手动值
-                if (merged && merged['$meta'] && merged['$meta'].personaOverride && merged['店主性格']) {
-                    shopState.keeperPersona = merged['店主性格'];
-                }
-            } catch (e) {
-                console.warn('[ShopBlock] $shops 持久化失败（非阻塞）:', e);
-            }
             triggerEnterReaction();       // 进店反应（M4：LLM 失败回退内置文案）
             await syncPartyFromMms();     // 在场成员可能随块变化，重同步底栏（含 MMS 状态与现钞回显）
             return true;
@@ -3912,6 +4077,8 @@
                 ? `${shopState.keeper} · ${shopState.portrait}`
                 : `${shopState.keeper} · ${shopState.portrait}`;
             bubbleTitleName.textContent = shopState.keeper;
+            keeperAffectionValue.textContent = String(window.__shopAffection);
+            keeperRelationship.textContent = affectionRelationship(window.__shopAffection);
             loadKeeperPortrait(shopState.portrait);
             buildCategoryTabs();
             renderCabinet();
@@ -4472,6 +4639,26 @@
         const btnSendChat = document.getElementById('btnSendChat');
         const btnBargain = document.getElementById('btnBargain');
         const btnNarratorToggle = document.getElementById('btnNarratorToggle');
+        const keeperAffectionHud = document.getElementById('keeperAffectionHud');
+        const keeperAffectionDelta = document.getElementById('keeperAffectionDelta');
+        const keeperAffectionValue = document.getElementById('keeperAffectionValue');
+        const keeperRelationship = document.getElementById('keeperRelationship');
+        let affectionHudTimer = null;
+
+        function showAffectionChange(delta, value) {
+            if (!delta || !keeperAffectionHud) return;
+            clearTimeout(affectionHudTimer);
+            keeperAffectionDelta.textContent = delta > 0 ? `+${delta} ` : `${delta} `;
+            keeperAffectionValue.textContent = String(value);
+            keeperRelationship.textContent = affectionRelationship(value);
+            keeperAffectionHud.classList.remove('positive', 'negative', 'changing');
+            void keeperAffectionHud.offsetWidth;
+            keeperAffectionHud.classList.add(delta > 0 ? 'positive' : 'negative', 'changing');
+            affectionHudTimer = setTimeout(() => {
+                keeperAffectionHud.classList.remove('positive', 'negative', 'changing');
+                keeperAffectionDelta.textContent = '';
+            }, 2400);
+        }
 
         // 立绘 URL：根URL可配置（SPEC 第二节），拼枚举文件名；失败回退占卜商妇
         function portraitUrl(enumName) {
@@ -4577,6 +4764,19 @@
                     }
                 });
 
+                cell.addEventListener('pointerenter', () => {
+                    if (!item.sold && supportsHoverProductPreview()) {
+                        clearTimeout(hoverBubbleTimer);
+                        hoverBubbleTimer = setTimeout(() => popBossSpeechBubble(item), 180);
+                    }
+                });
+                cell.addEventListener('pointerleave', () => {
+                    if (!supportsHoverProductPreview()) return;
+                    clearTimeout(hoverBubbleTimer);
+                    clearTimeout(bubbleTimer);
+                    bossSpeechBubble.classList.remove('show');
+                });
+
                 woodenCabinet.appendChild(cell);
             });
         }
@@ -4584,7 +4784,14 @@
         // ====================================================
         // 老板头像上方弹出对话气泡，介绍商品
         // ====================================================
+        const hoverProductMedia = typeof window.matchMedia === 'function'
+            ? window.matchMedia('(hover: hover) and (pointer: fine)')
+            : null;
+        function supportsHoverProductPreview() {
+            return !!(hoverProductMedia && hoverProductMedia.matches);
+        }
         let bubbleTimer = null;
+        let hoverBubbleTimer = null;
         function popBossSpeechBubble(item, quantity = 1) {
             clearTimeout(bubbleTimer);
             const keeperName = shopState ? shopState.keeper : '老布莱克伍德';
@@ -4953,8 +5160,8 @@
             // 缩略栏入口：先打开详情弹窗走归属流程
             openCartDetailModal();
         });
-        cartModalCheckoutBtn.addEventListener('click', () => {
-            checkoutCart();   // 内部含未分配校验，失败保持弹窗打开
+        cartModalCheckoutBtn.addEventListener('click', async () => {
+            await checkoutCart();   // 内部含未分配校验与防重入锁，失败保持弹窗打开
         });
 
         // ====================================================
@@ -5159,7 +5366,7 @@
             if (hasLlmPayload(result)) {
                 const savedNarrator = playerState.narratorEnabled;
                 playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
-                await applyLLMResult(result);
+                await applyLLMResult(result, { scene: 'chat' });
                 playerState.narratorEnabled = savedNarrator;
                 return;
             }
@@ -5225,7 +5432,7 @@
                 importBlockMsg.style.color = '#7a9a5a';
                 setTimeout(() => importBlockModal.classList.remove('show'), 800);
             } else {
-                importBlockMsg.textContent = '✗ 解析失败：未找到有效的 <Shop_block> 或块内缺少 店名/分类商品（检查 YAML 缩进与必填字段）。当前商店保持不变。';
+                importBlockMsg.textContent = '✗ 解析失败：请提供有效商店块；若只写店名，该店必须已存在于 $shops。当前商店保持不变。';
                 importBlockMsg.style.color = '#c0605a';
                 console.warn('[ShopBlock] 手动导入解析失败，原文长度:', text.length);
             }
@@ -5244,8 +5451,8 @@
         });
 
         // ====================================================
-        // 已有商店一览：$shops 持久化管理（手风琴 + 人设/好感编辑 + 删店）
-        // 商品只读（用户范围）；LLM 写错数据的自救通道
+        // 已有商店一览：$shops 持久化管理（手风琴 + 人设/好感/商品编辑 + 删店）
+        // 商品逐件保存；LLM 写错数据时可直接修正并同步当前货柜
         // ====================================================
         const shopsListBody = document.getElementById('shopsListBody');
 
@@ -5264,18 +5471,32 @@
             return n;
         }
 
-        function renderPersistedGoodsRO(shop) {
-            const lines = [];
-            const push = (cat, e) => {
-                const g = (e && e['商品']) ? e['商品'] : e;
-                if (g) lines.push(`[${cat}] ${g['名字'] || '？'} · ${g['价格'] || '？'}${g['数量'] != null ? ` ×${g['数量']}${g['单位'] || ''}` : ''}`);
+        function renderPersistedGoodsEditor(shop) {
+            const rows = [];
+            const push = (cat, entry, index) => {
+                const g = (entry && entry['商品']) ? entry['商品'] : entry;
+                if (!g) return;
+                const count = g['数量'] != null ? g['数量'] : 1;
+                rows.push(`
+                    <div class="shop-good-edit" data-category="${escapeHtml(cat)}" data-index="${index}">
+                        <div class="shop-good-grid">
+                            <label>商品名<input type="text" data-field="name" value="${escapeHtml(g['名字'] || '')}"></label>
+                            <label>类目<input type="text" data-field="category" value="${escapeHtml(cat)}"></label>
+                            <label>价格<input type="text" data-field="price" value="${escapeHtml(g['价格'] || '')}"></label>
+                            <label>数量<input type="number" min="1" step="1" data-field="count" value="${escapeHtml(count)}"></label>
+                            <label>单位<input type="text" data-field="unit" value="${escapeHtml(g['单位'] || '件')}"></label>
+                            <button type="button" class="buy-btn shop-good-save" data-act="save-good">保存</button>
+                        </div>
+                        <div class="shop-good-extra">
+                            <label class="shop-acc-label">介绍<input type="text" data-field="desc" value="${escapeHtml(g['介绍'] || '')}"></label>
+                            <label class="shop-acc-label">标签<input type="text" data-field="tag" value="${escapeHtml(g['标签'] || '')}"></label>
+                        </div>
+                    </div>`);
             };
             const cats = shop && shop['分类商品'];
-            if (cats && typeof cats === 'object') {
-                Object.keys(cats).forEach(c => { (Array.isArray(cats[c]) ? cats[c] : []).forEach(e => push(c, e)); });
-            }
-            if (shop && Array.isArray(shop['独家私藏'])) shop['独家私藏'].forEach(e => push('独家私藏', e));
-            return lines.length ? lines.map(escapeHtml).join('<br>') : '（无商品记录）';
+            if (cats && typeof cats === 'object') Object.keys(cats).forEach(cat => (Array.isArray(cats[cat]) ? cats[cat] : []).forEach((entry, index) => push(cat, entry, index)));
+            if (shop && Array.isArray(shop['独家私藏'])) shop['独家私藏'].forEach((entry, index) => push('独家私藏', entry, index));
+            return rows.length ? rows.join('') : '<div class="shop-event-empty">（无商品记录）</div>';
         }
 
         async function renderShopsList() {
@@ -5307,18 +5528,19 @@
                         </span>
                     </summary>
                     <div class="shop-acc-body">
-                        <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（只读）</div>
-                        <div>
-                            <div class="shop-acc-label">店主人设（手动修改优先，同名新块导入不再覆盖）：</div>
-                            <textarea rows="3" data-role="persona">${escapeHtml(shop['店主性格'] || '')}</textarea>
+                        <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（由正文块维护）</div>
+                        <div class="shop-acc-profile">
+                            <div>
+                                <div class="shop-acc-label">店主人设（手动保存后锁定）：</div>
+                                <textarea rows="3" data-role="persona">${escapeHtml(shop['店主性格'] || '')}</textarea>
+                            </div>
+                            <label class="shop-acc-label">好感度（0-100）
+                                <input type="number" min="0" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}">
+                            </label>
                         </div>
-                        <div style="display:flex;align-items:center;gap:8px;">
-                            <span class="shop-acc-label">好感度（0-100）：</span>
-                            <input type="number" min="0" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}" style="width:90px;">
-                        </div>
                         <div>
-                            <div class="shop-acc-label">商品（只读，按类目）：</div>
-                            <div class="shop-goods-ro">${renderPersistedGoodsRO(shop)}</div>
+                            <div class="shop-acc-label">商品编辑（逐件保存）：</div>
+                            <div class="shop-goods-editor">${renderPersistedGoodsEditor(shop)}</div>
                         </div>
                         <div class="shop-acc-btns">
                             <button class="buy-btn" data-act="save">保存修改</button>
@@ -5346,8 +5568,9 @@
             if (shopState && shopState.shopName === shopName) {
                 if (persona) shopState.keeperPersona = persona;
                 if (affection != null) {
-                    window.__shopAffection = shop['好感度'];
-                    buildCategoryTabs();  // 好感变化可能跨私藏解锁门，重建 Tab 与货柜
+                    const before = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
+                    applyAffectionUi(shop['好感度'] - before, shop['好感度'], { previous: before });
+                    buildCategoryTabs();
                     renderCabinet();
                 }
             }
@@ -5355,6 +5578,83 @@
             if (persona) parts.push('人设已锁定（新块导入不再覆盖）');
             if (affection != null) parts.push(`好感 ${shop['好感度']}`);
             return parts.join('，') + '。';
+        }
+
+        async function saveGoodsEdit(shopName, originalCategory, originalIndex, fields) {
+            const name = String(fields.name || '').trim();
+            const category = String(fields.category || '').trim();
+            const price = parsePriceString(fields.price);
+            const count = Number(fields.count);
+            if (!name) throw new Error('商品名不能为空');
+            if (!category) throw new Error('类目不能为空');
+            if (!Number.isFinite(price) || price < 0) throw new Error('价格必须是大于或等于 0 的数字');
+            if (!Number.isInteger(count) || count < 1) throw new Error('数量必须是正整数');
+
+            const all = await readAllShops();
+            const shop = all[shopName];
+            if (!shop) throw new Error(`「${shopName}」不在 $shops 中`);
+            const source = originalCategory === '独家私藏'
+                ? shop['独家私藏']
+                : shop['分类商品'] && shop['分类商品'][originalCategory];
+            if (!Array.isArray(source) || !source[originalIndex]) throw new Error('原商品已变化，请重新打开商店一览');
+
+            const originalEntry = source[originalIndex];
+            const original = (originalEntry && originalEntry['商品']) ? originalEntry['商品'] : originalEntry;
+            const nextGoods = Object.assign({}, original || {}, {
+                '名字': name,
+                '价格': `${price.toFixed(2)}美元`,
+                '数量': count,
+                '单位': String(fields.unit || '件').trim() || '件',
+                '介绍': String(fields.desc || '').trim(),
+                '标签': String(fields.tag || '').trim()
+            });
+            source.splice(originalIndex, 1);
+            if (originalCategory !== '独家私藏' && source.length === 0) delete shop['分类商品'][originalCategory];
+            const target = category === '独家私藏'
+                ? (shop['独家私藏'] = Array.isArray(shop['独家私藏']) ? shop['独家私藏'] : [])
+                : (shop['分类商品'][category] = Array.isArray(shop['分类商品'][category]) ? shop['分类商品'][category] : []);
+            target.push({ '商品': nextGoods });
+            await replaceAllShops(all);
+
+            if (shopState && shopState.shopName === shopName) {
+                const restored = persistedShopToState(shop);
+                if (restored) {
+                    const oldName = getCleanNameAndEmoji(original && original['名字']).name;
+                    const newName = getCleanNameAndEmoji(name).name;
+                    const oldItems = shopState.items.slice();
+                    const oldIdToName = new Map(playerState.cart.map(entry => [entry.id, entry.item.name]));
+                    shopState = restored;
+                    // 会话内存态（砍价锁价/限砍计数）按名字迁移到重建后的 item，编辑不重置砍价
+                    oldItems.forEach(oldItem => {
+                        const nextItem = shopState.items.find(item => item.name === oldItem.name);
+                        if (!nextItem) return;
+                        nextItem.dealPrice = oldItem.dealPrice;
+                        nextItem.dealBy = oldItem.dealBy;
+                        nextItem.bargainCount = oldItem.bargainCount;
+                        nextItem.lastBargainD = oldItem.lastBargainD;
+                    });
+                    const oldCart = playerState.cart.map(entry => ({ name: entry.item.name, quantity: entry.quantity }));
+                    playerState.cart = oldCart.map(savedEntry => {
+                        const lookupName = savedEntry.name === oldName ? newName : savedEntry.name;
+                        const nextItem = shopState.items.find(item => item.name === lookupName);
+                        return nextItem ? { id: nextItem.id, item: nextItem, quantity: savedEntry.quantity } : null;
+                    }).filter(Boolean);
+                    // 归属面板引用旧 entryId（=旧 item.id），按商品名重挂到新 entry；勾选池失效清空
+                    if (assignState) {
+                        assignState.assigned = assignState.assigned.map(a => {
+                            const nm = oldIdToName.get(a.entryId);
+                            const ne = nm && playerState.cart.find(entry => entry.item.name === nm);
+                            return ne ? Object.assign({}, a, { entryId: ne.id }) : null;
+                        }).filter(Boolean);
+                        assignState.picked = new Set();
+                        renderAssignPanel();
+                        renderCartDetailTable();
+                    }
+                    applyShopToUI();
+                    updateCartUI();
+                }
+            }
+            return `已保存「${name}」${originalCategory === category ? '' : `，类目移至「${category}」`}。`;
         }
 
         // 恢复块内人设：写回 $meta.blockPersona 快照并解除锁定（之后同名新块可正常更新人设）
@@ -5380,7 +5680,17 @@
             sound.playWoodClick();
             const act = btn.dataset.act;
             try {
-                if (act === 'save') {
+                if (act === 'save-good') {
+                    const row = btn.closest('.shop-good-edit');
+                    const field = key => row.querySelector(`[data-field="${key}"]`).value;
+                    const result = await saveGoodsEdit(name, row.dataset.category, Number(row.dataset.index), {
+                        name: field('name'), category: field('category'), price: field('price'),
+                        count: Number(field('count')), unit: field('unit'), desc: field('desc'), tag: field('tag')
+                    });
+                    importBlockMsg.textContent = '✓ ' + result;
+                    importBlockMsg.style.color = '#7a9a5a';
+                    await renderShopsList();
+                } else if (act === 'save') {
                     const personaEl = acc.querySelector('[data-role="persona"]');
                     const affEl = acc.querySelector('[data-role="affection"]');
                     const persona = personaEl ? personaEl.value.trim() : '';
