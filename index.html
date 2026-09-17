@@ -2853,8 +2853,9 @@
 
         // 合并规则（SPEC 第一节）：同名商品以新块 价格/介绍/标签 覆盖并迁移到新块类目；
         // 新块未提及的旧商品保留原类目；独家私藏新块有输出则整体以新块为准、未输出保留旧值；
-        // 好感度延续（新店初始 30）；店主/立绘/性格/在场成员以新块为准——但 $meta.personaOverride
-        // 为 true 时店主人设以手动修改为准（一览保存锁定），新块人设仅记入 $meta.blockPersona 快照。
+        // 好感度延续（新店初始 30）；店主/立绘/性格随店锁定（同店名再输出不换人，仅新店首载以块为准；
+        // 新块人设只记入 $meta.blockPersona 快照，一览"恢复块内人设"是主动换人设的唯一入口）——
+        // $meta.personaOverride 为 true 时表示一览手动保存锁定。
         function mergeShopIntoAll(all, parsed) {
             const name = parsed.shopName;
             const prev = (all && all[name]) || null;
@@ -2901,9 +2902,10 @@
             const personaOverride = prevMeta.personaOverride === true;
             const payload = {
                 '店名': name,
-                '店主': parsed.keeper,
-                '立绘': parsed.portrait,
-                '店主性格': (personaOverride && prev['店主性格']) ? prev['店主性格'] : parsed.keeperPersona,
+                // 身份三件套随店锁定：同店名再输出不换店主/立绘/性格（违和防护），仅新店首载以块为准
+                '店主': (prev && prev['店主']) ? prev['店主'] : parsed.keeper,
+                '立绘': (prev && prev['立绘']) ? prev['立绘'] : parsed.portrait,
+                '店主性格': (prev && prev['店主性格']) ? prev['店主性格'] : parsed.keeperPersona,
                 '好感度': (prev && Number.isFinite(prev['好感度'])) ? prev['好感度'] : SHOP_AFFECTION_INIT,
                 '在场成员': parsed.presentMembers.slice(),
                 '分类商品': merged,

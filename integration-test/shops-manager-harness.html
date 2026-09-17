@@ -59,6 +59,7 @@ async function waitUntil(fn, timeout = 6000) {
 
 const YAML1 = '商店数据:\n  店名: "铜铃杂货铺"\n  店主: "塔尼亚婆婆"\n  立绘: "占卜商妇"\n  店主性格: "市侩精明的商妇"\n  在场成员: ["埃利奥特", "弗兰克"]\n  分类商品:\n    杂货:\n      - 商品:\n          名字: "🧪 精炼枪油"\n          价格: "1.20美元"\n          数量: 5\n          单位: "罐"\n          介绍: "加量的分装货"\n';
 const YAML2 = '商店数据:\n  店名: "铜铃杂货铺"\n  店主: "塔尼亚婆婆"\n  立绘: "占卜商妇"\n  店主性格: "新块人设B"\n  在场成员: ["埃利奥特", "弗兰克"]\n  分类商品:\n    杂货:\n      - 商品:\n          名字: "🧪 精炼枪油"\n          价格: "1.20美元"\n          数量: 5\n          单位: "罐"\n          介绍: "加量的分装货"\n';
+const YAML4 = '商店数据:\n  店名: "铜铃杂货铺"\n  店主: "冒牌顶替者"\n  立绘: "酒馆老板"\n  店主性格: "再块人设C"\n  在场成员: ["埃利奥特", "弗兰克"]\n  分类商品:\n    杂货:\n      - 商品:\n          名字: "🧪 精炼枪油"\n          价格: "1.20美元"\n          数量: 5\n          单位: "罐"\n          介绍: "加量的分装货"\n';
 const YAML3 = '商店数据:\n  店名: "出征杂货铺"\n  店主: "老萨姆"\n  立绘: "占卜商妇"\n  店主性格: "世故圆滑"\n  在场成员: ["埃利奥特"]\n  分类商品:\n    补给:\n      - 商品:\n          名字: "🧪 基廷氏杀虫粉"\n          价格: "2.50美元"\n          数量: 12\n          单位: "罐"\n          介绍: "杀虫"\n';
 
 async function runFlow() {
@@ -156,6 +157,15 @@ window.confirm = function () { return true; };
     assert(await waitUntil(() => shopEval('(window.__mockVars["$shops"]["铜铃杂货铺"].$meta || {}).personaOverride === false')), '恢复块内人设后解除锁定');
     assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["店主性格"]') === '新块人设B', '人设恢复为 blockPersona 快照');
     assert(shopEval('shopState.keeperPersona') === '新块人设B', '运行态同步恢复值');
+
+    // 身份随店锁定：同店名新块即使输出不同店主/立绘/性格也不换人（新块性格仅进快照）
+    shopWin().__hYaml4 = YAML4;
+    await shopEval('onShopDataReceived(window.__hYaml4)');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["店主"]') === '塔尼亚婆婆', '同店新块不换店主');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["立绘"]') === '占卜商妇', '同店新块不换立绘');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["店主性格"]') === '新块人设B', '同店新块不换性格（延续旧档）');
+    assert(shopEval('shopState.keeper === "塔尼亚婆婆" && shopState.keeperPersona === "新块人设B"') === true, '运行态同步锁定身份');
+    assert(shopEval('(window.__mockVars["$shops"]["铜铃杂货铺"].$meta || {}).blockPersona') === '再块人设C', '新块人设仍记入 blockPersona 快照');
 
     shopEval('btnImportBlock.click()');
     await waitUntil(() => shopEval('!!document.querySelector("#shopsListBody .shop-acc")'));
