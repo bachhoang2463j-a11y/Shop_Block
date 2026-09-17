@@ -690,13 +690,28 @@ async function runFlow() {
         const p = await persistedAff(SHOP);
         return (v === 100 && p === 100) || ('返回=' + v + ' 持久=' + p + '（期望 100）');
     });
-    await check('updateShopAffection(-999) → 下界 0；未知店 → null', 'existing', null, async () => {
+    await check('updateShopAffection(-999) → 下界 -100；未知店 → null', 'existing', null, async () => {
         await setBothAff(SHOP, 30);
         const v = await E('updateShopAffection(' + J(SHOP) + ', -999)');
         const p = await persistedAff(SHOP);
         const unk = await E('updateShopAffection(' + J('不存在店') + ', 5)');
-        if (v !== 0 || p !== 0) return '下界失败：返回=' + v + ' 持久=' + p;
+        if (v !== -100 || p !== -100) return '下界失败：返回=' + v + ' 持久=' + p;
         if (unk !== null) return '未知店应返回 null，实际=' + unk;
+        return true;
+    });
+    await check('好感 <= -20 触发 20% 涨价与厌恶抵触', 'existing', null, async () => {
+        await setBothAff(SHOP, -20);
+        const rel = await E('affectionRelationship(-20)');
+        if (rel !== '厌恶抵触') return '关系档位不匹配：' + rel;
+        const hiked = await E('isPriceHiked()');
+        if (hiked !== true) return 'isPriceHiked() 应为 true';
+        const sample = await E('shopState ? shopState.items[0] : null');
+        if (sample) {
+            const base = await E('getBasePrice(shopState.items[0])');
+            const expected = Math.round(sample.price * 1.2 * 100) / 100;
+            if (base !== expected) return '涨价20%不匹配：' + base + '（期望 ' + expected + '）';
+        }
+        await setBothAff(SHOP, 30);
         return true;
     });
     await check('updateShopAffection 同步运行态 window.__shopAffection', 'planned', 'updateSync', async () => {

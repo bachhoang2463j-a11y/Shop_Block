@@ -32,6 +32,29 @@
             user-select: none;
             margin: 0;
             padding: 0;
+            scrollbar-width: thin;
+            scrollbar-color: #63422c #120b08;
+        }
+
+        /* 全局暗金复古木质滚动条（覆盖全部容器、弹窗与 textarea） */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #120b08;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #63422c;
+            border-radius: 4px;
+            border: 1px solid #1a100a;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--dd-gold);
+        }
+        ::-webkit-scrollbar-corner {
+            background: #120b08;
         }
 
         body {
@@ -633,6 +656,10 @@
             letter-spacing: 0.5px;
             text-shadow: 0 1px 3px rgba(0,0,0,0.8);
         }
+        .item-price.hiked {
+            color: #c0605a !important;
+            font-weight: 700;
+        }
 
         .sold-stamp {
             position: absolute;
@@ -1158,7 +1185,11 @@
         .shop-acc-arrow { transition: transform 0.2s; color: #8c7360; flex-shrink: 0; }
         .shop-acc[open] .shop-acc-arrow { transform: rotate(180deg); }
         .shop-acc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
-        .shop-acc-profile { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; align-items: end; }
+        .shop-acc-profile { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+        .shop-acc-meta-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .shop-acc-aff-inline { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+        .shop-acc-aff-inline input { width: 84px !important; }
+        .shop-acc-persona-wrap { display: flex; flex-direction: column; gap: 4px; width: 100%; }
         .shop-acc-body textarea,
         .shop-acc-body input[type="text"],
         .shop-acc-body input[type="number"] {
@@ -1170,10 +1201,11 @@
             font-size: 12px;
             box-sizing: border-box;
         }
-        .shop-acc-body textarea { font-family: Consolas, 'Courier New', monospace; line-height: 1.5; resize: vertical; }
+        .shop-acc-body textarea { font-family: Consolas, 'Courier New', monospace; line-height: 1.5; resize: vertical; min-height: 96px; width: 100%; }
+        .shop-acc-body textarea:focus { border-color: var(--dd-gold); outline: none; }
         .shop-acc-body input[type="text"], .shop-acc-body input[type="number"] { min-width: 0; width: 100%; }
         .shop-acc-label { font-size: 11px; color: #8c7360; }
-        .shop-goods-editor { display: flex; flex-direction: column; gap: 7px; max-height: 300px; overflow-y: auto; padding-right: 3px; }
+        .shop-goods-editor { display: flex; flex-direction: column; gap: 7px; max-height: 300px; overflow-y: auto; padding-right: 3px; scrollbar-gutter: stable; }
         .shop-good-edit { background: rgba(12, 8, 6, 0.62); border: 1px solid #2d1c12; border-radius: 4px; padding: 8px; }
         .shop-good-grid { display: grid; grid-template-columns: minmax(110px, 1.5fr) minmax(80px, 1fr) 90px 72px 70px auto; gap: 6px; align-items: end; }
         .shop-good-grid label { min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: #7f6a59; }
@@ -1181,9 +1213,9 @@
         .shop-good-save { padding: 5px 9px; white-space: nowrap; }
         .shop-settings-card { width: min(760px, 94vw) !important; overflow: hidden; padding: 0; display: flex; flex-direction: column; }
         .shop-manager-card { width: min(920px, 95vw) !important; overflow: hidden; display: flex; flex-direction: column; }
-        .shop-manager-card #shopsListBody { max-height: 58vh !important; }
+        .shop-manager-card #shopsListBody { max-height: 58vh !important; scrollbar-gutter: stable; }
         .shop-settings-card .modal-header { margin: 0; padding: 16px 18px 10px; }
-        .settings-scroll { overflow-y: auto; padding: 12px 18px; }
+        .settings-scroll { overflow-y: auto; padding: 12px 18px; scrollbar-gutter: stable; }
         .settings-section { border: 1px solid #3a261a; border-radius: 4px; background: #140d0a; margin-bottom: 8px; }
         .settings-section > summary { cursor: pointer; list-style: none; padding: 9px 11px; color: #c9a86a; font: 700 12px var(--font-title); display: flex; justify-content: space-between; }
         .settings-section > summary::-webkit-details-marker { display: none; }
@@ -2707,6 +2739,7 @@
             if (affection >= 80) return '熟络热络';
             if (affection >= 50) return '客气有礼';
             if (affection >= 20) return '公事公办';
+            if (affection <= -20) return '厌恶抵触';
             return '冷淡戒备';
         }
 
@@ -2717,6 +2750,8 @@
         function applyAffectionUi(delta, value, options = {}) {
             const previous = Number.isFinite(Number(options.previous)) ? Number(options.previous) : value - delta;
             const wasLocked = previous < 100;
+            const wasHiked = previous <= -20;
+            const isHiked = value <= -20;
             window.__shopAffection = value;
             if (typeof keeperAffectionValue !== 'undefined' && keeperAffectionValue) keeperAffectionValue.textContent = String(value);
             if (typeof keeperRelationship !== 'undefined' && keeperRelationship) keeperRelationship.textContent = affectionRelationship(value);
@@ -2726,20 +2761,30 @@
                 renderCabinet();
                 if (options.unlockDialogue !== false) showKeeperDialogue(shopState.keeper, '（他看了你很久，终于转身打开了那个上锁的柜子）……老朋友，这些是只给熟客看的。', true);
             }
+            if (wasHiked !== isHiked) {
+                renderCabinet();
+                if (typeof updateCartUI === 'function') updateCartUI();
+                if (typeof cartDetailModal !== 'undefined' && cartDetailModal && cartDetailModal.classList.contains('show') && typeof renderCartDetailTable === 'function') {
+                    renderCartDetailTable();
+                }
+                if (typeof quantityModal !== 'undefined' && quantityModal && quantityModal.classList.contains('show') && typeof updateQtySubtotal === 'function') {
+                    updateQtySubtotal();
+                }
+            }
         }
 
         async function changeShopAffection(shopName, delta, options = {}) {
             return updateShopAffection(shopName, delta, options);
         }
 
-        // 好感度增减（钳制 0~100），返回新值；当前店同时刷新 HUD，店不存在返回 null
+        // 好感度增减（钳制 -100~100），返回新值；当前店同时刷新 HUD，店不存在返回 null
         async function updateShopAffection(shopName, delta, options = {}) {
             const all = await readAllShops();
             const shop = all[shopName];
             if (!shop) return null;
             const cur = Number.isFinite(Number(shop['好感度'])) ? Number(shop['好感度']) : SHOP_AFFECTION_INIT;
             const change = Number.isFinite(Number(delta)) ? Number(delta) : 0;
-            shop['好感度'] = Math.max(0, Math.min(100, cur + change));
+            shop['好感度'] = Math.max(-100, Math.min(100, cur + change));
             await writeAllShops(all);
             if (shopState && shopState.shopName === shopName) {
                 applyAffectionUi(shop['好感度'] - cur, shop['好感度'], { previous: cur, unlockDialogue: options.unlockDialogue });
@@ -2865,7 +2910,7 @@
             const rawWorldview = (llmConfig.systemPrompt || '').trim();
             const worldview = (rawWorldview && !BUILTIN_PERSONA_DEFAULTS.includes(rawWorldview)) ? rawWorldview : DEFAULT_WORLDVIEW;
             const affection = shopState ? (window.__shopAffection != null ? window.__shopAffection : 30) : 30;
-            const attitude = affection >= 80 ? '熟络热络' : affection >= 50 ? '客气有礼' : affection >= 20 ? '公事公办' : '冷淡戒备';
+            const attitude = affectionRelationship(affection);
             // 名单排除玩家操控角色：代言白名单即“可说话名单”，LLM 只能从中取值
             const whitelist = Array.from(buildSpeakerWhitelist(true)).join('、');
             const partyPersonas = buildPartyPersonaBlock();
@@ -2881,7 +2926,7 @@
                     : `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说，队友可插话；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时店主台词必须明确体现不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`,
                 `## 二、世界观\n${worldview}`,
                 `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n说话风格：${tone}。` : ''),
-                `## 四、好感度\n当前店主对玩家的好感度：${affection}/100。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，0~19冷淡戒备。按当前分档（${attitude}）演绎，不得跳档。80以下视为初识，店主不知玩家姓名。`,
+                `## 四、好感度\n当前店主对玩家的好感度：${affection}（范围-100~100）。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，-19~19冷淡戒备，-100~-20厌恶抵触（态度尖酸刻薄、商品价格上浮20%）。按当前分档（${attitude}）演绎，不得跳档。80以下视为初识，店主不知玩家姓名。`,
                 narratorOff
                     ? `## 五、可说话名单\n你可以让这些角色说话：${speakList}。\nspeaker只能从本名单中取值，禁止输出名单外的名字，禁止让队友插话。好感未达熟络（<80）时，text内称呼玩家用“这位客人”，不得直呼玩家名；speaker键照常用名单原名。`
                     : `## 五、可说话名单\n你可以让这些角色说话：${speakList}。\nspeaker只能从本名单中取值，禁止输出名单外的名字。好感未达熟络（<80）时，text内称呼玩家用“这位客人”，不得直呼玩家名；speaker键照常用名单原名。`
@@ -2941,9 +2986,9 @@
             if (scene === 'enter') {
                 // 熟客感来自好感度：仅当好感度仍贴近初始值时明确“初次会面”，防 LLM 演绎成老主顾
                 const aff = (typeof window.__shopAffection === 'number') ? window.__shopAffection : SHOP_AFFECTION_INIT;
-                const familiarity = aff <= SHOP_AFFECTION_INIT + 2
+                const familiarity = (aff >= 0 && aff <= SHOP_AFFECTION_INIT + 2)
                     ? '这是店主与这批客人的初次会面（或交情尚浅），不要把他们当熟客或老主顾，以“这位客人”相称。'
-                    : '店主与这批小队已有旧交情（好感度见 system），可按熟客口吻演绎。';
+                    : (aff < 0 ? '店主对这批客人心怀反感或积怨（好感为负），冷言以对。' : '店主与这批小队已有旧交情（好感度见 system），可按熟客口吻演绎。');
                 const welcome = `逐一点名欢迎在场玩家角色（${present}），每人一句招呼，热情而不谄媚。`;
                 return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue${mateLine}。无玩家台词，省略affection。${familiarity}${welcome}]`;
             }
@@ -3280,7 +3325,7 @@
             const rawAffection = Number(result.affection);
             const affection = Number.isFinite(rawAffection) ? Math.max(-5, Math.min(1, Math.trunc(rawAffection))) : 0;
             const currentAffection = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
-            const effectiveAffection = allowAffection ? Math.max(0, Math.min(100, currentAffection + affection)) - currentAffection : 0;
+            const effectiveAffection = allowAffection ? Math.max(-100, Math.min(100, currentAffection + affection)) - currentAffection : 0;
             lines.forEach(line => {
                 if (line.speaker === keeper && effectiveAffection) line.displayName = keeperDisplayName(keeper, effectiveAffection);
             });
@@ -3492,9 +3537,26 @@
         let bargainMode = false;        // 砍价选品模式
         let pendingBargain = null;      // { itemName, discount } 斜体宣言已填入输入框待发送
 
-        // 生效价：砍价锁定价优先
+        // 好感度 <= -20 时加价 20% 判定
+        function isPriceHiked() {
+            const aff = (typeof window.__shopAffection === 'number') ? window.__shopAffection : SHOP_AFFECTION_INIT;
+            return aff <= -20;
+        }
+
+        // 基准售价：好感 <= -20 涨价 20%（四舍五入保留2位小数），否则返回原价
+        function getBasePrice(item) {
+            if (!item) return 0;
+            const price = Number.isFinite(Number(item.price)) ? Number(item.price) : 0;
+            if (isPriceHiked()) {
+                return Math.round(price * 1.2 * 100) / 100;
+            }
+            return price;
+        }
+
+        // 生效价：砍价锁定价优先，否则为基准售价
         function effPrice(item) {
-            return item.dealPrice != null ? item.dealPrice : item.price;
+            if (!item) return 0;
+            return item.dealPrice != null ? item.dealPrice : getBasePrice(item);
         }
 
         // 投骰判定纯函数（monkey-patch Math.random 可测）
@@ -3549,7 +3611,7 @@
             item.bargainCount = (item.bargainCount || 0) + 1;
             item.lastBargainD = discount;
             if (res.success) {
-                item.dealPrice = Math.round(item.price * (1 - discount / 100) * 100) / 100;
+                item.dealPrice = Math.round(getBasePrice(item) * (1 - discount / 100) * 100) / 100;
                 item.dealBy = activeSpeaker.name;
             }
             pendingBargain = null;
@@ -3994,7 +4056,9 @@
             }
             lines.push('购买清单:');
             payload.purchases.forEach(p => {
-                lines.push(`  - ${p.name} ×${p.count} = $${(p.price * p.count).toFixed(2)}${p.price !== (activeItems().find(i => i.name === p.name) || {}).price ? '（折后价）' : ''} → 归属: ${p.toVehicle ? '载具（' + p.owner + '）' : p.owner}`);
+                const orig = (activeItems().find(i => i.name === p.name) || {}).price;
+                const priceTag = (orig != null && p.price < orig) ? '（折后价）' : (orig != null && p.price > orig ? '（厌恶溢价）' : '');
+                lines.push(`  - ${p.name} ×${p.count} = $${(p.price * p.count).toFixed(2)}${priceTag} → 归属: ${p.toVehicle ? '载具（' + p.owner + '）' : p.owner}`);
             });
             const cashAfter = ctx && ctx.cash != null ? ctx.cash + payload.cashDelta : null;
             lines.push(`实付总额: $${(-payload.cashDelta).toFixed(2)}${cashAfter != null ? '，团队现金余额: $' + cashAfter.toFixed(2) : ''}`);
@@ -4724,12 +4788,20 @@
                 const stockBadge = item.isStackable ? `<span class="shelf-stock-badge">库存:${item.stock}${item.unit}</span>` : '';
                 // 价格：砍价锁定后显示划线原价 + 折后价 + 砍价者角标（SPEC 第六节，会话内存态）
                 let priceHtml;
+                const hiked = isPriceHiked();
+                const basePrice = getBasePrice(item);
                 if (item.dealPrice != null) {
-                    const orig = item.isStackable ? `$${item.price.toFixed(2)}/${item.unit}` : `$${item.price.toFixed(2)}`;
+                    const orig = item.isStackable ? `$${basePrice.toFixed(2)}/${item.unit}` : `$${basePrice.toFixed(2)}`;
                     const now = item.isStackable ? `$${item.dealPrice.toFixed(2)}/${item.unit}` : `$${item.dealPrice.toFixed(2)}`;
-                    priceHtml = `<span style="text-decoration:line-through;opacity:.5;">${orig}</span> <span style="color:#8fb573;font-weight:700;">${now}</span> <span style="font-size:10px;color:#8fb573;border:1px solid #4a6b3a;border-radius:3px;padding:0 3px;">💰${item.dealBy || ''}</span>`;
+                    const origStyle = hiked ? 'text-decoration:line-through;color:#c0605a;opacity:.7;' : 'text-decoration:line-through;opacity:.5;';
+                    priceHtml = `<span style="${origStyle}">${orig}</span> <span style="color:#8fb573;font-weight:700;">${now}</span> <span style="font-size:10px;color:#8fb573;border:1px solid #4a6b3a;border-radius:3px;padding:0 3px;">💰${item.dealBy || ''}</span>`;
                 } else {
-                    priceHtml = item.isStackable ? `$${item.price.toFixed(2)}/${item.unit}` : `$${item.price.toFixed(2)}`;
+                    const priceStr = item.isStackable ? `$${basePrice.toFixed(2)}/${item.unit}` : `$${basePrice.toFixed(2)}`;
+                    if (hiked) {
+                        priceHtml = `<span style="color:#c0605a;font-weight:700;" title="店主好感过低（<= -20），商品涨价20%">${priceStr}</span>`;
+                    } else {
+                        priceHtml = priceStr;
+                    }
                 }
 
                 cell.innerHTML = `
@@ -4738,7 +4810,7 @@
                     <div class="item-icon-box">${item.emoji}</div>
                     <div class="item-meta">
                         <span class="item-name" title="${item.name}">${item.name}</span>
-                        <span class="item-price">${priceHtml}</span>
+                        <span class="item-price${hiked ? ' hiked' : ''}">${priceHtml}</span>
                     </div>
                     ${item.sold ? '<div class="sold-stamp">SOLD</div>' : ''}
                 `;
@@ -4836,6 +4908,7 @@
             qtyModalEmoji.textContent = item.emoji;
             qtyModalName.textContent = item.name;
             qtyUnitPrice.textContent = `$${effPrice(item).toFixed(2)}`;
+            qtyUnitPrice.style.color = (item.dealPrice == null && isPriceHiked()) ? '#c0605a' : '#dfb06c';
             qtyMaxStock.textContent = `${item.stock} ${item.unit}`;
 
             const defaultQty = Math.min(10, item.stock);
@@ -4864,6 +4937,8 @@
             const qty = parseInt(qtyNumberInput.value, 10) || 1;
             const subtotal = qty * effPrice(item);
             qtySubtotalDisplay.textContent = `$${subtotal.toFixed(2)}`;
+            qtyUnitPrice.textContent = `$${effPrice(item).toFixed(2)}`;
+            qtyUnitPrice.style.color = (item.dealPrice == null && isPriceHiked()) ? '#c0605a' : '#dfb06c';
         }
 
         // 滑块输入联动
@@ -4937,6 +5012,7 @@
             bargainTargetItem = item;
             bargainModalName.textContent = item.name;
             bargainOrigPrice.textContent = `$${effPrice(item).toFixed(2)}${item.isStackable ? '/' + item.unit : ''}`;
+            bargainOrigPrice.style.color = (item.dealPrice == null && isPriceHiked()) ? '#c0605a' : '#dfb06c';
             bargainSlider.value = 10;
             updateBargainPreview();
             bargainModal.classList.add('show');
@@ -5078,7 +5154,7 @@
                         <strong style="color: #e5d7c3;">${entry.item.name}</strong>
                         ${assigned ? `<span style="font-size:10px;color:#8fb573;margin-left:4px;">→ ${assigned.kind === 'vehicle' ? '🚙' : '🧑'}${assigned.owner}</span>` : ''}
                     </td>
-                    <td style="color: #dfb06c;">$${effPrice(entry.item).toFixed(2)}${entry.item.dealPrice != null ? ' <span style="font-size:10px;color:#8fb573;">(已砍价)</span>' : ''}</td>
+                    <td style="color: ${(entry.item.dealPrice == null && isPriceHiked()) ? '#c0605a' : '#dfb06c'};">$${effPrice(entry.item).toFixed(2)}${entry.item.dealPrice != null ? ' <span style="font-size:10px;color:#8fb573;">(已砍价)</span>' : (isPriceHiked() ? ' <span style="font-size:10px;color:#c0605a;">(+20%)</span>' : '')}</td>
                     <td>
                         <div class="item-qty-stepper">
                             <button class="stepper-btn btn-minus">-</button>
@@ -5528,15 +5604,17 @@
                         </span>
                     </summary>
                     <div class="shop-acc-body">
-                        <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（由正文块维护）</div>
                         <div class="shop-acc-profile">
-                            <div>
-                                <div class="shop-acc-label">店主人设（手动保存后锁定）：</div>
-                                <textarea rows="3" data-role="persona">${escapeHtml(shop['店主性格'] || '')}</textarea>
+                            <div class="shop-acc-meta-row">
+                                <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（由正文块维护）</div>
+                                <label class="shop-acc-label shop-acc-aff-inline">好感度（-100~100）
+                                    <input type="number" min="-100" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}">
+                                </label>
                             </div>
-                            <label class="shop-acc-label">好感度（0-100）
-                                <input type="number" min="0" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}">
-                            </label>
+                            <div class="shop-acc-persona-wrap">
+                                <div class="shop-acc-label">店主人设（手动保存后锁定）：</div>
+                                <textarea rows="4" data-role="persona">${escapeHtml(shop['店主性格'] || '')}</textarea>
+                            </div>
                         </div>
                         <div>
                             <div class="shop-acc-label">商品编辑（逐件保存）：</div>
@@ -5552,7 +5630,7 @@
             });
         }
 
-        // 一览保存：人设（手动优先，$meta.personaOverride 锁定 + blockPersona 快照）+ 好感钳制 0~100；当前店同步运行态
+        // 一览保存：人设（手动优先，$meta.personaOverride 锁定 + blockPersona 快照）+ 好感钳制 -100~100；当前店同步运行态
         async function saveShopEdits(shopName, persona, affection) {
             const all = await readAllShops();
             const shop = all[shopName];
@@ -5563,7 +5641,7 @@
                 shop['店主性格'] = persona;
                 meta.personaOverride = true;
             }
-            if (affection != null) shop['好感度'] = Math.max(0, Math.min(100, affection));
+            if (affection != null) shop['好感度'] = Math.max(-100, Math.min(100, affection));
             await writeAllShops(all);
             if (shopState && shopState.shopName === shopName) {
                 if (persona) shopState.keeperPersona = persona;
