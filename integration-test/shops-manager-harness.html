@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock 商店管理/注入/全量记录回归</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    #phone { width: 375px; height: 740px; border: 4px solid #382417; border-radius: 10px; overflow: hidden; background: #0b0908; }
+    #phone iframe { width: 100%; height: 100%; border: none; display: block; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 12px; max-height: 320px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+    #send_textarea { width: 100%; height: 60px; background: #1a120c; color: #e5d7c3; border: 1px solid #382417; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<h3>已有商店一览 / 酒馆输入框注入 / Shop_Record 全量记录回归（mock 酒馆 API + parent#send_textarea）</h3>
+<div style="margin-bottom: 8px;">
+    <button id="btnRun">▶ 跑全部断言</button>
+    <span id="summary"></span>
+</div>
+<div style="margin-bottom: 8px;">
+    <div style="font-size: 11px; color: #8c7360; margin-bottom: 3px;">模拟酒馆输入框 #send_textarea（组件 parent 页面）：</div>
+    <textarea id="send_textarea"></textarea>
+</div>
+<div id="phone"><iframe id="shopFrame"></iframe></div>
+<div id="log"></div>
+
+<script>
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+let passCount = 0, failCount = 0;
+function assert(cond, label) {
+    if (cond) { passCount++; log('  ✓ ' + label, 'pass'); }
+    else { failCount++; log('  ✗ ' + label, 'fail'); }
+}
+
+const shopWin = () => document.getElementById('shopFrame').contentWindow;
+function shopEval(code) { return shopWin().eval(code); }
+
+async function waitUntil(fn, timeout = 6000) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+        let ok = false;
+        try { ok = await fn(); } catch (e) {}
+        if (ok) return true;
+        await new Promise(r => setTimeout(r, 120));
+    }
+    return false;
+}
+
+const YAML1 = '商店数据:\n  店名: "铜铃杂货铺"\n  店主: "塔尼亚婆婆"\n  立绘: "占卜商妇"\n  店主性格: "市侩精明的商妇"\n  在场成员: ["埃利奥特", "弗兰克"]\n  分类商品:\n    杂货:\n      - 商品:\n          名字: "🧪 精炼枪油"\n          价格: "1.20美元"\n          数量: 5\n          单位: "罐"\n          介绍: "加量的分装货"\n';
+const YAML2 = '商店数据:\n  店名: "铜铃杂货铺"\n  店主: "塔尼亚婆婆"\n  立绘: "占卜商妇"\n  店主性格: "新块人设B"\n  在场成员: ["埃利奥特", "弗兰克"]\n  分类商品:\n    杂货:\n      - 商品:\n          名字: "🧪 精炼枪油"\n          价格: "1.20美元"\n          数量: 5\n          单位: "罐"\n          介绍: "加量的分装货"\n';
+const YAML3 = '商店数据:\n  店名: "出征杂货铺"\n  店主: "老萨姆"\n  立绘: "占卜商妇"\n  店主性格: "世故圆滑"\n  在场成员: ["埃利奥特"]\n  分类商品:\n    补给:\n      - 商品:\n          名字: "🧪 基廷氏杀虫粉"\n          价格: "2.50美元"\n          数量: 12\n          单位: "罐"\n          介绍: "杀虫"\n';
+
+async function runFlow() {
+    logBox.innerHTML = '';
+    passCount = failCount = 0;
+    document.getElementById('summary').textContent = '';
+
+    log('== 0. mock boot ==');
+    const mockScript = `<script>
+window.getCurrentMessageId = function () { return 7; };
+window.getLastMessageId = function () { return 7; };
+window.getChatMessages = function () { return []; };
+window.__mockVars = {};
+window.getVariables = function () { return Promise.resolve(window.__mockVars); };
+window.insertOrAssignVariables = function (obj) { Object.assign(window.__mockVars, JSON.parse(JSON.stringify(obj))); return Promise.resolve(true); };
+window.replaceVariables = function (obj) { window.__mockVars = JSON.parse(JSON.stringify(obj)); return Promise.resolve(true); };
+window.eventOn = function () {};
+window.eventEmit = function () {};
+window.alert = function () {};
+window.confirm = function () { return true; };
+<\/script>`;
+    const src = await fetch('../index.html').then(r => r.text());
+    document.getElementById('shopFrame').srcdoc = src.replace('<head>', '<head>' + mockScript);
+    const t0 = Date.now();
+    let ready = false;
+    while (Date.now() - t0 < 20000) {
+        await new Promise(r => setTimeout(r, 400));
+        try { ready = shopEval('document.readyState === "complete" && typeof onShopDataReceived === "function" && typeof injectTextToTavernInput === "function"'); } catch (e) {}
+        if (ready) break;
+    }
+    assert(ready, '组件 boot（onShopDataReceived / injectTextToTavernInput 就绪）');
+
+    log('== A. 注入链路：parent#send_textarea 追加 + input 事件 + 草稿保留 ==');
+    const ta = document.getElementById('send_textarea');
+    ta.value = '玩家草稿';
+    let inputCount = 0;
+    ta.addEventListener('input', () => inputCount++);
+    shopWin().__hRec = '第一行\n第二行';
+    const injected = await shopEval('injectTextToTavernInput(window.__hRec)');
+    assert(injected === true, 'injectTextToTavernInput 返回 true');
+    assert(ta.value.includes('玩家草稿') && ta.value.includes('第一行\n第二行'), '草稿保留且记录以换行追加');
+    assert(ta.value.indexOf('玩家草稿') < ta.value.indexOf('第一行'), '记录追加在草稿之后（\\n\\n 分隔）');
+    assert(inputCount >= 1, 'input 事件已派发（酒馆字数/发送状态可感知）');
+    assert(shopEval('chatInput.value') === '', 'iframe 自身输入框未被覆盖');
+
+    log('== B. Shop_Record 组装：全量对话 + 分行 + 余额公式 ==');
+    shopEval('sessionDialogLog.length = 0');
+    shopEval('sessionDialogLog.push(\'埃利奥特: "第一条"\', \'塔尼亚婆婆: "第二条"\', \'弗兰克: "这是一条超过八十字的长台词，用来验证记录层不做八十字裁剪，进店会话的完整对话必须原样保留在记录里而不是被截断。"\')');
+    shopWin().__hPayload = { v: 1, id: 't1', ts: Date.now(), floorId: null, '店名': '铜铃杂货铺', cashDelta: -26.75, purchases: [{ owner: '弗兰克', name: '精炼枪油', count: 1, category: '杂货', toVehicle: false, price: 1.2 }], bargained: true, lock: { cash: false, chars: [], vehicles: [] } };
+    const rec = await shopEval('buildShopRecord(window.__hPayload, { cash: 4816.40 })');
+    assert(rec.startsWith('<Shop_Record>'), '以 <Shop_Record> 开头（开头不截）');
+    assert(rec.includes('埃利奥特: "第一条"'), '最早对话在记录中（不再 slice(-12) 截头）');
+    assert(rec.includes('进店会话的完整对话必须原样保留在记录里而不是被截断。'), '超八十字台词全量保留（无 80 字裁剪）');
+    assert(rec.includes('\n本次对话:\n') && rec.includes('\n购买清单:\n') && rec.includes('\n实付总额: '), '结构段各自成行（\\n 分隔）');
+    assert(rec.includes('团队现金余额: $4789.65'), '余额公式修正：4816.40-26.75=4789.65');
+    assert(rec.endsWith('</Shop_Record>'), '以 </Shop_Record> 结尾');
+
+    log('== C. applyLLMResult：记录层全量入库，显示层限量 ==');
+    shopWin().__hYaml1 = YAML1;
+    const imported = await shopEval('onShopDataReceived(window.__hYaml1)');
+    assert(imported === true && shopEval('shopState.shopName') === '铜铃杂货铺', '导入铜铃杂货铺（$shops 自动持久化）');
+    assert((await shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]')) != null, '$shops 中有铜铃杂货铺');
+    const beforeN = await shopEval('sessionDialogLog.length');
+    const longText = '店主第一条超长台词'.repeat(12);
+    shopWin().__hLlm = { dialogue: [{ speaker: '塔尼亚婆婆', text: longText }, { speaker: '塔尼亚婆婆', text: '短台词1' }, { speaker: '塔尼亚婆婆', text: '短台词2' }, { speaker: '塔尼亚婆婆', text: '短台词3' }, { speaker: '塔尼亚婆婆', text: '短台词4' }] };
+    shopEval('applyLLMResult(window.__hLlm)'); // 不 await：气泡轮播慢，记录入库是同步段
+    await new Promise(r => setTimeout(r, 300));
+    const afterN = await shopEval('sessionDialogLog.length');
+    assert(afterN === beforeN + 5, '5 条合法台词全量入库（' + (afterN - beforeN) + ' 条，不再限 4 条）');
+    const logJoined = await shopEval('sessionDialogLog.join("\\n")');
+    assert(logJoined.includes(longText), '超长台词全量保留在记录层');
+    assert(logJoined.includes('短台词4'), '最后一条也入库');
+
+    log('== D. 已有商店一览：手风琴/好感钳制/人设锁定/恢复/删店 ==');
+    shopEval('btnImportBlock.click()');
+    assert(await waitUntil(() => shopEval('!!document.querySelector("#shopsListBody .shop-acc")')), '一览手风琴渲染（铜铃杂货铺）');
+    assert(shopEval('document.querySelector(".shop-acc").dataset.shop') === '铜铃杂货铺', '手风琴 data-shop 指向店名');
+
+    shopEval('(function(){ var acc = document.querySelector(".shop-acc"); acc.querySelector("[data-role=persona]").value = "手动人设A"; acc.querySelector("[data-role=affection]").value = "150"; acc.querySelector("[data-act=save]").click(); })()');
+    assert(await waitUntil(() => shopEval('(window.__mockVars["$shops"]["铜铃杂货铺"].$meta || {}).personaOverride === true')), '保存后 $meta.personaOverride 锁定');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["好感度"]') === 100, '好感 150 钳制为 100');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["店主性格"]') === '手动人设A', '持久化人设为手动值');
+    assert(shopEval('shopState.keeperPersona') === '手动人设A', '当前店运行态人设同步');
+    assert(shopEval('(window.__mockVars["$shops"]["铜铃杂货铺"].$meta || {}).blockPersona') === '市侩精明的商妇', '块内人设快照 blockPersona 保留');
+
+    shopWin().__hYaml2 = YAML2;
+    await shopEval('onShopDataReceived(window.__hYaml2)');
+    assert(shopEval('shopState.keeperPersona') === '手动人设A', '同名新块导入不覆盖手动人设（运行态）');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["店主性格"]') === '手动人设A', '同名新块导入不覆盖手动人设（持久层）');
+    assert(shopEval('(window.__mockVars["$shops"]["铜铃杂货铺"].$meta || {}).blockPersona') === '新块人设B', '新块人设记入 blockPersona 快照');
+
+    shopEval('btnImportBlock.click()');
+    await waitUntil(() => shopEval('!!document.querySelector("#shopsListBody .shop-acc")'));
+    shopEval('document.querySelector(".shop-acc [data-act=restore]").click()');
+    assert(await waitUntil(() => shopEval('(window.__mockVars["$shops"]["铜铃杂货铺"].$meta || {}).personaOverride === false')), '恢复块内人设后解除锁定');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"]["店主性格"]') === '新块人设B', '人设恢复为 blockPersona 快照');
+    assert(shopEval('shopState.keeperPersona') === '新块人设B', '运行态同步恢复值');
+
+    shopEval('btnImportBlock.click()');
+    await waitUntil(() => shopEval('!!document.querySelector("#shopsListBody .shop-acc")'));
+    shopEval('document.querySelector(".shop-acc [data-act=delete]").click()');
+    assert(await waitUntil(() => shopEval('!window.__mockVars["$shops"]["铜铃杂货铺"]')), '删除店铺（$shops 键移除）');
+    assert(shopEval('shopState.shopName') === '铜铃杂货铺', '当前会话仍保留（删除不强行清空运行态）');
+
+    log('== E. debug 导入仍可用 ==');
+    shopWin().__hYaml3 = YAML3;
+    shopEval('(function(){ document.getElementById("importBlockTextarea").value = window.__hYaml3; document.getElementById("importBlockConfirmBtn").click(); })()');
+    assert(await waitUntil(() => shopEval('shopState && shopState.shopName === "出征杂货铺"')), 'debug 导入解析并载入（出征杂货铺）');
+    assert(await waitUntil(() => shopEval('!!window.__mockVars["$shops"]["出征杂货铺"]')), 'debug 导入同样持久化');
+
+    const total = passCount + failCount;
+    document.getElementById('summary').textContent = failCount === 0
+        ? '✅ ' + passCount + '/' + total + ' 全绿'
+        : '❌ ' + failCount + ' 失败 / ' + total;
+    log('== 完成：' + passCount + ' 通过, ' + failCount + ' 失败 ==', failCount ? 'fail' : 'pass');
+}
+
+document.getElementById('btnRun').addEventListener('click', () => {
+    runFlow().catch(e => log('流程异常：' + (e && e.message), 'fail'));
+});
+</script>
+</body>
+</html>

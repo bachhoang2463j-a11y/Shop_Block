@@ -1106,6 +1106,50 @@
         .shop-event-time { color: #725f50; margin-right: 6px; }
         .shop-event-empty { color: #6d5747; padding: 18px; text-align: center; }
 
+        /* 已有商店一览：店铺手风琴（原生 details，零 JS 折叠基座，RpgCombat char-fold 同思路） */
+        .shop-acc { background: #160f0c; border: 1px solid #3a261a; border-radius: 4px; overflow: hidden; }
+        .shop-acc summary {
+            cursor: pointer;
+            padding: 8px 10px;
+            font-size: 12px;
+            color: #c9a86a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            list-style: none;
+        }
+        .shop-acc summary::-webkit-details-marker { display: none; }
+        .shop-acc[open] summary { border-bottom: 1px solid #3a261a; }
+        .shop-acc-arrow { transition: transform 0.2s; color: #8c7360; flex-shrink: 0; }
+        .shop-acc[open] .shop-acc-arrow { transform: rotate(180deg); }
+        .shop-acc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+        .shop-acc-body textarea,
+        .shop-acc-body input[type="number"] {
+            background: #1a120c;
+            color: #e5d7c3;
+            border: 1px solid #382417;
+            border-radius: 4px;
+            padding: 6px 8px;
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+        .shop-acc-body textarea { font-family: Consolas, 'Courier New', monospace; line-height: 1.5; resize: vertical; }
+        .shop-acc-label { font-size: 11px; color: #8c7360; }
+        .shop-goods-ro {
+            font-size: 11px;
+            line-height: 1.6;
+            color: #a48e78;
+            max-height: 120px;
+            overflow-y: auto;
+            background: rgba(12, 8, 6, 0.5);
+            border: 1px solid #2d1c12;
+            border-radius: 4px;
+            padding: 6px 8px;
+        }
+        .shop-acc-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+        .shop-acc-btns .buy-btn, .shop-acc-btns .cart-clear-btn { font-size: 11px; padding: 3px 10px; }
+
         .avatar-chat-bubble {
             position: fixed;
             z-index: 220;
@@ -1802,8 +1846,8 @@
             <!-- 胶囊功能按钮组 (M1: 手动导入Shop_block、购物记录、LLM设置、全屏) -->
             <div class="top-pill-group">
                 <button class="top-pill-btn" id="btnImportBlock">
-                    <span>📥</span>
-                    <span>导入商店块</span>
+                    <span>📚</span>
+                    <span>已有商店一览</span>
                 </button>
                 <button class="top-pill-btn" id="btnHistory">
                     <span>📜</span>
@@ -2133,30 +2177,37 @@
         <div class="parchment-card" style="width: 620px;">
             <div class="modal-header">
                 <div class="modal-title-group">
-                    <div style="font-size: 32px;">📥</div>
+                    <div style="font-size: 32px;">📚</div>
                     <div>
-                        <div class="modal-item-name">导入商店数据</div>
-                        <div class="modal-item-tier">SHOP_BLOCK IMPORT · PASTE OR DRAG RAW TEXT</div>
+                        <div class="modal-item-name">已有商店一览</div>
+                        <div class="modal-item-tier">SAVED SHOPS · $SHOPS MANAGER</div>
                     </div>
                 </div>
                 <button class="modal-close-btn" id="importBlockCloseBtn">&times;</button>
             </div>
 
-            <div style="padding: 0 4px;">
-                <textarea id="importBlockTextarea" rows="12" spellcheck="false"
-                    style="width: 100%; box-sizing: border-box; background: #1a120c; color: #e5d7c3;
-                    border: 1px solid #382417; border-radius: 6px; padding: 10px 12px;
-                    font-family: Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.6; resize: vertical;"
-                    placeholder="粘贴包含 <Shop_block>...</Shop_block> 的正文片段，或直接粘贴块内裸 YAML。&#10;解析成功后商品柜将按块内店名/类目/商品重新渲染。"></textarea>
-                <div id="importBlockMsg" style="font-size: 12px; min-height: 18px; margin: 8px 0 0 4px; color: #8c7360;">
-                    提示：也支持只粘贴块内 YAML（无需 &lt;Shop_block&gt; 标签）。
-                </div>
+            <div id="shopsListBody" style="padding: 0 4px; display: flex; flex-direction: column; gap: 8px; max-height: 46vh; overflow-y: auto;">
+                <!-- 持久化店铺手风琴（JS 渲染：人设/好感可编辑，商品只读） -->
             </div>
 
-            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
-                <button class="cart-clear-btn" id="importBlockResetBtn">恢复示例商店</button>
-                <button class="buy-btn" id="importBlockConfirmBtn">解析并载入</button>
+            <div id="importBlockMsg" style="font-size: 12px; min-height: 18px; margin: 10px 0 0 4px; color: #8c7360;">
+                打开时从 $shops 读取持久化店铺；保存/删除结果在此回显。
             </div>
+
+            <details id="importDebugDetails" style="margin-top: 12px; background:#20150e; border:1px solid #5a3822; border-radius:4px; flex-shrink:0;">
+                <summary style="cursor:pointer; padding:8px 10px; font-size:12px; font-weight:bold; color:#c9a86a; list-style:none;">🔧 导入商店块（debug）</summary>
+                <div style="padding: 8px 10px; border-top: 1px solid #5a3822;">
+                    <textarea id="importBlockTextarea" rows="8" spellcheck="false"
+                        style="width: 100%; box-sizing: border-box; background: #1a120c; color: #e5d7c3;
+                        border: 1px solid #382417; border-radius: 6px; padding: 10px 12px;
+                        font-family: Consolas, 'Courier New', monospace; font-size: 12px; line-height: 1.6; resize: vertical;"
+                        placeholder="粘贴包含 <Shop_block>...</Shop_block> 的正文片段，或直接粘贴块内裸 YAML。&#10;解析成功后商品柜将按块内店名/类目/商品重新渲染。"></textarea>
+                    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+                        <button class="cart-clear-btn" id="importBlockResetBtn">恢复示例商店</button>
+                        <button class="buy-btn" id="importBlockConfirmBtn">解析并载入</button>
+                    </div>
+                </div>
+            </details>
         </div>
     </div>
 
@@ -2497,7 +2548,8 @@
 
         // 合并规则（SPEC 第一节）：同名商品以新块 价格/介绍/标签 覆盖并迁移到新块类目；
         // 新块未提及的旧商品保留原类目；独家私藏新块有输出则整体以新块为准、未输出保留旧值；
-        // 好感度延续（新店初始 30）；店主/立绘/性格/在场成员以新块为准。
+        // 好感度延续（新店初始 30）；店主/立绘/性格/在场成员以新块为准——但 $meta.personaOverride
+        // 为 true 时店主人设以手动修改为准（一览保存锁定），新块人设仅记入 $meta.blockPersona 快照。
         function mergeShopIntoAll(all, parsed) {
             const name = parsed.shopName;
             const prev = (all && all[name]) || null;
@@ -2540,16 +2592,18 @@
                 exclusive = JSON.parse(JSON.stringify(prev['独家私藏']));
             }
 
+            const prevMeta = (prev && prev['$meta'] && typeof prev['$meta'] === 'object') ? prev['$meta'] : {};
+            const personaOverride = prevMeta.personaOverride === true;
             const payload = {
                 '店名': name,
                 '店主': parsed.keeper,
                 '立绘': parsed.portrait,
-                '店主性格': parsed.keeperPersona,
+                '店主性格': (personaOverride && prev['店主性格']) ? prev['店主性格'] : parsed.keeperPersona,
                 '好感度': (prev && Number.isFinite(prev['好感度'])) ? prev['好感度'] : SHOP_AFFECTION_INIT,
                 '在场成员': parsed.presentMembers.slice(),
                 '分类商品': merged,
                 '独家私藏': exclusive,
-                '$meta': { version: 1, floorId: floorId, ts: Date.now() }
+                '$meta': { version: 1, floorId: floorId, ts: Date.now(), personaOverride, blockPersona: parsed.keeperPersona }
             };
             all[name] = payload;
             return payload;
@@ -2557,8 +2611,9 @@
 
         async function persistMergedShop(parsed) {
             const all = await readAllShops();
-            mergeShopIntoAll(all, parsed);
+            const payload = mergeShopIntoAll(all, parsed);
             await writeAllShops(all);
+            return payload; // 供调用方读取 override 结果同步运行态
         }
 
         // 好感度增减（钳制 0~100），返回新值；店不存在返回 null
@@ -3088,19 +3143,20 @@
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
             const rawLines = (result.dialogue || [])
                 .filter(d => d && typeof d.text === 'string' && d.text.trim())
-                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim().slice(0, 80) }))
+                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim() }))
                 // 旁白 OFF 双保险：模型不听话仍写队友台词时，前端直接丢弃
                 .filter(d => !narratorOff || d.speaker === keeper);
             const dropped = rawLines.filter(d => !(whitelist.has(d.speaker) || d.speaker === keeper));
             if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
-            const lines = rawLines.filter(d => whitelist.has(d.speaker) || d.speaker === keeper).slice(0, 4);
+            const lines = rawLines.filter(d => whitelist.has(d.speaker) || d.speaker === keeper);
             if (rawLines.length && !lines.length) {
                 showKeeperDialogue(keeper, '……', true);
                 logShopEvent('error', 'LLM 返回的发言人不在白名单，已全部过滤');
             }
+            // 记录层全量入库（Shop_Record 消费完整对话）；气泡显示层限 4 条防异常返回排队过久
             if (lines.length) {
                 lines.forEach(line => logSessionDialog(line.speaker, line.text));
-                await showDialogueSequence(lines);
+                await showDialogueSequence(lines.slice(0, 4));
             }
             // affection 落地（钳制 0~100）
             const aff = parseInt(result.affection, 10);
@@ -3650,20 +3706,19 @@
                 } catch (e) { console.warn('[ShopBlock] 购物好感落地失败:', e); }
             }
 
-            // Shop_Record 记录组装（SPEC 第七节）
-            const record = buildShopRecord(payload, ctx);
-            if (typeof injectToSillyTavernInput === 'function') {
-                injectToSillyTavernInput(record);
-            } else {
-                // 本地 demo：填入聊天输入框 + 弹窗展示
-                chatInput.value = record;
-                console.info('[ShopBlock] Shop_Record（请复制发送给正文AI）:\n' + record);
-            }
-
-            // M7：购买回应（buy 场景 LLM，失败静默——店主台词主渠道已由记录填入）
+            // M7：购买回应（buy 场景 LLM，失败回退内置成交词）——先等回应落入对话日志，
+            // 再组装记录，否则成交后的店主/队友台词进不了本次 Shop_Record
             const buySummary = purchases.map(p => `${p.name}×${p.count}($${(p.price * p.count).toFixed(2)})→${p.toVehicle ? '载具' : p.owner}`).join('、')
                 + `，共$${total.toFixed(2)}${payload.bargained ? '（含砍价成交）' : ''}`;
-            triggerBuyReaction(buySummary);
+            await triggerBuyReaction(buySummary);
+
+            // Shop_Record 记录组装（SPEC 第七节）：填入酒馆输入框，玩家检查/修改后手动发送
+            const record = buildShopRecord(payload, ctx);
+            if (await injectTextToTavernInput(record)) {
+                setTempNotice('Shop_Record 已填入酒馆输入框，检查/修改后发送。', 5000);
+            } else {
+                setTempNotice('未检测到酒馆输入框：完整记录已复制到剪贴板（或控制台），请手动粘贴发送。', 6000);
+            }
 
             // 清账本入历史
             const timeText = new Date(payload.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -3687,6 +3742,39 @@
             updateUI();
             updateCartUI();
             renderCabinet();
+        }
+
+        // 结算记录注入酒馆输入框（RpgCombat injectTextToTavern 同思路，但只填不发送：
+        // /send|/trigger 会直接发出，不符合"玩家检查后发送"契约）。优先 parent#send_textarea
+        // 追加（保留草稿，\n\n 分隔）+ 派发 input 事件；跨域/缺失走 TavernHelper /setinput；
+        // 仍失败则剪贴板 + 控制台，绝不写 iframe 自己的 #chatInput。返回是否已填入输入框。
+        async function injectTextToTavernInput(text) {
+            if (!text || !text.trim()) return false;
+            const full = text.trim();
+            try {
+                const textarea = parent.document.querySelector('#send_textarea');
+                if (textarea) {
+                    const cur = textarea.value || '';
+                    const sep = cur.trim() ? '\n\n' : '';
+                    textarea.value = cur + sep + full;
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    return true;
+                }
+            } catch (e) { /* 跨域 iframe：走 /setinput 回退 */ }
+            if (typeof triggerSlash === 'function') {
+                try {
+                    // /setinput 参数按 STscript 引号转义（反斜杠/引号），防 | 与引号被管道解析
+                    const safe = full.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+                    await triggerSlash(`/setinput "${safe}"`);
+                    return true;
+                } catch (e) { console.warn('[ShopBlock] /setinput 注入失败:', e); }
+            }
+            let copied = false;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(full); copied = true; }
+            } catch (e) { /* 剪贴板不可用：留控制台 */ }
+            console.info(`[ShopBlock] Shop_Record（完整记录${copied ? '，已复制剪贴板' : ''}）:\n` + full);
+            return false;
         }
 
         // 物品写入 stat_data：角色物品清单追加 / 载具清单追加；返回是否成功
@@ -3746,13 +3834,14 @@
             lines.push(`商店: ${payload['店名']} (店主: ${shopState ? shopState.keeper : '店主'} · 立绘: ${shopState ? shopState.portrait : '占卜商妇'} · 讲价结果: ${payload.bargained ? '有商品砍价成交' : '全部原价'})`);
             if (sessionDialogLog.length) {
                 lines.push('本次对话:');
-                sessionDialogLog.slice(-12).forEach(l => lines.push(`  ${l}`));
+                // 全量保留（SPEC 第七节）：进店会话的全部合法对话，不做条数/字数裁剪
+                sessionDialogLog.forEach(l => lines.push(`  ${l}`));
             }
             lines.push('购买清单:');
             payload.purchases.forEach(p => {
                 lines.push(`  - ${p.name} ×${p.count} = $${(p.price * p.count).toFixed(2)}${p.price !== (activeItems().find(i => i.name === p.name) || {}).price ? '（折后价）' : ''} → 归属: ${p.toVehicle ? '载具（' + p.owner + '）' : p.owner}`);
             });
-            const cashAfter = ctx && ctx.cash != null ? ctx.cash - (-payload.cashDelta) * -1 : null;
+            const cashAfter = ctx && ctx.cash != null ? ctx.cash + payload.cashDelta : null;
             lines.push(`实付总额: $${(-payload.cashDelta).toFixed(2)}${cashAfter != null ? '，团队现金余额: $' + cashAfter.toFixed(2) : ''}`);
             lines.push('</Shop_Record>');
             return lines.join('\n');
@@ -3802,7 +3891,11 @@
                 const all = await readAllShops();
                 const saved = all[parsed.shopName];
                 window.__shopAffection = saved ? saved['好感度'] : SHOP_AFFECTION_INIT;
-                await persistMergedShop(parsed); // 持久化失败不阻塞渲染
+                const merged = await persistMergedShop(parsed); // 持久化失败不阻塞渲染
+                // 人设锁定（一览手动修改优先）：新块导入不覆盖手动人设，运行态同步回手动值
+                if (merged && merged['$meta'] && merged['$meta'].personaOverride && merged['店主性格']) {
+                    shopState.keeperPersona = merged['店主性格'];
+                }
             } catch (e) {
                 console.warn('[ShopBlock] $shops 持久化失败（非阻塞）:', e);
             }
@@ -5105,9 +5198,10 @@
 
         btnImportBlock.addEventListener('click', () => {
             sound.playWoodClick();
-            importBlockMsg.textContent = '提示：也支持只粘贴块内 YAML（无需 <Shop_block> 标签）。';
+            importBlockMsg.textContent = '打开时从 $shops 读取持久化店铺；保存/删除结果在此回显。';
             importBlockMsg.style.color = '#8c7360';
             importBlockModal.classList.add('show');
+            renderShopsList(); // 每次打开重读，同步其他端/手动保存的最新状态
         });
         importBlockCloseBtn.addEventListener('click', () => importBlockModal.classList.remove('show'));
         importBlockModal.addEventListener('click', (e) => {
@@ -5147,6 +5241,174 @@
             updateCartUI();
             importBlockMsg.textContent = '已恢复内置示例商店（demo 数据）。';
             importBlockMsg.style.color = '#8c7360';
+        });
+
+        // ====================================================
+        // 已有商店一览：$shops 持久化管理（手风琴 + 人设/好感编辑 + 删店）
+        // 商品只读（用户范围）；LLM 写错数据的自救通道
+        // ====================================================
+        const shopsListBody = document.getElementById('shopsListBody');
+
+        function escapeHtml(s) {
+            // 实体用 \u0026 拼写（源码无裸 &），防实体解码/构建管线歧义
+            return String(s == null ? '' : s)
+                .replace(/&/g, '\u0026amp;').replace(/</g, '\u0026lt;').replace(/>/g, '\u0026gt;')
+                .replace(/"/g, '\u0026quot;').replace(/'/g, '\u0026#39;');
+        }
+
+        function countPersistedGoods(shop) {
+            let n = 0;
+            const cats = shop && shop['分类商品'];
+            if (cats && typeof cats === 'object') Object.keys(cats).forEach(c => { if (Array.isArray(cats[c])) n += cats[c].length; });
+            if (shop && Array.isArray(shop['独家私藏'])) n += shop['独家私藏'].length;
+            return n;
+        }
+
+        function renderPersistedGoodsRO(shop) {
+            const lines = [];
+            const push = (cat, e) => {
+                const g = (e && e['商品']) ? e['商品'] : e;
+                if (g) lines.push(`[${cat}] ${g['名字'] || '？'} · ${g['价格'] || '？'}${g['数量'] != null ? ` ×${g['数量']}${g['单位'] || ''}` : ''}`);
+            };
+            const cats = shop && shop['分类商品'];
+            if (cats && typeof cats === 'object') {
+                Object.keys(cats).forEach(c => { (Array.isArray(cats[c]) ? cats[c] : []).forEach(e => push(c, e)); });
+            }
+            if (shop && Array.isArray(shop['独家私藏'])) shop['独家私藏'].forEach(e => push('独家私藏', e));
+            return lines.length ? lines.map(escapeHtml).join('<br>') : '（无商品记录）';
+        }
+
+        async function renderShopsList() {
+            shopsListBody.innerHTML = '';
+            let all;
+            try { all = await readAllShops(); }
+            catch (e) {
+                shopsListBody.innerHTML = '<div class="shop-event-empty">✗ 读取 $shops 失败：' + escapeHtml(e.message || e) + '</div>';
+                return;
+            }
+            const names = Object.keys(all || {});
+            if (!names.length) {
+                shopsListBody.innerHTML = '<div class="shop-event-empty">暂无持久化店铺（$shops 为空）。进店导入块后会自动保存。</div>';
+                return;
+            }
+            names.forEach(name => {
+                const shop = all[name] || {};
+                const meta = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : {};
+                const aff = shop['好感度'] != null ? shop['好感度'] : '—';
+                const acc = document.createElement('details');
+                acc.className = 'shop-acc';
+                acc.dataset.shop = name;
+                acc.innerHTML = `
+                    <summary>
+                        <span>🏪 ${escapeHtml(name)} · ${escapeHtml(shop['店主'] || '店主')}（${escapeHtml(shop['立绘'] || '占卜商妇')}）</span>
+                        <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                            <span class="shop-acc-label">好感 ${escapeHtml(aff)} · ${countPersistedGoods(shop)} 件${meta.personaOverride ? ' · 人设已锁定' : ''}</span>
+                            <span class="shop-acc-arrow">▾</span>
+                        </span>
+                    </summary>
+                    <div class="shop-acc-body">
+                        <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（只读）</div>
+                        <div>
+                            <div class="shop-acc-label">店主人设（手动修改优先，同名新块导入不再覆盖）：</div>
+                            <textarea rows="3" data-role="persona">${escapeHtml(shop['店主性格'] || '')}</textarea>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span class="shop-acc-label">好感度（0-100）：</span>
+                            <input type="number" min="0" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}" style="width:90px;">
+                        </div>
+                        <div>
+                            <div class="shop-acc-label">商品（只读，按类目）：</div>
+                            <div class="shop-goods-ro">${renderPersistedGoodsRO(shop)}</div>
+                        </div>
+                        <div class="shop-acc-btns">
+                            <button class="buy-btn" data-act="save">保存修改</button>
+                            <button class="buy-btn" data-act="restore" style="background:#20150e;border-color:#5a3822;">恢复块内人设</button>
+                            <button class="cart-clear-btn" data-act="delete">删除店铺</button>
+                        </div>
+                    </div>`;
+                shopsListBody.appendChild(acc);
+            });
+        }
+
+        // 一览保存：人设（手动优先，$meta.personaOverride 锁定 + blockPersona 快照）+ 好感钳制 0~100；当前店同步运行态
+        async function saveShopEdits(shopName, persona, affection) {
+            const all = await readAllShops();
+            const shop = all[shopName];
+            if (!shop) throw new Error(`「${shopName}」不在 $shops 中`);
+            const meta = shop['$meta'] = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : { version: 1 };
+            if (persona) {
+                if (meta.blockPersona == null) meta.blockPersona = shop['店主性格'] || '';
+                shop['店主性格'] = persona;
+                meta.personaOverride = true;
+            }
+            if (affection != null) shop['好感度'] = Math.max(0, Math.min(100, affection));
+            await writeAllShops(all);
+            if (shopState && shopState.shopName === shopName) {
+                if (persona) shopState.keeperPersona = persona;
+                if (affection != null) {
+                    window.__shopAffection = shop['好感度'];
+                    buildCategoryTabs();  // 好感变化可能跨私藏解锁门，重建 Tab 与货柜
+                    renderCabinet();
+                }
+            }
+            const parts = [`已保存「${shopName}」`];
+            if (persona) parts.push('人设已锁定（新块导入不再覆盖）');
+            if (affection != null) parts.push(`好感 ${shop['好感度']}`);
+            return parts.join('，') + '。';
+        }
+
+        // 恢复块内人设：写回 $meta.blockPersona 快照并解除锁定（之后同名新块可正常更新人设）
+        async function restoreBlockPersona(shopName) {
+            const all = await readAllShops();
+            const shop = all[shopName];
+            if (!shop) throw new Error(`「${shopName}」不在 $shops 中`);
+            const meta = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : {};
+            if (meta.blockPersona == null) throw new Error('没有块内人设快照（该店手动保存前未导入过块）');
+            shop['店主性格'] = meta.blockPersona;
+            meta.personaOverride = false;
+            await writeAllShops(all);
+            if (shopState && shopState.shopName === shopName) shopState.keeperPersona = meta.blockPersona;
+            return `已恢复「${shopName}」块内人设，解除锁定。`;
+        }
+
+        shopsListBody.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-act]');
+            if (!btn) return;
+            const acc = btn.closest('.shop-acc');
+            const name = acc ? acc.dataset.shop : null;
+            if (!name) return;
+            sound.playWoodClick();
+            const act = btn.dataset.act;
+            try {
+                if (act === 'save') {
+                    const personaEl = acc.querySelector('[data-role="persona"]');
+                    const affEl = acc.querySelector('[data-role="affection"]');
+                    const persona = personaEl ? personaEl.value.trim() : '';
+                    const affRaw = affEl ? parseInt(affEl.value, 10) : NaN;
+                    importBlockMsg.textContent = '✓ ' + await saveShopEdits(name, persona, Number.isFinite(affRaw) ? affRaw : null);
+                    importBlockMsg.style.color = '#7a9a5a';
+                    await renderShopsList();
+                } else if (act === 'restore') {
+                    importBlockMsg.textContent = '✓ ' + await restoreBlockPersona(name);
+                    importBlockMsg.style.color = '#7a9a5a';
+                    await renderShopsList();
+                } else if (act === 'delete') {
+                    if (!confirm(`确定删除持久化店铺「${name}」？`)) return;
+                    if (await deleteShop(name)) {
+                        importBlockMsg.textContent = (shopState && shopState.shopName === name)
+                            ? `✓ 已删除「${name}」。当前会话仍保留，刷新/重进后不再持久化。`
+                            : `✓ 已删除「${name}」。`;
+                        importBlockMsg.style.color = '#7a9a5a';
+                        await renderShopsList();
+                    } else {
+                        importBlockMsg.textContent = `✗ 删除失败：「${name}」不在 $shops 中。`;
+                        importBlockMsg.style.color = '#c0605a';
+                    }
+                }
+            } catch (err) {
+                importBlockMsg.textContent = '✗ 操作失败：' + (err.message || err);
+                importBlockMsg.style.color = '#c0605a';
+            }
         });
 
         function updateUI() {
@@ -5230,7 +5492,7 @@
             }, FLOOR_POLL_INTERVAL);
             floorPollHintTimer = setTimeout(() => {
                 if (shopState) return; // 已载入块 → 不打扰
-                setTempNotice('未检测到 <Shop_block>：当前为示例商店，可用右上「导入商店块」手动粘贴。');
+                setTempNotice('未检测到 <Shop_block>：当前为示例商店，可用右上「已有商店一览」→ debug 导入手动粘贴。');
             }, FLOOR_POLL_HINT_AT);
             pollFloorTick().then(hit => { if (hit) stopFloorPolling(); }); // 首 tick 立即扫（真机楼层渲染时块已在正文里）
         }
