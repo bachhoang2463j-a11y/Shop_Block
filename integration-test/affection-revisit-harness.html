@@ -836,15 +836,15 @@ async function runFlow() {
             'var o=shopState.items.filter(function(i){return i.name==="精炼枪油（改良）";})[0];' +
             'o.dealPrice=0.99;o.dealBy="埃利奥特";o.bargainCount=1;o.lastBargainD=10;' +
             'addDirectToCart(w,1);addDirectToCart(o,1); })()');
-        // 打开归属面板并分配其中一件，模拟「归属后编辑」
+        // 打开归属面板并分配其中一件，模拟「归属后编辑」（新交互：右栏点对象 → 点左柜商品卡）
         await E('btnExpandCart.click()');
         const panelReady2 = await waitUntil(() => E('!!assignState && assignState.targets.length > 0'), 8000)
-            && await waitUntil(() => E('document.querySelectorAll("#cartDetailTableBody .cart-check").length === playerState.cart.length'), 8000);
+            && await waitUntil(() => E('document.querySelectorAll("#cartCabinet .cart-shelf-cell").length === playerState.cart.length'), 8000);
         if (!panelReady2) return '归属面板未就绪';
-        await E('(function(){var c=document.querySelector("#cartDetailTableBody .cart-check"); if(c) c.click();})()');
-        const picked = await waitUntil(() => E('!!assignState && assignState.picked.size === 1'), 3000);
-        if (!picked) return '勾选未生效';
         await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return x.textContent.indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
+        await E('(function(){var c=document.querySelector("#cartCabinet .cart-shelf-cell"); if(c) c.click();})()');
+        const assignedReady = await waitUntil(() => E('!!assignState && assignState.assigned.length === 1'), 3000);
+        if (!assignedReady) return '点卡归属未生效';
         const assignedOld = JSON.parse(await E('JSON.stringify(assignState.assigned.map(function(a){var e=playerState.cart.filter(function(c){return c.id===a.entryId;})[0];return e?e.item.name:null;}))'));
         if (assignedOld.filter(Boolean).length !== 1) return '归属前置失败：' + JSON.stringify(assignedOld);
         // 编辑已归属的那件（黄铜扳手）：entryId 会变，归属应按名重挂；未编辑的 精炼枪油 砍价态保留
@@ -912,24 +912,21 @@ async function runFlow() {
     const preHist = await E('playerState.purchaseHistory.length');
     await E('btnExpandCart.click()');
     // 就绪判定必须看「状态」而不是 DOM：openAssignPanel 是异步的，且 #assignTargets 里可能残留上一轮
-    // 面板的按钮（innerHTML 只在 renderAssignPanel 里清），按 DOM 判定会抢在 assignState 建好之前点击，
-    // 导致 toggleCartEntry 静默早退、归属永远落不了地（IAB 降级态时序更易触发）。
+    // 的对象卡（innerHTML 只在 renderAssignPanel/renderCartDetailTable 里清），按 DOM 判定会抢在
+    // assignState 建好之前点击，导致点卡静默弹 toast、归属永远落不了地（IAB 降级态时序更易触发）。
     const panelReady = await waitUntil(() => E('!!assignState && assignState.targets.length > 0'), 8000)
-        // 再等明细表按当前购物车重新渲染完毕，确保点到的是本轮的勾选框
-        && await waitUntil(() => E('document.querySelectorAll("#cartDetailTableBody .cart-check").length === playerState.cart.length'), 8000);
+        // 再等商品柜按当前购物车重新渲染完毕，确保点到的是本轮的商品卡
+        && await waitUntil(() => E('document.querySelectorAll("#cartCabinet .cart-shelf-cell").length === playerState.cart.length'), 8000);
     let assignOK = false;
     if (panelReady) {
-        await E('(function(){var c=document.querySelector("#cartDetailTableBody .cart-check"); if(c) c.click();})()');
-        const pickedOK = await waitUntil(() => E('!!assignState && assignState.picked.size === 1'), 3000);
-        if (pickedOK) {
-            await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return x.textContent.indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
-            assignOK = await waitUntil(() => E('!!assignState && assignState.assigned.length === 1'), 3000);
-        }
+        await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return x.textContent.indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
+        await E('(function(){var c=document.querySelector("#cartCabinet .cart-shelf-cell"); if(c) c.click();})()');
+        assignOK = await waitUntil(() => E('!!assignState && assignState.assigned.length === 1'), 3000);
     }
     const cartBefore = await E('playerState.cart.length');
-    // 断链诊断：勾选/归属失败时能直接看出断在哪一步（面板未渲染 / 未勾上 / 未分配）
+    // 断链诊断：点选/归属失败时能直接看出断在哪一步（面板未渲染 / 未选中对象 / 未分配）
     const assignDiag = JSON.parse(await E('JSON.stringify({targets:document.querySelectorAll("#assignTargets button").length,'
-        + 'checks:document.querySelectorAll("#cartDetailTableBody .cart-check").length,picked:assignState?assignState.picked.size:null,'
+        + 'cells:document.querySelectorAll("#cartCabinet .cart-shelf-cell").length,active:assignState&&assignState.activeTarget?assignState.activeTarget.name:null,'
         + 'assigned:assignState?assignState.assigned.length:null,cart:playerState.cart.length})'));
     // 并发双击：任一分支抛错（并发未防护时的典型表现：assignState 被前一次置空）不得让整轮 harness 崩掉，
     // 收敛为 rejected 文本，交给下面的软断言报「待对齐」

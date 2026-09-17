@@ -223,12 +223,12 @@ async function runFlow() {
     const targets = st() ? st().targets.map(t => t.name) : [];
     assert(targets.includes('🔮埃利奥特') && targets.includes('弗兰克'), '归属目标含两位角色: ' + targets.join('/'));
     assert(targets.includes('防弹轿车'), '归属目标含载具');
-    // 分配：左轮→埃利奥特，杀虫粉→防弹轿车
+    // 分配（新交互：右栏点选对象 → 点左柜商品卡归属）：左轮→埃利奥特，杀虫粉→防弹轿车
     shopEval(`
-        assignState.picked.add(playerState.cart[0].id);
-        assignPickedTo(assignState.targets.find(t => t.name === '🔮埃利奥特'));
-        assignState.picked.add(playerState.cart[1].id);
-        assignPickedTo(assignState.targets.find(t => t.name === '防弹轿车'));
+        assignState.activeTarget = { name: '🔮埃利奥特', kind: 'char' };
+        document.querySelectorAll('#cartCabinet .cart-shelf-cell')[0].click();
+        assignState.activeTarget = { name: '防弹轿车', kind: 'vehicle' };
+        document.querySelectorAll('#cartCabinet .cart-shelf-cell')[1].click();
     `);
     assert(st().assigned.length === 2, '两件商品均已分配');
 

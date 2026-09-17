@@ -1181,7 +1181,7 @@
             list-style: none;
         }
         .shop-acc summary::-webkit-details-marker { display: none; }
-        .shop-acc[open] summary { border-bottom: 1px solid #3a261a; }
+        .shop-acc[open] > summary { border-bottom: 1px solid #3a261a; }
         .shop-acc-arrow { transition: transform 0.2s; color: #8c7360; flex-shrink: 0; }
         .shop-acc[open] .shop-acc-arrow { transform: rotate(180deg); }
         .shop-acc-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
@@ -1403,27 +1403,147 @@
             color: #dfb06c;
         }
 
-        /* 购物车详情展开面板表格 */
-        .cart-detail-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-            margin-top: 8px;
+        /* 结算分配栏：左商品柜 + 右分配对象（PC 左右 ≈3~4:1，≤640 上下堆叠） */
+        .cart-assign-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 125px;
+            gap: 8px;
+            align-items: start;
         }
 
-        .cart-detail-table th {
-            text-align: left;
-            border-bottom: 1px solid #4a3424;
-            color: #8c7360;
-            font-family: var(--font-title);
-            padding: 8px 6px;
+        .cart-cabinet {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            max-height: 40vh;
+            overflow-y: auto;
+            padding-right: 3px;
+            scrollbar-gutter: stable;
         }
 
-        .cart-detail-table td {
-            padding: 10px 6px;
-            border-bottom: 1px solid #20150e;
+        .cart-cabinet .shop-event-empty { grid-column: 1 / -1; }
+
+        .cart-shelf-cell {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: #1c130c;
+            border: 1px solid #382417;
+            border-radius: 6px;
+            padding: 8px;
+            cursor: pointer;
+            transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+        }
+
+        .cart-shelf-cell:hover {
+            transform: translateY(-2px);
+            border-color: var(--dd-gold);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+            z-index: 2;
+        }
+
+        .cart-shelf-cell.assigned { border-color: #4e6138; background: rgba(38, 52, 28, 0.25); }
+
+        .cart-shelf-cell .table-del-btn {
+            position: absolute;
+            top: 3px;
+            right: 5px;
+            font-size: 14px;
+            line-height: 1;
+            padding: 2px;
+        }
+
+        .cart-cell-head { display: flex; align-items: center; gap: 6px; padding-right: 14px; min-width: 0; }
+        .cart-cell-icon { font-size: 20px; flex-shrink: 0; }
+        .cart-cell-name {
+            font-weight: bold;
+            color: #e5d7c3;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cart-cell-price { font-size: 11px; color: #dfb06c; }
+        .cart-price-note { font-size: 10px; }
+        .cart-price-note.deal { color: #8fb573; }
+        .cart-price-note.hiked { color: #c0605a; }
+        .cart-shelf-cell .item-qty-stepper { align-self: flex-start; }
+        .cart-cell-subtotal { font-family: var(--font-title); font-weight: bold; color: #dfb06c; font-size: 13px; }
+        .cart-cell-owner {
+            font-size: 10px;
+            color: #6d5747;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .cart-shelf-cell.assigned .cart-cell-owner { color: #8fb573; }
+
+        .cart-targets-col {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 40vh;
+            overflow-y: auto;
+            padding-right: 2px;
+            scrollbar-gutter: stable;
+        }
+
+        .cart-target-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            background: #20150e;
+            border: 1px solid #382417;
+            border-radius: 6px;
+            padding: 7px 4px 6px;
+            cursor: pointer;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .cart-target-card img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            object-position: center top;
+        }
+
+        .cart-target-fallback { font-size: 26px; line-height: 40px; }
+
+        .cart-target-name {
+            font-size: 10px;
             color: #d8c7b5;
-            vertical-align: middle;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cart-target-card:hover { border-color: #8c7360; }
+
+        .cart-target-card.active {
+            border-color: var(--dd-gold);
+            box-shadow: 0 0 8px rgba(223, 176, 108, 0.35);
+            background: #2a1c10;
+        }
+
+        .cart-target-card.active .cart-target-name { color: var(--dd-gold); }
+
+        @media (max-width: 640px) {
+            /* 竖屏：分配对象变顶部横向滑动条，商品柜保持 2 列在下 */
+            .cart-assign-grid { display: flex; flex-direction: column; }
+            .cart-targets-col {
+                order: -1;
+                flex-direction: row;
+                max-height: none;
+                overflow-x: auto;
+                overflow-y: hidden;
+                padding-bottom: 4px;
+            }
+            .cart-target-card { flex-shrink: 0; min-width: 64px; }
+            .cart-cabinet { max-height: 46vh; }
         }
 
         .item-qty-stepper {
@@ -1616,6 +1736,36 @@
             display: none;
         }
         .env-notice.show { display: block; }
+
+        /* 顶部内部悬浮提示：替代原生 alert；z-index 须高于弹窗 backdrop（100），与 env-notice 同槽临时覆盖 */
+        .top-toast {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            width: max-content;
+            max-width: 92vw;
+            padding: 8px 16px;
+            border-radius: 8px;
+            background: rgba(26, 17, 10, 0.96);
+            border: 1px solid var(--dd-gold);
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+            color: #dfb06c;
+            font-size: 12px;
+            line-height: 1.55;
+            text-align: center;
+            white-space: pre-line;
+            z-index: 210;
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(-50%) translateY(-8px);
+            transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
+        }
+        .top-toast.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0);
+        }
 
         /* 底栏在场角色为空（块内「在场成员」与 MMS 名册零匹配）时的占位 */
         .party-empty {
@@ -1951,6 +2101,9 @@
     <!-- 环境提示条：MMS 数据缺失（常驻）/ 楼层块轮询结果（临时） -->
     <div class="env-notice" id="envNotice"></div>
 
+    <!-- 顶部内部悬浮提示：替代浏览器原生 alert（原生弹窗会退出全屏、打断交互） -->
+    <div class="top-toast" id="topToast"></div>
+
     <!-- ====================================================
          主展示区 (左侧展台带气泡 + 右侧方案2工匠实木托盘柜)
     ==================================================== -->
@@ -2161,35 +2314,19 @@
                 <button class="modal-close-btn" id="cartDetailCloseBtn">&times;</button>
             </div>
 
-            <!-- M6 归属分配栏：勾选商品 → 点角色/载具头像放入 -->
+            <!-- M6 归属分配栏：右侧点选对象 → 左柜点商品归属（点已归属商品撤销/改派） -->
             <div id="assignPanel" style="border: 1px solid #382417; border-radius: 6px; padding: 10px; margin-bottom: 10px; background: #170f0a;">
-                <div style="font-size: 11px; color: #8c7360; margin-bottom: 6px;">
-                    结算流程：勾选商品 → 点击下方角色头像或载具图标分配归属 → 全部分配后点「确认结算」。点错可点击已分配条目撤销。
+                <div style="font-size: 11px; color: #8c7360; margin-bottom: 8px;">
+                    结算流程：右侧点选角色/载具 → 点击左侧商品完成归属（再点撤销/改派）→ 全部分配后点「确认结算」。
                 </div>
-                <div id="assignTargets" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
-                    <!-- 角色/载具目标按钮（JS 渲染） -->
+                <div class="cart-assign-grid">
+                    <div class="cart-cabinet" id="cartCabinet">
+                        <!-- 已购商品柜（JS 渲染：数量加减/归属/移除都在卡上） -->
+                    </div>
+                    <div class="cart-targets-col" id="assignTargets">
+                        <!-- 分配对象卡（JS 渲染，点击选中/取消） -->
+                    </div>
                 </div>
-                <div id="assignedList" style="display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto;">
-                    <!-- 已分配条目（JS 渲染，点击撤销） -->
-                </div>
-            </div>
-
-            <div style="max-height: 260px; overflow-y: auto;">
-                <table class="cart-detail-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 28px;"></th>
-                            <th>物品</th>
-                            <th>单价</th>
-                            <th>数量调整</th>
-                            <th>小计</th>
-                            <th style="text-align: right;">移除</th>
-                        </tr>
-                    </thead>
-                    <tbody id="cartDetailTableBody">
-                        <!-- 动态渲染购物车表格明细 -->
-                    </tbody>
-                </table>
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #382417; padding-top: 14px; margin-top: 14px;">
@@ -3728,6 +3865,18 @@
             renderEnvNotice();
         }
 
+        // 顶部内部悬浮提示：替代浏览器原生 alert（原生弹窗会退出全屏、打断交互）；
+        // ms > 0 自动收起，重复调用重置文案与计时
+        let topToastTimer = null;
+        function showTopToast(text, ms) {
+            const el = document.getElementById('topToast');
+            if (!el) return;
+            el.textContent = text || '';
+            if (topToastTimer) { clearTimeout(topToastTimer); topToastTimer = null; }
+            el.classList.add('show');
+            if (ms) topToastTimer = setTimeout(() => { el.classList.remove('show'); topToastTimer = null; }, ms);
+        }
+
         // 在场团队 = stat_data 角色列表 ∩ Shop_block 在场成员（无块时全角色列表）
         // 返回 null = 无 MMS 数据；state = 'ok' / 'mismatch'（由调用方在过期检查后落地）
         async function loadMmsContext() {
@@ -3749,7 +3898,7 @@
         // ====================================================
         // 结算框多选归属 + 结算写入（SPEC 第五节）
         // ====================================================
-        let assignState = null;   // { targets:[{name,kind,avatar}], picked:Set(cartEntryId), assigned:[{entryId,owner,kind}] }
+        let assignState = null;   // { targets:[{name,kind,avatar}], activeTarget:{name,kind}|null, assigned:[{entryId,owner,kind}] }
 
         async function openAssignPanel() {
             if (playerState.cart.length === 0) return;
@@ -3761,68 +3910,44 @@
                     const pm = partyMembers.find(p => name.includes(p.name) || p.name.includes(name));
                     targets.push({ name, kind: 'char', avatar: pm ? pm.avatar : null });
                 });
-                ctx.vehicles.forEach(v => targets.push({ name: v.name, kind: 'vehicle', avatar: null }));
+                ctx.vehicles.forEach(v => {
+                    // 载具头像：读 MMS 模块的头像/立绘字段，读不到回退 🚙 emoji
+                    const va = v.raw ? (v.raw['头像'] || v.raw['avatar'] || v.raw['立绘']) : null;
+                    targets.push({ name: v.name, kind: 'vehicle', avatar: typeof va === 'string' ? va : null });
+                });
             }
             if (!targets.length) {
                 partyMembers.forEach(p => targets.push({ name: p.name, kind: 'char', avatar: p.avatar }));
                 targets.push({ name: '载具', kind: 'vehicle', avatar: null });
             }
-            assignState = { mms: ctx, targets, picked: new Set(), assigned: [] };
+            assignState = { mms: ctx, targets, activeTarget: null, assigned: [] };
             renderAssignPanel();
             renderCartDetailTable();
         }
 
+        // 右栏分配对象卡：点选=选中归属对象（再点取消）；头像统一走 resolveMemberAvatar（载具无头像回退 🚙）
         function renderAssignPanel() {
             const targetsBox = document.getElementById('assignTargets');
-            const listBox = document.getElementById('assignedList');
             if (!assignState || !targetsBox) return;
             targetsBox.innerHTML = '';
             assignState.targets.forEach(t => {
-                const btn = document.createElement('button');
-                btn.className = 'input-action-btn';
-                btn.style.cssText = 'flex-direction:row; gap:4px; padding:4px 8px; font-size:11px;';
-                const tAvatar = t.kind === 'vehicle' ? null : resolveMemberAvatar({ name: t.name, avatar: t.avatar });
-                btn.innerHTML = `${t.kind === 'vehicle' ? '🚙' : (tAvatar ? `<img src="${tAvatar}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;">` : '🧑')} ${t.name}`;
-                btn.addEventListener('click', () => assignPickedTo(t));
-                targetsBox.appendChild(btn);
+                const active = !!(assignState.activeTarget
+                    && assignState.activeTarget.name === t.name && assignState.activeTarget.kind === t.kind);
+                const tAvatar = resolveMemberAvatar({ name: t.name, avatar: t.avatar });
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'cart-target-card' + (active ? ' active' : '');
+                const visual = tAvatar
+                    ? `<img src="${escapeHtml(tAvatar)}" alt="">`
+                    : `<span class="cart-target-fallback">${t.kind === 'vehicle' ? '🚙' : '🧑'}</span>`;
+                card.innerHTML = `${visual}<span class="cart-target-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>`;
+                card.addEventListener('click', () => {
+                    sound.playWoodClick();
+                    assignState.activeTarget = active ? null : { name: t.name, kind: t.kind };
+                    renderAssignPanel();
+                });
+                targetsBox.appendChild(card);
             });
-            listBox.innerHTML = '';
-            assignState.assigned.forEach((a, idx) => {
-                const entry = playerState.cart.find(c => c.id === a.entryId);
-                if (!entry) return;
-                const row = document.createElement('div');
-                row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#d8c7b5;background:#20150e;border:1px solid #382417;border-radius:4px;padding:3px 8px;cursor:pointer;';
-                row.title = '点击撤销归属';
-                row.innerHTML = `<span>${a.kind === 'vehicle' ? '🚙' : '🧑'} ${entry.item.name} ×${entry.quantity} → ${a.owner}</span><span style="color:#8c7360;">✕ 撤销</span>`;
-                row.addEventListener('click', () => { assignState.assigned.splice(idx, 1); renderAssignPanel(); renderCartDetailTable(); });
-                listBox.appendChild(row);
-            });
-        }
-
-        function assignPickedTo(target) {
-            if (!assignState || assignState.picked.size === 0) return;
-            sound.playWoodClick();
-            assignState.picked.forEach(entryId => {
-                // 一件商品只归属一处：先清旧
-                assignState.assigned = assignState.assigned.filter(a => a.entryId !== entryId);
-                assignState.assigned.push({ entryId, owner: target.name, kind: target.kind });
-                const entry = playerState.cart.find(c => c.id === entryId);
-                if (entry) logShopEvent('cart', `[购物车] ${entry.item.name}×${entry.quantity} 分配给 ${target.name}`);
-            });
-            assignState.picked = new Set();
-            renderAssignPanel();
-            renderCartDetailTable();
-        }
-
-        // 表格行的勾选框（renderCartDetailTable 渲染时同步勾选态）
-        function cartEntryChecked(entryId) {
-            return assignState && assignState.picked.has(entryId);
-        }
-        function toggleCartEntry(entryId) {
-            if (!assignState) return;
-            if (assignState.picked.has(entryId)) assignState.picked.delete(entryId);
-            else assignState.picked.add(entryId);
-            renderAssignPanel();
         }
 
         // ====================================================
@@ -3855,7 +3980,7 @@
                 const hint = mmsDataState === 'mismatch'
                     ? '（当前块内「在场成员」与 MMS 名册不匹配、底栏已置空，角色归属不可选；请先修正正文块或状态栏名册）'
                     : '';
-                alert(`${unassigned.length} 件商品未分配归属：${unassigned.map(c => c.item.name).join('、')}。请先勾选并分配。` + hint);
+                showTopToast(`${unassigned.length} 件商品未分配归属：${unassigned.map(c => c.item.name).join('、')}。请先点选分配对象，再点击商品完成分配。` + hint, 6000);
                 return false;
             }
             const total = playerState.cart.reduce((s, e) => s + effPrice(e.item) * e.quantity, 0);
@@ -3863,7 +3988,7 @@
 
             // 现金校验（有 MMS 时）
             if (ctx && ctx.cash != null && ctx.cash < total) {
-                alert(`团队现金不足：$${ctx.cash.toFixed(2)} < 应付 $${total.toFixed(2)}`);
+                showTopToast(`团队现金不足：$${ctx.cash.toFixed(2)} < 应付 $${total.toFixed(2)}`, 6000);
                 return false;
             }
 
@@ -4606,7 +4731,6 @@
         // 购物车详情面板弹窗
         const cartDetailModal = document.getElementById('cartDetailModal');
         const cartDetailCloseBtn = document.getElementById('cartDetailCloseBtn');
-        const cartDetailTableBody = document.getElementById('cartDetailTableBody');
         const cartModalTotal = document.getElementById('cartModalTotal');
         const cartModalClearBtn = document.getElementById('cartModalClearBtn');
         const cartModalCheckoutBtn = document.getElementById('cartModalCheckoutBtn');
@@ -5122,18 +5246,16 @@
             if (e.target === cartDetailModal) closeCartDetailModal();
         });
 
+        // 购物车详情（函数名沿用，调用点遍布结算链路）：现渲染左柜商品卡——
+        // 点卡片=归属/撤销/改派给右栏选中对象，数量加减与移除都在卡上
         function renderCartDetailTable() {
-            cartDetailTableBody.innerHTML = '';
+            const cabinet = document.getElementById('cartCabinet');
+            if (!cabinet) return;
+            cabinet.innerHTML = '';
             let total = 0;
 
             if (playerState.cart.length === 0) {
-                cartDetailTableBody.innerHTML = `
-                    <tr>
-                        <td colspan="6" style="text-align: center; color: #6d5747; padding: 24px;">
-                            购物车空空如也。
-                        </td>
-                    </tr>
-                `;
+                cabinet.innerHTML = '<div class="shop-event-empty">购物车空空如也。</div>';
                 cartModalTotal.textContent = "$0.00";
                 cartModalCheckoutBtn.disabled = true;
                 return;
@@ -5143,44 +5265,59 @@
                 const itemTotal = effPrice(entry.item) * entry.quantity;
                 total += itemTotal;
                 const assigned = assignState && assignState.assigned.find(a => a.entryId === entry.id);
-                const checked = cartEntryChecked(entry.id);
+                const priceNote = entry.item.dealPrice != null
+                    ? ' <span class="cart-price-note deal">(已砍价)</span>'
+                    : (isPriceHiked() ? ' <span class="cart-price-note hiked">(+20%)</span>' : '');
 
-                const tr = document.createElement('tr');
-                if (assigned) tr.style.background = 'rgba(122,154,90,0.08)';
-                tr.innerHTML = `
-                    <td><input type="checkbox" class="cart-check" ${checked ? 'checked' : ''} style="accent-color:#dfb06c;cursor:pointer;"></td>
-                    <td>
-                        <span style="font-size: 18px; margin-right: 6px;">${entry.item.emoji}</span>
-                        <strong style="color: #e5d7c3;">${entry.item.name}</strong>
-                        ${assigned ? `<span style="font-size:10px;color:#8fb573;margin-left:4px;">→ ${assigned.kind === 'vehicle' ? '🚙' : '🧑'}${assigned.owner}</span>` : ''}
-                    </td>
-                    <td style="color: ${(entry.item.dealPrice == null && isPriceHiked()) ? '#c0605a' : '#dfb06c'};">$${effPrice(entry.item).toFixed(2)}${entry.item.dealPrice != null ? ' <span style="font-size:10px;color:#8fb573;">(已砍价)</span>' : (isPriceHiked() ? ' <span style="font-size:10px;color:#c0605a;">(+20%)</span>' : '')}</td>
-                    <td>
-                        <div class="item-qty-stepper">
-                            <button class="stepper-btn btn-minus">-</button>
-                            <span class="stepper-val">${entry.quantity}</span>
-                            <button class="stepper-btn btn-plus">+</button>
-                        </div>
-                    </td>
-                    <td style="font-family: var(--font-title); font-weight: bold; color: #dfb06c;">$${itemTotal.toFixed(2)}</td>
-                    <td style="text-align: right;">
-                        <button class="table-del-btn" title="移除">&times;</button>
-                    </td>
+                const card = document.createElement('div');
+                card.className = 'cart-shelf-cell' + (assigned ? ' assigned' : '');
+                card.title = '点击分配给右侧选中对象；再点撤销';
+                card.innerHTML = `
+                    <button class="table-del-btn cart-cell-del" title="移出清单">&times;</button>
+                    <div class="cart-cell-head">
+                        <span class="cart-cell-icon">${entry.item.emoji}</span>
+                        <span class="cart-cell-name" title="${escapeHtml(entry.item.name)}">${escapeHtml(entry.item.name)}</span>
+                    </div>
+                    <div class="cart-cell-price">$${effPrice(entry.item).toFixed(2)}${priceNote}</div>
+                    <div class="item-qty-stepper">
+                        <button class="stepper-btn btn-minus">-</button>
+                        <span class="stepper-val">${entry.quantity}</span>
+                        <button class="stepper-btn btn-plus">+</button>
+                    </div>
+                    <div class="cart-cell-subtotal">$${itemTotal.toFixed(2)}</div>
+                    <div class="cart-cell-owner">${assigned ? `● ${assigned.kind === 'vehicle' ? '🚙' : '🧑'} ${escapeHtml(assigned.owner)}` : '○ 未分配'}</div>
                 `;
 
-                // 勾选（M6 归属分配）
-                tr.querySelector('.cart-check').addEventListener('change', (e) => {
-                    toggleCartEntry(entry.id);
-                    e.target.checked = cartEntryChecked(entry.id);
+                // 点卡片 = 分配/撤销/改派（数量与移除按钮内部已 stopPropagation）
+                card.addEventListener('click', () => {
+                    if (!assignState || !assignState.activeTarget) {
+                        showTopToast('请先在右侧点选一个角色或载具作为归属对象', 3000);
+                        return;
+                    }
+                    const t = assignState.activeTarget;
+                    const existing = assignState.assigned.find(a => a.entryId === entry.id);
+                    if (existing && existing.owner === t.name) {
+                        assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
+                        logShopEvent('cart', `[购物车] ${entry.item.name} 撤销归属（${t.name}）`);
+                    } else {
+                        // 一件商品只归属一处：先清旧
+                        assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
+                        assignState.assigned.push({ entryId: entry.id, owner: t.name, kind: t.kind });
+                        logShopEvent('cart', `[购物车] ${entry.item.name}×${entry.quantity} 分配给 ${t.name}`);
+                    }
+                    sound.playWoodClick();
+                    renderCartDetailTable();
                 });
 
-                // 调整数量
-                tr.querySelector('.btn-minus').addEventListener('click', () => {
+                // 调整数量（减到 1 再减 = 移除）
+                card.querySelector('.btn-minus').addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (entry.quantity > 1) {
                         entry.quantity--;
                         logShopEvent('cart', `[购物车] ${entry.item.name} 数量调整为 ×${entry.quantity}`);
                     } else {
                         playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
+                        if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
                         logShopEvent('cart', `[购物车] 移除 ${entry.item.name}`);
                     }
                     sound.playWoodClick();
@@ -5189,7 +5326,8 @@
                     renderCabinet();
                 });
 
-                tr.querySelector('.btn-plus').addEventListener('click', () => {
+                card.querySelector('.btn-plus').addEventListener('click', (e) => {
+                    e.stopPropagation();
                     const max = entry.item.isStackable ? entry.item.stock : 1;
                     if (entry.quantity < max) {
                         entry.quantity++;
@@ -5202,8 +5340,10 @@
                 });
 
                 // 移除
-                tr.querySelector('.table-del-btn').addEventListener('click', () => {
+                card.querySelector('.cart-cell-del').addEventListener('click', (e) => {
+                    e.stopPropagation();
                     playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
+                    if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
                     logShopEvent('cart', `[购物车] 移除 ${entry.item.name}`);
                     sound.playWoodClick();
                     renderCartDetailTable();
@@ -5211,7 +5351,7 @@
                     renderCabinet();
                 });
 
-                cartDetailTableBody.appendChild(tr);
+                cabinet.appendChild(card);
             });
 
             cartModalTotal.textContent = `$${total.toFixed(2)}`;
@@ -5344,7 +5484,6 @@
             // 根 URL 变更后按当前商店刷新立绘与头像
             loadKeeperPortrait(shopState ? shopState.portrait : '铁匠机械师');
             refreshPartyAvatars();
-            showKeeperDialogue(shopState ? shopState.keeper : '老布莱克伍德', 'LLM 智脑配置已更新。随时可以向我打探黑市情报。', true);
         });
 
         llmResetBtn.addEventListener('click', () => {
@@ -5576,6 +5715,16 @@
         }
 
         async function renderShopsList() {
+            // 逐件保存/删店后会整体重绘：先记录各店手风琴与内部折叠的展开态，渲染后回放，避免全部收起
+            const prevOpen = new Map();
+            shopsListBody.querySelectorAll('.shop-acc[data-shop]').forEach(acc => {
+                const secOpen = sel => { const el = acc.querySelector(sel); return !!(el && el.open); };
+                prevOpen.set(acc.dataset.shop, {
+                    acc: acc.open,
+                    profile: secOpen('.settings-section[data-section="profile"]'),
+                    goods: secOpen('.settings-section[data-section="goods"]')
+                });
+            });
             shopsListBody.innerHTML = '';
             let all;
             try { all = await readAllShops(); }
@@ -5592,6 +5741,7 @@
                 const shop = all[name] || {};
                 const meta = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : {};
                 const aff = shop['好感度'] != null ? shop['好感度'] : '—';
+                const goodsCount = countPersistedGoods(shop);
                 const acc = document.createElement('details');
                 acc.className = 'shop-acc';
                 acc.dataset.shop = name;
@@ -5599,27 +5749,32 @@
                     <summary>
                         <span>🏪 ${escapeHtml(name)} · ${escapeHtml(shop['店主'] || '店主')}（${escapeHtml(shop['立绘'] || '占卜商妇')}）</span>
                         <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                            <span class="shop-acc-label">好感 ${escapeHtml(aff)} · ${countPersistedGoods(shop)} 件${meta.personaOverride ? ' · 人设已锁定' : ''}</span>
+                            <span class="shop-acc-label">好感 ${escapeHtml(aff)} · ${goodsCount} 件${meta.personaOverride ? ' · 人设已锁定' : ''}</span>
                             <span class="shop-acc-arrow">▾</span>
                         </span>
                     </summary>
                     <div class="shop-acc-body">
-                        <div class="shop-acc-profile">
-                            <div class="shop-acc-meta-row">
-                                <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（由正文块维护）</div>
-                                <label class="shop-acc-label shop-acc-aff-inline">好感度（-100~100）
-                                    <input type="number" min="-100" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}">
-                                </label>
+                        <details class="settings-section" data-section="profile">
+                            <summary><span>店主 · 好感 · 人设</span></summary>
+                            <div class="settings-section-body shop-acc-profile">
+                                <div class="shop-acc-meta-row">
+                                    <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（由正文块维护）</div>
+                                    <label class="shop-acc-label shop-acc-aff-inline">好感度（-100~100）
+                                        <input type="number" min="-100" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}">
+                                    </label>
+                                </div>
+                                <div class="shop-acc-persona-wrap">
+                                    <div class="shop-acc-label">店主人设（手动保存后锁定）：</div>
+                                    <textarea rows="4" data-role="persona">${escapeHtml(shop['店主性格'] || '')}</textarea>
+                                </div>
                             </div>
-                            <div class="shop-acc-persona-wrap">
-                                <div class="shop-acc-label">店主人设（手动保存后锁定）：</div>
-                                <textarea rows="4" data-role="persona">${escapeHtml(shop['店主性格'] || '')}</textarea>
+                        </details>
+                        <details class="settings-section" data-section="goods">
+                            <summary><span>商品编辑（${goodsCount} 件 · 逐件保存）</span></summary>
+                            <div class="settings-section-body">
+                                <div class="shop-goods-editor">${renderPersistedGoodsEditor(shop)}</div>
                             </div>
-                        </div>
-                        <div>
-                            <div class="shop-acc-label">商品编辑（逐件保存）：</div>
-                            <div class="shop-goods-editor">${renderPersistedGoodsEditor(shop)}</div>
-                        </div>
+                        </details>
                         <div class="shop-acc-btns">
                             <button class="buy-btn" data-act="save">保存修改</button>
                             <button class="buy-btn" data-act="restore" style="background:#20150e;border-color:#5a3822;">恢复块内人设</button>
@@ -5627,6 +5782,14 @@
                         </div>
                     </div>`;
                 shopsListBody.appendChild(acc);
+                const prev = prevOpen.get(name);
+                if (prev) {
+                    acc.open = prev.acc;
+                    const prof = acc.querySelector('.settings-section[data-section="profile"]');
+                    const goods = acc.querySelector('.settings-section[data-section="goods"]');
+                    if (prof) prof.open = prev.profile;
+                    if (goods) goods.open = prev.goods;
+                }
             });
         }
 
@@ -5717,14 +5880,13 @@
                         const nextItem = shopState.items.find(item => item.name === lookupName);
                         return nextItem ? { id: nextItem.id, item: nextItem, quantity: savedEntry.quantity } : null;
                     }).filter(Boolean);
-                    // 归属面板引用旧 entryId（=旧 item.id），按商品名重挂到新 entry；勾选池失效清空
+                    // 归属面板引用旧 entryId（=旧 item.id），按商品名重挂到新 entry
                     if (assignState) {
                         assignState.assigned = assignState.assigned.map(a => {
                             const nm = oldIdToName.get(a.entryId);
                             const ne = nm && playerState.cart.find(entry => entry.item.name === nm);
                             return ne ? Object.assign({}, a, { entryId: ne.id }) : null;
                         }).filter(Boolean);
-                        assignState.picked = new Set();
                         renderAssignPanel();
                         renderCartDetailTable();
                     }
