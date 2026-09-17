@@ -179,6 +179,58 @@ window.confirm = function () { return true; };
     assert(await waitUntil(() => shopEval('shopState && shopState.shopName === "出征杂货铺"')), 'debug 导入解析并载入（出征杂货铺）');
     assert(await waitUntil(() => shopEval('!!window.__mockVars["$shops"]["出征杂货铺"]')), 'debug 导入同样持久化');
 
+    log('== F. 售罄补货掷骰 + 进店特惠楼层保护 ==');
+    shopWin().__hYamlF = YAML1;
+    await shopEval('onShopDataReceived(window.__hYamlF)');
+    const soldOk = await shopEval(`(async function () {
+        const it = shopState.items.find(i => i.name === '精炼枪油');
+        if (!it) return 'no-item';
+        addDirectToCart(it, 5);
+        await openAssignPanel();
+        await new Promise(r => setTimeout(r, 150));
+        if (!assignState) return 'no-assign';
+        assignState.activeTarget = { name: '埃利奥特', kind: 'char' };
+        assignState.assigned = [{ entryId: it.id, owner: '埃利奥特', kind: 'char' }];
+        return await performCheckoutCart();
+    })()`);
+    assert(soldOk === true, '构造结算链路成功（买空精炼枪油）');
+    assert(await waitUntil(() => shopEval('(function(){var s=window.__mockVars["$shops"]["铜铃杂货铺"];return !!(s && s.$meta && s.$meta.soldMap && s.$meta.soldMap["精炼枪油"]);})()')), '售罄标记持久化到 $meta.soldMap');
+    assert(shopEval('shopState.items.find(i => i.name === "精炼枪油").sold') === true, '结算后商品 sold=true');
+
+    // stub 随机 0.9：≥0.5 → 维持售罄（soldMap 标记保留）
+    shopEval('window.__hMr = Math.random; Math.random = function(){ return 0.9; };');
+    shopWin().__hYamlF2 = YAML1;
+    await shopEval('onShopDataReceived(window.__hYamlF2)');
+    shopEval('Math.random = window.__hMr;');
+    assert(shopEval('shopState.items.find(i => i.name === "精炼枪油").sold') === true, '掷骰 0.9 → 维持售罄');
+    assert(shopEval('(function(){var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return m.soldMap && m.soldMap["精炼枪油"] === true;})()') === true, '维持售罄时 soldMap 标记保留');
+
+    // stub 随机 0.4：<0.5 → 补货，数量 = round(5×(0.3+0.4×0.7)) = 3，soldMap 清除
+    shopEval('window.__hMr = Math.random; Math.random = function(){ return 0.4; };');
+    shopWin().__hYamlF3 = YAML1;
+    await shopEval('onShopDataReceived(window.__hYamlF3)');
+    shopEval('Math.random = window.__hMr;');
+    const rk = shopEval('(function(){var it=shopState.items.find(i => i.name === "精炼枪油");return {sold: it.sold, stock: it.stock};})()');
+    assert(rk.sold === false, '掷骰 0.4 → 补货 sold=false');
+    assert(rk.stock === 3, '补货数量 = round(5×0.58) = 3（实际 ' + rk.stock + '）');
+    assert(shopEval('(function(){var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return !m.soldMap || !m.soldMap["精炼枪油"];})()') === true, '补货后 $meta.soldMap 标记清除');
+
+    // 进店特惠：楼层 7 首掷 → 恰好一件非私藏在售商品半价
+    const d1 = shopEval('(function(){var sp=shopState.items.filter(function(i){return i.dealSpecial;});return {n: sp.length, half: sp.every(function(i){return i.dealPrice === Math.round(i.price*0.5*100)/100;})};})()');
+    assert(d1.n === 1, '进店特惠恰好一件（实际 ' + d1.n + '）');
+    assert(d1.half, '特惠价为半价');
+    // 同楼重载（floorId 仍 7）→ 不重掷，恢复同一特惠商品
+    shopWin().__hYamlF4 = YAML1;
+    await shopEval('onShopDataReceived(window.__hYamlF4)');
+    const d2 = shopEval('(function(){var sp=shopState.items.find(function(i){return i.dealSpecial;});var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return {name: sp ? sp.name : null, meta: m.discountItem};})()');
+    assert(d2.name === d2.meta, '同楼重载恢复同一特惠商品（' + d2.name + '）');
+    // 跨楼（floorId → 9）→ 重掷并更新 lastDiscountFloor
+    shopEval('window.__hCmid = getCurrentMessageId; getCurrentMessageId = function(){ return 9; };');
+    shopWin().__hYamlF5 = YAML1;
+    await shopEval('onShopDataReceived(window.__hYamlF5)');
+    shopEval('getCurrentMessageId = window.__hCmid;');
+    assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"].$meta.lastDiscountFloor') === 9, '跨楼新进入重掷并更新 lastDiscountFloor=9');
+
     const total = passCount + failCount;
     document.getElementById('summary').textContent = failCount === 0
         ? '✅ ' + passCount + '/' + total + ' 全绿'

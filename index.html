@@ -2273,7 +2273,7 @@
         <div class="chat-input-bar">
             <img class="current-hero-avatar" id="currentHeroAvatar" src="" alt="发言人">
             <input type="text" class="chat-text-input" id="chatInput" 
-                   placeholder="说点什么... 向老布莱克伍德询问武器性能、讨价还价或打探芝加哥黑市情报 (Enter 发送)">
+                   placeholder="说点什么... 向店主询问商品性能、讨价还价或打探此地传闻 (Enter 发送)">
             <button class="input-action-btn active" id="btnNarratorToggle" title="友方旁白开关">
                 <span>📖</span>
                 <span>友方旁白 ON</span>
@@ -2298,7 +2298,7 @@
                     <div id="qtyModalEmoji" style="font-size: 32px;">🪙</div>
                     <div>
                         <div class="modal-item-name" id="qtyModalName">.45 ACP 军规手枪弹</div>
-                        <div class="modal-item-tier" id="qtyModalTier">复数军械 · 散装订购</div>
+                        <div class="modal-item-tier" id="qtyModalTier">复数商品 · 散装订购</div>
                     </div>
                 </div>
                 <button class="modal-close-btn" id="qtyModalCloseBtn">&times;</button>
@@ -2347,7 +2347,7 @@
                 <div class="modal-title-group">
                     <div style="font-size: 32px;">🛒</div>
                     <div>
-                        <div class="modal-item-name">军械选购清单详单</div>
+                        <div class="modal-item-name">商品选购清单详单</div>
                         <div class="modal-item-tier">SHOPPING CART DETAILS & BILLING</div>
                     </div>
                 </div>
@@ -2484,8 +2484,8 @@
                 <div class="modal-title-group">
                     <div style="font-size: 32px;">📜</div>
                     <div>
-                        <div class="modal-item-name">军械店交易账簿记录</div>
-                        <div class="modal-item-tier">BLACKWOOD ARMORY TRANSACTION LEDGER · 1926</div>
+                        <div class="modal-item-name">商店交易账簿记录</div>
+                        <div class="modal-item-tier">SHOP TRANSACTION LEDGER · 1926</div>
                     </div>
                 </div>
                 <button class="modal-close-btn" id="historyCloseBtn">&times;</button>
@@ -2517,7 +2517,7 @@
                     <tbody id="ledgerTableBody">
                         <tr>
                             <td colspan="5" style="text-align: center; color: #6d5747; padding: 20px;">
-                                暂无交易单据。在上方实木货架挑选军械并付款即可生成。
+                                暂无交易单据。在上方实木货架挑选商品并付款即可生成。
                             </td>
                         </tr>
                     </tbody>
@@ -2535,7 +2535,7 @@
                 <div class="modal-title-group">
                     <div style="font-size: 32px;">⚙️</div>
                     <div>
-                        <div class="modal-item-name">LLM 军械老板人设与端点</div>
+                        <div class="modal-item-name">LLM 店主人设与端点</div>
                         <div class="modal-item-tier">AI DIALOGUE & MERCHANT PERSONA CONFIG</div>
                     </div>
                 </div>
@@ -2910,7 +2910,14 @@
                 '在场成员': parsed.presentMembers.slice(),
                 '分类商品': merged,
                 '独家私藏': exclusive,
-                '$meta': { version: 1, floorId: floorId, ts: Date.now(), personaOverride, blockPersona: parsed.keeperPersona }
+                // $meta 重建时延续运行态字段：soldMap（售罄掷骰）/ lastDiscountFloor+discount*（进店特惠）
+                // 否则同店重载即满血复活、特惠重掷，掷骰机制形同虚设
+                '$meta': Object.assign(
+                    { version: 1, floorId: floorId, ts: Date.now(), personaOverride, blockPersona: parsed.keeperPersona },
+                    (prevMeta.soldMap && typeof prevMeta.soldMap === 'object') ? { soldMap: prevMeta.soldMap } : {},
+                    (prevMeta.lastDiscountFloor != null) ? { lastDiscountFloor: prevMeta.lastDiscountFloor } : {},
+                    (prevMeta.discountItem != null) ? { discountItem: prevMeta.discountItem, discountPrice: prevMeta.discountPrice } : {}
+                )
             };
             all[name] = payload;
             return payload;
@@ -4138,16 +4145,31 @@
 
             // 售罄落地（会话内存态）：stackable 扣库存（归零盖 SOLD），单件买后即售罄。
             // 结算清空购物车后，商品不再因「在购物车里」被货架取下——不显式售罄就会原地回归货架
+            const soldNames = [];
             purchases.forEach(p => {
                 const it = activeItems().find(i => i.name === p.name);
                 if (!it) return;
                 if (it.isStackable && Number.isFinite(it.stock)) {
                     it.stock = Math.max(0, it.stock - p.count);
-                    if (it.stock <= 0) it.sold = true;
+                    if (it.stock <= 0) { it.sold = true; soldNames.push(p.name); }
                 } else {
                     it.sold = true;
+                    soldNames.push(p.name);
                 }
             });
+            // 售罄标记持久化到 $meta.soldMap：块重载后由 restockSoldItems 掷骰（50% 补货 / 50% 维持售罄）
+            if (soldNames.length && shopState) {
+                try {
+                    const all = await readAllShops();
+                    const shop = all[shopState.shopName];
+                    if (shop) {
+                        const meta = (shop['$meta'] = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : {});
+                        const sm = (meta.soldMap = (meta.soldMap && typeof meta.soldMap === 'object') ? meta.soldMap : {});
+                        soldNames.forEach(n => { sm[n] = true; });
+                        await replaceAllShops(all);
+                    }
+                } catch (e) { console.warn('[ShopBlock] 售罄标记持久化失败:', e); }
+            }
 
             // 清账本入历史
             const timeText = new Date(payload.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -4287,6 +4309,7 @@
             return kind === 'dialog' ? '[对话]'
                 : kind === 'cart' ? '[购物车]'
                 : kind === 'add' ? '[上架]'
+                : kind === 'sale' ? '[特惠]'
                 : kind === 'buy' ? '[购买]'
                 : '[异常]';
         }
@@ -4303,6 +4326,100 @@
             const line = `${speaker}: "${text}"`;
             sessionDialogLog.push(line);
             logShopEvent('dialog', `${eventPrefix('dialog')} ${speaker}：「${text}」`, { speaker });
+        }
+
+        // 售罄商品的跨载入生命周期：读 $meta.soldMap 应用售罄态，再对每个售罄商品掷骰——
+        // 50% 补货（stackable 数量为块原始数量的 30%~100%，单件整件回归）并清除标记，50% 维持售罄
+        async function restockSoldItems() {
+            if (!shopState) return;
+            let soldMap = null;
+            try {
+                const all = await readAllShops();
+                const shop = all[shopState.shopName];
+                const meta = shop && shop['$meta'];
+                soldMap = (meta && meta.soldMap && typeof meta.soldMap === 'object') ? meta.soldMap : null;
+            } catch (e) { return; }
+            if (!soldMap) return;
+            let removed = false;
+            shopState.items.forEach(it => {
+                if (!soldMap[it.name]) return;
+                if (Math.random() < 0.5) {
+                    const orig = (it._raw && parseInt(it._raw['数量'], 10)) || 1;
+                    it.sold = false;
+                    if (it.isStackable) it.stock = Math.max(1, Math.round(orig * (0.3 + Math.random() * 0.7)));
+                    delete soldMap[it.name];
+                    removed = true;
+                } else {
+                    it.sold = true;
+                    if (it.isStackable) it.stock = 0;
+                }
+            });
+            if (removed) {
+                try {
+                    const all = await readAllShops();
+                    const shop = all[shopState.shopName];
+                    if (shop && shop['$meta']) {
+                        shop['$meta'].soldMap = soldMap;
+                        await replaceAllShops(all);
+                    }
+                } catch (e) { console.warn('[ShopBlock] 补货写回失败:', e); }
+            }
+        }
+
+        // 进店特惠（程序层）：每次「新进入」随机一件在售非私藏商品打 5 折。
+        // 「新进入」判定 = 当前楼层 id ≠ 店铺 $meta.lastDiscountFloor（同楼重渲染/swipe/重 boot 不重掷，
+        // 同楼恢复已掷特惠；同块跨楼回到本店由 pollFloorTick 补掷）。上轮特惠以 dealSpecial 标记还原，
+        // 不碰玩家砍价成果（dealPrice 无标记）。
+        async function enterDiscountRoll() {
+            if (!shopState) return;
+            const floorId = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
+            let lastFloor, discountItem, discountPrice;
+            try {
+                const all = await readAllShops();
+                const meta = all[shopState.shopName] && all[shopState.shopName]['$meta'];
+                lastFloor = meta ? meta.lastDiscountFloor : undefined;
+                discountItem = meta ? meta.discountItem : null;
+                discountPrice = meta ? meta.discountPrice : null;
+            } catch (e) { /* 无持久层：退化为内存态掷骰 */ }
+            // 同楼重进（重渲染/swipe/重 boot）：恢复已掷的特惠，不重掷
+            if (floorId != null && lastFloor === floorId) {
+                if (discountItem != null && discountPrice != null) {
+                    const it = shopState.items.find(i => i.name === discountItem && !i.sold);
+                    if (it) {
+                        it.dealPrice = discountPrice;
+                        it.dealBy = '今日特惠';
+                        it.dealSpecial = true;
+                        renderCabinet();
+                    }
+                }
+                return;
+            }
+            // 清上一轮特惠（只还原特惠价；玩家砍价的 dealPrice 无标记，不受影响）
+            shopState.items.forEach(it => {
+                if (it.dealSpecial) { delete it.dealPrice; delete it.dealBy; delete it.dealSpecial; }
+            });
+            const pool = shopState.items.filter(i => !i.sold && i.category !== '独家私藏');
+            if (!pool.length) return;
+            const pick = pool[Math.floor(Math.random() * pool.length)];
+            pick.dealPrice = Math.round(pick.price * 0.5 * 100) / 100;
+            pick.dealBy = '今日特惠';
+            pick.dealSpecial = true;
+            logShopEvent('sale', `今日特惠：${pick.name} 五折（$${pick.dealPrice.toFixed(2)}）`, { item: pick.name });
+            // 记录到店铺 $meta：楼层 + 特惠商品，供同楼恢复与跨楼「新进入」判定
+            if (floorId != null) {
+                try {
+                    const all = await readAllShops();
+                    const shop = all[shopState.shopName];
+                    if (shop) {
+                        const meta = (shop['$meta'] = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : {});
+                        meta.lastDiscountFloor = floorId;
+                        meta.discountItem = pick.name;
+                        meta.discountPrice = pick.dealPrice;
+                        await replaceAllShops(all);
+                    }
+                } catch (e) { console.warn('[ShopBlock] 特惠记录失败:', e); }
+            }
+            renderCabinet();
         }
 
         // 入口：接收正文文本（或手动粘贴），解析成功 → 建立商店会话并重渲染
@@ -4341,7 +4458,9 @@
             sessionDialogLog.length = 0;  // 新会话清空对话流水
             shopEventHistory.length = 0;  // 新会话清空购物记录事件
             stopFloorPolling();           // 块已落地 → 停楼层轮询（手动导入优先，防随后轮询覆盖）
+            await restockSoldItems();     // 售罄态跨载入掷骰（50% 补货 / 50% 维持，写回 $meta.soldMap）
             applyShopToUI();
+            await enterDiscountRoll();    // 进店特惠（楼层推进后的新进入随机一件五折）
             triggerEnterReaction();       // 进店反应（M4：LLM 失败回退内置文案）
             await syncPartyFromMms();     // 在场成员可能随块变化，重同步底栏（含 MMS 状态与现钞回显）
             return true;
@@ -5554,7 +5673,7 @@
                 ledgerTableBody.innerHTML = `
                     <tr>
                         <td colspan="5" style="text-align: center; color: #6d5747; padding: 20px;">
-                            暂无交易单据。在上方实木货架挑选军械并付款即可生成。
+                            暂无交易单据。在上方实木货架挑选商品并付款即可生成。
                         </td>
                     </tr>
                 `;
@@ -6115,6 +6234,7 @@
         let floorPollDeadline = 0;
         let floorPollBusy = false;
         let appliedFloorBlockText = null;  // 已应用块文本（防重复应用清空购物车/砍价会话态）
+        let lastShopFloorId = null;        // 已应用块的楼层（同块跨楼补掷进店特惠的门槛）
 
         function floorApiAvailable() {
             return (typeof getChatMessages === 'function' && typeof getCurrentMessageId === 'function')
@@ -6151,9 +6271,20 @@
                 }
                 if (!text) return false;
                 const block = extractShopBlock(text);
-                if (!block || block === appliedFloorBlockText) return false;
+                if (!block) return false;
+                if (block === appliedFloorBlockText) {
+                    // 同块跨楼（离开后回来，LLM 复述了同一块）：会话态保留不重载，
+                    // 但楼层推进 = 新进入 → 补掷进店特惠（enterDiscountRoll 内部同楼保护）
+                    const fid = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
+                    if (shopState && fid != null && fid !== lastShopFloorId) {
+                        lastShopFloorId = fid;
+                        enterDiscountRoll();
+                    }
+                    return false;
+                }
                 if (await onShopDataReceived(text)) {
                     appliedFloorBlockText = block;
+                    lastShopFloorId = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
                     setTempNotice(`已从楼层载入「${shopState.shopName}」（自动捕获，无需手动粘贴）。`, 4000);
                     return true;
                 }
