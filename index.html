@@ -2978,6 +2978,10 @@
             await writeAllShops(all);
             if (shopState && shopState.shopName === shopName) {
                 applyAffectionUi(shop['好感度'] - cur, shop['好感度'], { previous: cur, unlockDialogue: options.unlockDialogue });
+                // 好感跌入厌恶抵触（<=-20）：当场收回进店特惠（与涨价同阈值，演出一致）
+                if (shop['好感度'] <= -20 && clearShopSale()) {
+                    showTopToast('店主对你的厌恶已溢于言表，收回了今日特惠。', 4000);
+                }
             }
             return shop['好感度'];
         }
@@ -3113,7 +3117,7 @@
                     : `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主和在场队友。`,
                 narratorOff
                     ? `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~3 条，由店主独白；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时台词必须明确体现店主不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`
-                    : `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说，队友可插话；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时店主台词必须明确体现不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`,
+                    : `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说；玩家台词点名某队友（称呼/提问/委托）时，该队友必须在dialogue中插话回应，speaker用名单原名；未点名队友的普通回合以店主1~2条为宜，避免店主连珠炮独白。每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时店主台词必须明确体现不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`,
                 `## 二、世界观\n${worldview}`,
                 `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n说话风格：${tone}。` : ''),
                 `## 四、好感度\n当前店主对玩家的好感度：${affection}（范围-100~100）。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，-19~19冷淡戒备，-100~-20厌恶抵触（态度尖酸刻薄、商品价格上浮20%）。按当前分档（${attitude}）演绎，不得跳档。80以下视为初识，店主不知玩家姓名。`,
@@ -3196,7 +3200,15 @@
             }
             if (scene === 'sale') return `${base}\n\n[系统指令：${extra || ''}\n以${keeper}的口吻向在场玩家介绍这件特惠（结合最近剧情），1~2条dialogue${mateLine}。无玩家台词，省略affection。]`;
             if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度）${mateLine}，affection按玩家爽快程度判定。]`;
-            if (scene === 'chat') return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应${mateLine}，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。]`;
+            if (scene === 'chat') {
+                // 点名检测：玩家台词提到在场可说话队友 → 提醒 LLM 让该队友插话（缓解队友失声）
+                const roster = partyMembers.map(p => p.name).filter(n => n && n !== activeSpeaker.name);
+                const mentioned = roster.filter(n => (extra || '').includes(n));
+                const mentionLine = mentioned.length
+                    ? `玩家这句话点名了「${mentioned.join('、')}」：请让该队友在dialogue中插话回应一句（speaker用名单原名），不要全程只有店主说话。`
+                    : '';
+                return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应${mateLine}，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。${mentionLine}]`;
+            }
             if (scene === 'bargain') return `${base}\n\n[系统指令：${extra}]`;
             return base;
         }
@@ -4430,6 +4442,17 @@
             }
         }
 
+        // 撤销当前特惠（dealSpecial 标记的商品还原原价）：厌恶状态下不享受优惠
+        function clearShopSale() {
+            if (!shopState) return false;
+            let cleared = false;
+            shopState.items.forEach(it => {
+                if (it.dealSpecial) { delete it.dealPrice; delete it.dealBy; delete it.dealSpecial; cleared = true; }
+            });
+            if (cleared) renderCabinet();
+            return cleared;
+        }
+
         // 进店特惠（程序层）：每次「新进入」随机一件在售非私藏商品打 5 折。
         // 「新进入」判定 = 当前楼层 id ≠ 店铺 $meta.lastDiscountFloor（同楼重渲染/swipe/重 boot 不重掷，
         // 同楼恢复已掷特惠；同块跨楼回到本店由 pollFloorTick 补掷）。上轮特惠以 dealSpecial 标记还原，
@@ -4438,6 +4461,8 @@
         // （无迎宾时机，由 triggerSaleReaction 独立讲解）
         async function enterDiscountRoll(standalone) {
             if (!shopState) return;
+            // 厌恶抵触（好感<=-20，与涨价同阈值）：不享受特惠——已挂出的立即收回，也不新掷、不恢复
+            if (isPriceHiked()) { clearShopSale(); return; }
             const floorId = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
             let lastFloor, discountItem, discountPrice;
             try {

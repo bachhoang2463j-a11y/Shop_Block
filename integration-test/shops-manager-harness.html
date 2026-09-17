@@ -241,6 +241,19 @@ window.confirm = function () { return true; };
     shopEval('getCurrentMessageId = window.__hCmid;');
     assert(shopEval('window.__mockVars["$shops"]["铜铃杂货铺"].$meta.lastDiscountFloor') === 9, '跨楼新进入重掷并更新 lastDiscountFloor=9');
 
+    // 厌恶抵触（好感<=-20）：特惠当场收回，重载不再新掷，LLM 清单也不再标注
+    await shopEval('changeShopAffection("铜铃杂货铺", -60)');
+    assert(shopEval('window.__shopAffection <= -20') === true, '好感跌入厌恶区间（<=-20）');
+    assert(shopEval('currentSaleItem()') === null, '厌恶后特惠被当场收回');
+    assert(shopEval('buildSceneTrigger("chat", "测试").includes("今日特惠")') === false, '厌恶后 LLM 清单不再标注特惠');
+    shopWin().__hYamlF6 = YAML1;
+    await shopEval('onShopDataReceived(window.__hYamlF6)');
+    assert(shopEval('currentSaleItem()') === null, '厌恶下重载不再掷特惠');
+    // 点名检测：玩家台词提到非操控队友名 → chat 触发器注入提醒（activeSpeaker 自身排除）
+    assert(shopEval('buildSceneTrigger("chat", "弗兰克你怎么看").includes("点名了")') === true, '台词点名队友时触发器注入提醒');
+    assert(shopEval('buildSceneTrigger("chat", "弗兰克你怎么看").includes("「弗兰克」")') === true, '提醒内容含被点名的队友名');
+    assert(shopEval('buildSceneTrigger("chat", "随便看看").includes("点名了")') === false, '未点名时不注入提醒');
+
     const total = passCount + failCount;
     document.getElementById('summary').textContent = failCount === 0
         ? '✅ ' + passCount + '/' + total + ' 全绿'
