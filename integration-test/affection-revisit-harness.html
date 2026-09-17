@@ -841,7 +841,7 @@ async function runFlow() {
         const panelReady2 = await waitUntil(() => E('!!assignState && assignState.targets.length > 0'), 8000)
             && await waitUntil(() => E('document.querySelectorAll("#cartCabinet .cart-shelf-cell").length === playerState.cart.length'), 8000);
         if (!panelReady2) return '归属面板未就绪';
-        await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return x.textContent.indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
+        await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return (x.getAttribute("title")||"").indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
         await E('(function(){var c=document.querySelector("#cartCabinet .cart-shelf-cell"); if(c) c.click();})()');
         const assignedReady = await waitUntil(() => E('!!assignState && assignState.assigned.length === 1'), 3000);
         if (!assignedReady) return '点卡归属未生效';
@@ -919,7 +919,7 @@ async function runFlow() {
         && await waitUntil(() => E('document.querySelectorAll("#cartCabinet .cart-shelf-cell").length === playerState.cart.length'), 8000);
     let assignOK = false;
     if (panelReady) {
-        await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return x.textContent.indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
+        await E('(function(){var b=Array.prototype.slice.call(document.querySelectorAll("#assignTargets button")).filter(function(x){return (x.getAttribute("title")||"").indexOf("埃利奥特")!==-1;})[0]; if(b) b.click();})()');
         await E('(function(){var c=document.querySelector("#cartCabinet .cart-shelf-cell"); if(c) c.click();})()');
         assignOK = await waitUntil(() => E('!!assignState && assignState.assigned.length === 1'), 3000);
     }

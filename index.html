@@ -1403,19 +1403,21 @@
             color: #dfb06c;
         }
 
-        /* 结算分配栏：左商品柜 + 右分配对象（PC 左右 ≈3~4:1，≤640 上下堆叠） */
+        /* 结算分配栏：左商品柜 + 右分配对象（横屏宽弹窗，≤640 上下堆叠） */
+        .cart-detail-card { width: min(920px, 94vw) !important; }
+
         .cart-assign-grid {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 125px;
-            gap: 8px;
+            grid-template-columns: minmax(0, 1fr) 118px;
+            gap: 10px;
             align-items: start;
         }
 
         .cart-cabinet {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
-            max-height: 40vh;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            max-height: 44vh;
             overflow-y: auto;
             padding-right: 3px;
             scrollbar-gutter: stable;
@@ -1423,27 +1425,42 @@
 
         .cart-cabinet .shop-event-empty { grid-column: 1 / -1; }
 
+        /* 商品卡：与主界面货架格 .shelf-cell 同视觉语言（大图标居中/名称价格居中/角标） */
         .cart-shelf-cell {
             position: relative;
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            background: #1c130c;
-            border: 1px solid #382417;
-            border-radius: 6px;
-            padding: 8px;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 152px;
+            padding: 8px 6px 10px;
             cursor: pointer;
-            transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+            overflow: hidden;
+            border: none;
+            border-radius: 4px;
+            background: linear-gradient(180deg, #2b1d15 0%, #1a100a 100%);
+            box-shadow:
+                0 5px 12px rgba(0, 0, 0, 0.85),
+                inset 0 1px 0 rgba(255, 255, 255, 0.09),
+                inset 0 -2px 0 rgba(0, 0, 0, 0.7);
+            transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
         .cart-shelf-cell:hover {
-            transform: translateY(-2px);
-            border-color: var(--dd-gold);
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
-            z-index: 2;
+            transform: translateY(-4px);
+            background: linear-gradient(180deg, #38251b 0%, #22140d 100%);
+            box-shadow:
+                0 10px 22px rgba(0, 0, 0, 0.95),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15),
+                0 0 15px rgba(223, 176, 108, 0.25);
+            z-index: 5;
         }
 
-        .cart-shelf-cell.assigned { border-color: #4e6138; background: rgba(38, 52, 28, 0.25); }
+        .cart-shelf-cell.assigned {
+            outline: 1px solid rgba(143, 181, 115, 0.55);
+            box-shadow: 0 5px 12px rgba(0, 0, 0, 0.85), 0 0 12px rgba(143, 181, 115, 0.28),
+                inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -2px 0 rgba(0, 0, 0, 0.7);
+        }
 
         .cart-shelf-cell .table-del-btn {
             position: absolute;
@@ -1454,85 +1471,113 @@
             padding: 2px;
         }
 
-        .cart-cell-head { display: flex; align-items: center; gap: 6px; padding-right: 14px; min-width: 0; }
-        .cart-cell-icon { font-size: 20px; flex-shrink: 0; }
-        .cart-cell-name {
-            font-weight: bold;
-            color: #e5d7c3;
-            font-size: 12px;
+        .cart-cell-owner {
+            position: absolute;
+            top: 6px;
+            left: 7px;
+            right: 22px;
+            font-size: 10px;
+            color: #6d5747;
+            text-align: left;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            pointer-events: none;
         }
-        .cart-cell-price { font-size: 11px; color: #dfb06c; }
+        .cart-shelf-cell.assigned .cart-cell-owner { color: #9dc381; }
+
+        .cart-cell-icon {
+            font-size: 34px;
+            line-height: 1;
+            margin-top: 10px;
+            filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.85));
+            transition: transform 0.2s ease;
+        }
+        .cart-shelf-cell:hover .cart-cell-icon { transform: scale(1.12) translateY(-2px); }
+
+        .cart-cell-name {
+            font-family: var(--font-title);
+            font-size: 11px;
+            font-weight: 600;
+            color: #cbbaa5;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 95%;
+            letter-spacing: 0.5px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+        }
+
+        .cart-shelf-cell .item-qty-stepper { align-self: center; }
+
+        .cart-cell-price { font-size: 10px; color: #9f836d; text-align: center; }
         .cart-price-note { font-size: 10px; }
         .cart-price-note.deal { color: #8fb573; }
         .cart-price-note.hiked { color: #c0605a; }
-        .cart-shelf-cell .item-qty-stepper { align-self: flex-start; }
-        .cart-cell-subtotal { font-family: var(--font-title); font-weight: bold; color: #dfb06c; font-size: 13px; }
-        .cart-cell-owner {
-            font-size: 10px;
-            color: #6d5747;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+
+        .cart-cell-subtotal {
+            font-family: var(--font-title);
+            font-size: 15px;
+            font-weight: 700;
+            color: #dfb06c;
+            letter-spacing: 0.5px;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
         }
-        .cart-shelf-cell.assigned .cart-cell-owner { color: #8fb573; }
 
         .cart-targets-col {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            max-height: 40vh;
+            gap: 8px;
+            max-height: 44vh;
             overflow-y: auto;
             padding-right: 2px;
             scrollbar-gutter: stable;
         }
 
+        /* 分配对象卡：只放头像，名称悬浮 title 展示 */
         .cart-target-card {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
-            background: #20150e;
-            border: 1px solid #382417;
-            border-radius: 6px;
-            padding: 7px 4px 6px;
+            justify-content: center;
+            padding: 8px 4px;
             cursor: pointer;
-            transition: border-color 0.15s, box-shadow 0.15s;
+            border: none;
+            border-radius: 4px;
+            background: linear-gradient(180deg, #2b1d15 0%, #1a100a 100%);
+            box-shadow:
+                0 5px 12px rgba(0, 0, 0, 0.85),
+                inset 0 1px 0 rgba(255, 255, 255, 0.09),
+                inset 0 -2px 0 rgba(0, 0, 0, 0.7);
+            transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .cart-target-card:hover {
+            transform: translateY(-2px);
+            background: linear-gradient(180deg, #38251b 0%, #22140d 100%);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.95), 0 0 12px rgba(223, 176, 108, 0.2);
         }
 
         .cart-target-card img {
-            width: 40px;
-            height: 40px;
+            width: 56px;
+            height: 56px;
             border-radius: 50%;
             object-fit: cover;
             object-position: center top;
+            filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.8));
         }
 
-        .cart-target-fallback { font-size: 26px; line-height: 40px; }
-
-        .cart-target-name {
-            font-size: 10px;
-            color: #d8c7b5;
-            max-width: 100%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .cart-target-card:hover { border-color: #8c7360; }
+        .cart-target-fallback { font-size: 36px; line-height: 56px; }
 
         .cart-target-card.active {
-            border-color: var(--dd-gold);
-            box-shadow: 0 0 8px rgba(223, 176, 108, 0.35);
-            background: #2a1c10;
+            outline: 1px solid rgba(223, 176, 108, 0.75);
+            background: linear-gradient(180deg, #3a281c 0%, #241408 100%);
+            box-shadow: 0 0 14px rgba(223, 176, 108, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
         }
 
-        .cart-target-card.active .cart-target-name { color: var(--dd-gold); }
-
         @media (max-width: 640px) {
-            /* 竖屏：分配对象变顶部横向滑动条，商品柜保持 2 列在下 */
+            /* 竖屏：分配对象变顶部横向滑动条，商品柜保持多列在下 */
             .cart-assign-grid { display: flex; flex-direction: column; }
             .cart-targets-col {
                 order: -1;
@@ -1542,8 +1587,8 @@
                 overflow-y: hidden;
                 padding-bottom: 4px;
             }
-            .cart-target-card { flex-shrink: 0; min-width: 64px; }
-            .cart-cabinet { max-height: 46vh; }
+            .cart-target-card { flex-shrink: 0; min-width: 68px; }
+            .cart-cabinet { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 46vh; }
         }
 
         .item-qty-stepper {
@@ -2302,7 +2347,7 @@
          弹窗 2：购物车完整详情面板 (点击【展开详情面板】弹出)
     ==================================================== -->
     <div class="inspect-modal-backdrop" id="cartDetailModal">
-        <div class="parchment-card" style="width: 580px;">
+        <div class="parchment-card cart-detail-card">
             <div class="modal-header">
                 <div class="modal-title-group">
                     <div style="font-size: 32px;">🛒</div>
@@ -3925,7 +3970,8 @@
             renderCartDetailTable();
         }
 
-        // 右栏分配对象卡：点选=选中归属对象（再点取消）；头像统一走 resolveMemberAvatar（载具无头像回退 🚙）
+        // 右栏分配对象卡：只放头像（名称悬浮 title 展示）；点选=选中归属对象（再点取消）；
+        // 头像统一走 resolveMemberAvatar（载具无头像回退 🚙）
         function renderAssignPanel() {
             const targetsBox = document.getElementById('assignTargets');
             if (!assignState || !targetsBox) return;
@@ -3937,10 +3983,11 @@
                 const card = document.createElement('button');
                 card.type = 'button';
                 card.className = 'cart-target-card' + (active ? ' active' : '');
+                card.title = t.name;
                 const visual = tAvatar
                     ? `<img src="${escapeHtml(tAvatar)}" alt="">`
                     : `<span class="cart-target-fallback">${t.kind === 'vehicle' ? '🚙' : '🧑'}</span>`;
-                card.innerHTML = `${visual}<span class="cart-target-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>`;
+                card.innerHTML = visual;
                 card.addEventListener('click', () => {
                     sound.playWoodClick();
                     assignState.activeTarget = active ? null : { name: t.name, kind: t.kind };
@@ -5274,18 +5321,16 @@
                 card.title = '点击分配给右侧选中对象；再点撤销';
                 card.innerHTML = `
                     <button class="table-del-btn cart-cell-del" title="移出清单">&times;</button>
-                    <div class="cart-cell-head">
-                        <span class="cart-cell-icon">${entry.item.emoji}</span>
-                        <span class="cart-cell-name" title="${escapeHtml(entry.item.name)}">${escapeHtml(entry.item.name)}</span>
-                    </div>
-                    <div class="cart-cell-price">$${effPrice(entry.item).toFixed(2)}${priceNote}</div>
+                    <div class="cart-cell-owner">${assigned ? `● ${assigned.kind === 'vehicle' ? '🚙' : '🧑'} ${escapeHtml(assigned.owner)}` : '○ 未分配'}</div>
+                    <div class="cart-cell-icon">${entry.item.emoji}</div>
+                    <div class="cart-cell-name" title="${escapeHtml(entry.item.name)}">${escapeHtml(entry.item.name)}</div>
                     <div class="item-qty-stepper">
                         <button class="stepper-btn btn-minus">-</button>
                         <span class="stepper-val">${entry.quantity}</span>
                         <button class="stepper-btn btn-plus">+</button>
                     </div>
+                    <div class="cart-cell-price">$${effPrice(entry.item).toFixed(2)}${priceNote}</div>
                     <div class="cart-cell-subtotal">$${itemTotal.toFixed(2)}</div>
-                    <div class="cart-cell-owner">${assigned ? `● ${assigned.kind === 'vehicle' ? '🚙' : '🧑'} ${escapeHtml(assigned.owner)}` : '○ 未分配'}</div>
                 `;
 
                 // 点卡片 = 分配/撤销/改派（数量与移除按钮内部已 stopPropagation）
