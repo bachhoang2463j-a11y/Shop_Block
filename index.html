@@ -545,11 +545,6 @@
             z-index: 5;
         }
 
-        .shelf-cell.in-cart {
-            outline: 1px solid rgba(223, 176, 108, 0.6);
-            box-shadow: 0 0 12px rgba(223, 176, 108, 0.35);
-        }
-
         /* 空置托盘样式 (保证 4x5 柜体几何恒定) */
         .shelf-cell.shelf-cell-empty {
             opacity: 0.35;
@@ -832,7 +827,7 @@
         }
 
         .cart-mini-chip:hover {
-            border-color: var(--dd-gold);
+            border-color: #c0605a;
             transform: translateY(-2px);
         }
 
@@ -2246,7 +2241,7 @@
                         <span class="cart-badge" id="cartCountBadge">0 件商品</span>
                     </div>
                     <div class="cart-actions">
-                        <span style="font-size: 11px; color: #8c7360;">点击图标或展开按钮查看明细</span>
+                        <span style="font-size: 11px; color: #8c7360;">点击图标放回货架 · 点📜查看明细与结算</span>
                     </div>
                 </div>
 
@@ -4940,6 +4935,8 @@
             let all = activeItems();
             // 私藏未解锁：整类隐藏（不可见不可买）
             if (!exclusiveUnlocked()) all = all.filter(i => i.category !== '独家私藏');
+            // 已入清单的商品从货架取下（移除路径恢复：结算弹窗×/减到0/清空/底栏chip放回）
+            all = all.filter(i => !playerState.cart.some(c => c.id === i.id));
             // demo 数据（无 shopState）：按 tier 字段过滤；解析数据：按 category 过滤
             const list = currentCategory === 'all' ? all : all.filter(i =>
                 shopState ? i.category === currentCategory : i.tier === currentCategory
@@ -4950,10 +4947,6 @@
                 cell.dataset.id = item.id;
                 cell.dataset.tier = item.tier;
                 if (item.sold) cell.classList.add('sold');
-
-                // 检查是否已在购物车中
-                const inCart = playerState.cart.some(c => c.id === item.id);
-                if (inCart) cell.classList.add('in-cart');
 
                 // 数量标识
                 const stockBadge = item.isStackable ? `<span class="shelf-stock-badge">库存:${item.stock}${item.unit}</span>` : '';
@@ -5255,13 +5248,19 @@
                 playerState.cart.forEach(entry => {
                     const chip = document.createElement('div');
                     chip.className = 'cart-mini-chip';
-                    chip.title = `${entry.item.name} (${entry.quantity} ${entry.item.unit || '件'}) - 点击展开详情`;
+                    chip.title = `${entry.item.name} (${entry.quantity} ${entry.item.unit || '件'}) - 点击放回货架`;
                     chip.innerHTML = `
                         <span class="mini-emoji">${entry.item.emoji}</span>
                         <span class="mini-qty">×${entry.quantity}</span>
                     `;
+                    // 点 chip = 放回货架（与结算弹窗 × 同构的移除链路）
                     chip.addEventListener('click', () => {
-                        openCartDetailModal();
+                        playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
+                        if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
+                        logShopEvent('cart', `[购物车] 放回货架 ${entry.item.name}`);
+                        sound.playWoodClick();
+                        updateCartUI();
+                        renderCabinet();
                     });
                     cartMiniScroller.appendChild(chip);
                 });
