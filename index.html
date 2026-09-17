@@ -1203,6 +1203,7 @@
         .shop-goods-editor { display: flex; flex-direction: column; gap: 7px; max-height: 300px; overflow-y: auto; padding-right: 3px; scrollbar-gutter: stable; }
         .shop-good-edit { background: rgba(12, 8, 6, 0.62); border: 1px solid #2d1c12; border-radius: 4px; padding: 8px; }
         .shop-good-grid { display: grid; grid-template-columns: minmax(110px, 1.5fr) minmax(80px, 1fr) 90px 72px 70px auto; gap: 6px; align-items: end; }
+        .shop-good-sold-badge { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid #7a3d35; border-radius: 3px; font-size: 10px; color: #c0605a; background: rgba(122, 61, 53, 0.15); vertical-align: middle; }
         .shop-good-grid label { min-width: 0; display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: #7f6a59; }
         .shop-good-extra { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
         .shop-good-save { padding: 5px 9px; white-space: nowrap; }
@@ -3168,13 +3169,16 @@
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
             const mateLine = narratorOff ? '' : '，队友可插话';
             const present = shopState ? shopState.presentMembers.join('、') : partyMembers.map(p => p.name).join('、');
-            // 特惠商品带原价/折后价标注：所有场景（对话/砍价/结算/迎宾）店主都知道今天的特惠
+            // 特惠/售罄/库存标注：所有场景（对话/砍价/结算/迎宾）店主都知道特惠、售罄与剩余库存
             const goods = shopState
-                ? shopState.items.filter(i => i.category !== '独家私藏').map(i =>
-                    (i.dealSpecial && i.dealPrice != null)
-                        ? `${i.name}(原价${i.priceText}，今日特惠半价$${i.dealPrice.toFixed(2)})`
-                        : `${i.name}(${i.priceText})`
-                ).join('、') || '（暂无）'
+                ? shopState.items.filter(i => i.category !== '独家私藏').map(i => {
+                    if (i.sold) return `${i.name}(${i.priceText}，已售罄)`;
+                    const stockNote = i.isStackable ? `，剩${i.stock}${i.unit}` : '';
+                    if (i.dealSpecial && i.dealPrice != null) {
+                        return `${i.name}(原价${i.priceText}，今日特惠半价$${i.dealPrice.toFixed(2)}${stockNote})`;
+                    }
+                    return `${i.name}(${i.priceText}${stockNote})`;
+                }).join('、') || '（暂无）'
                 : '（货架陈列中的商品）';
             const base = `【在场成员】${present}\n【店内商品】${goods}`;
             if (scene === 'enter') {
@@ -6003,14 +6007,18 @@
 
         function renderPersistedGoodsEditor(shop) {
             const rows = [];
+            const soldMap = (shop && shop['$meta'] && shop['$meta'].soldMap && typeof shop['$meta'].soldMap === 'object') ? shop['$meta'].soldMap : null;
             const push = (cat, entry, index) => {
                 const g = (entry && entry['商品']) ? entry['商品'] : entry;
                 if (!g) return;
                 const count = g['数量'] != null ? g['数量'] : 1;
+                // 售罄标注：soldMap 键为剥 emoji 后的商品名（与结算落地/补货掷骰同一键空间）
+                const cleanName = getCleanNameAndEmoji(String(g['名字'] || '')).name;
+                const soldBadge = (soldMap && soldMap[cleanName]) ? '<span class="shop-good-sold-badge">已售罄</span>' : '';
                 rows.push(`
                     <div class="shop-good-edit" data-category="${escapeHtml(cat)}" data-index="${index}">
                         <div class="shop-good-grid">
-                            <label>商品名<input type="text" data-field="name" value="${escapeHtml(g['名字'] || '')}"></label>
+                            <label>商品名${soldBadge}<input type="text" data-field="name" value="${escapeHtml(g['名字'] || '')}"></label>
                             <label>类目<input type="text" data-field="category" value="${escapeHtml(cat)}"></label>
                             <label>价格<input type="text" data-field="price" value="${escapeHtml(g['价格'] || '')}"></label>
                             <label>数量<input type="number" min="1" step="1" data-field="count" value="${escapeHtml(count)}"></label>
@@ -6057,6 +6065,7 @@
                 const meta = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : {};
                 const aff = shop['好感度'] != null ? shop['好感度'] : '—';
                 const goodsCount = countPersistedGoods(shop);
+                const soldCount = (meta.soldMap && typeof meta.soldMap === 'object') ? Object.keys(meta.soldMap).length : 0;
                 const acc = document.createElement('details');
                 acc.className = 'shop-acc';
                 acc.dataset.shop = name;
@@ -6064,7 +6073,7 @@
                     <summary>
                         <span>🏪 ${escapeHtml(name)} · ${escapeHtml(shop['店主'] || '店主')}（${escapeHtml(shop['立绘'] || '占卜商妇')}）</span>
                         <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                            <span class="shop-acc-label">好感 ${escapeHtml(aff)} · ${goodsCount} 件${meta.personaOverride ? ' · 人设已锁定' : ''}</span>
+                            <span class="shop-acc-label">好感 ${escapeHtml(aff)} · ${goodsCount} 件${soldCount ? ` · ${soldCount} 件售罄` : ''}${meta.personaOverride ? ' · 人设已锁定' : ''}</span>
                             <span class="shop-acc-arrow">▾</span>
                         </span>
                     </summary>

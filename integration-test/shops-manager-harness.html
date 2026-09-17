@@ -196,6 +196,12 @@ window.confirm = function () { return true; };
     assert(soldOk === true, '构造结算链路成功（买空精炼枪油）');
     assert(await waitUntil(() => shopEval('(function(){var s=window.__mockVars["$shops"]["铜铃杂货铺"];return !!(s && s.$meta && s.$meta.soldMap && s.$meta.soldMap["精炼枪油"]);})()')), '售罄标记持久化到 $meta.soldMap');
     assert(shopEval('shopState.items.find(i => i.name === "精炼枪油").sold') === true, '结算后商品 sold=true');
+    // AI 感知：售罄态下 LLM 商品清单带售罄标注
+    assert(shopEval('buildSceneTrigger("chat", "测试").includes("已售罄")') === true, 'LLM 商品清单标注售罄（AI 可感知）');
+    // 一览持久化标注：summary 售罄计数 + 商品行徽标
+    await shopEval('renderShopsList()');
+    assert(await waitUntil(() => shopEval('(function(){var acc=document.querySelector(\'.shop-acc[data-shop="铜铃杂货铺"]\');return acc ? acc.textContent.indexOf("件售罄") >= 0 : false;})()')), '一览 summary 标注售罄件数');
+    assert(shopEval('(function(){var acc=document.querySelector(\'.shop-acc[data-shop="铜铃杂货铺"]\');return acc ? acc.querySelector(".shop-good-sold-badge") != null : false;})()') === true, '一览商品行带已售罄徽标');
 
     // stub 随机 0.9：≥0.5 → 维持售罄（soldMap 标记保留）
     shopEval('window.__hMr = Math.random; Math.random = function(){ return 0.9; };');
@@ -214,6 +220,10 @@ window.confirm = function () { return true; };
     assert(rk.sold === false, '掷骰 0.4 → 补货 sold=false');
     assert(rk.stock === 3, '补货数量 = round(5×0.58) = 3（实际 ' + rk.stock + '）');
     assert(shopEval('(function(){var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return !m.soldMap || !m.soldMap["精炼枪油"];})()') === true, '补货后 $meta.soldMap 标记清除');
+    // AI 感知：补货后清单不再标售罄，且带剩余库存
+    const trigAfterRestock = shopEval('buildSceneTrigger("chat", "测试")');
+    assert(trigAfterRestock.includes('已售罄') === false, '补货后 LLM 清单不再标注售罄');
+    assert(trigAfterRestock.includes('剩3罐') === true, 'LLM 清单带剩余库存标注（剩3罐）');
 
     // 进店特惠：楼层 7 首掷 → 恰好一件非私藏在售商品半价
     const d1 = shopEval('(function(){var sp=shopState.items.filter(function(i){return i.dealSpecial;});return {n: sp.length, half: sp.every(function(i){return i.dealPrice === Math.round(i.price*0.5*100)/100;})};})()');
