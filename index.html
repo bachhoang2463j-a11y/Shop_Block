@@ -4067,6 +4067,9 @@
             const sync = chatVars['$shop_sync'];
             if (sync && sync.lastId === dealId) return false;
 
+            // 校验全过 → 立即收起弹窗回到主界面：写回与店主购买回应都在主界面继续（对话气泡不被弹窗遮挡）
+            closeCartDetailModal();
+
             // purchases 明细（SPEC 载荷契约）
             const purchases = playerState.cart.map(e => {
                 const a = assignState.assigned.find(x => x.entryId === e.id);
@@ -4131,6 +4134,19 @@
                 setTempNotice('未检测到酒馆输入框：完整记录已复制到剪贴板（或控制台），请手动粘贴发送。', 6000);
             }
 
+            // 售罄落地（会话内存态）：stackable 扣库存（归零盖 SOLD），单件买后即售罄。
+            // 结算清空购物车后，商品不再因「在购物车里」被货架取下——不显式售罄就会原地回归货架
+            purchases.forEach(p => {
+                const it = activeItems().find(i => i.name === p.name);
+                if (!it) return;
+                if (it.isStackable && Number.isFinite(it.stock)) {
+                    it.stock = Math.max(0, it.stock - p.count);
+                    if (it.stock <= 0) it.sold = true;
+                } else {
+                    it.sold = true;
+                }
+            });
+
             // 清账本入历史
             const timeText = new Date(payload.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
             playerState.cart.forEach((e, index) => {
@@ -4147,7 +4163,6 @@
             logShopEvent('buy', `[购买] 支付 $${total.toFixed(2)}：${purchases.map(p => `${p.name}×${p.count}→${p.owner}`).join('、')}`);
             playerState.cart = [];
             assignState = null;
-            closeCartDetailModal();
             // 现钞栏回显：结算已写回 stat_data → 店内金额与状态栏即时一致（写入失败保持原值）
             if (written && ctx && ctx.cash != null) playerState.cash = ctx.cash - total;
             updateUI();

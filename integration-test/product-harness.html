@@ -127,6 +127,45 @@ window.confirm = function () { return true; };
     })()`);
     assert(popVisible, '商品介绍气泡弹出（点击链路完整）');
 
+    log('== 4. 结算收起弹窗 + 售罄落地 ==');
+    const c4 = await shopEval(`(async function () {
+        const out = {};
+        playerState.cart = [];   // 清掉第 3 组的入车，保证干净基线
+        const gun = shopInventory.find(i => !i.isStackable);
+        const ammo = shopInventory.find(i => i.isStackable);
+        out.ammoStockBefore = ammo.stock;
+        addDirectToCart(gun, 1);
+        addDirectToCart(ammo, 2);
+        openCartDetailModal();   // 购物车非空 → openAssignPanel 建立 assignState
+        await new Promise(r => setTimeout(r, 200));   // openAssignPanel 异步（内部 await loadMmsContext）
+        assignState.activeTarget = { name: '测试买家', kind: 'char' };
+        assignState.assigned = [
+            { entryId: gun.id, owner: '测试买家', kind: 'char' },
+            { entryId: ammo.id, owner: '测试买家', kind: 'char' }
+        ];
+        out.modalOpenBefore = document.getElementById('cartDetailModal').classList.contains('show');
+        out.ok = await performCheckoutCart();
+        await new Promise(r => setTimeout(r, 500));
+        out.modalOpenAfter = document.getElementById('cartDetailModal').classList.contains('show');
+        out.gunSold = gun.sold === true;
+        out.ammoStockAfter = ammo.stock;
+        out.ammoSold = ammo.sold === true;
+        out.cartLen = playerState.cart.length;
+        const soldCells = [...document.querySelectorAll('#woodenCabinet .shelf-cell.sold')];
+        out.soldStampRendered = soldCells.length >= 1;
+        if (soldCells.length) soldCells[0].click();
+        out.cartLenAfterSoldClick = playerState.cart.length;
+        return out;
+    })()`);
+    assert(c4.ok === true, '构造归属后结算成功（performCheckoutCart=true）');
+    assert(c4.modalOpenBefore === true && c4.modalOpenAfter === false, '结算确认立即收起弹窗（' + c4.modalOpenBefore + '→' + c4.modalOpenAfter + '）');
+    assert(c4.cartLen === 0, '结算后购物车清空（cart=' + c4.cartLen + '）');
+    assert(c4.gunSold === true, '单件商品买后售罄（sold=true）');
+    assert(c4.ammoStockBefore - c4.ammoStockAfter === 2, 'stackable 扣库存 ' + c4.ammoStockBefore + '→' + c4.ammoStockAfter + '（-2）');
+    assert(c4.ammoSold === false, '未售罄的 stackable 继续在售（sold=false）');
+    assert(c4.soldStampRendered === true, 'SOLD 印章渲染到货架');
+    assert(c4.cartLenAfterSoldClick === 0, '售罄格点击拦截（不重复入车，cart=' + c4.cartLenAfterSoldClick + '）');
+
     const total = passCount + failCount;
     document.getElementById('summary').textContent = failCount === 0
         ? '✅ ' + passCount + '/' + total + ' 全绿'
