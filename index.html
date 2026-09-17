@@ -3168,8 +3168,13 @@
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
             const mateLine = narratorOff ? '' : '，队友可插话';
             const present = shopState ? shopState.presentMembers.join('、') : partyMembers.map(p => p.name).join('、');
+            // 特惠商品带原价/折后价标注：所有场景（对话/砍价/结算/迎宾）店主都知道今天的特惠
             const goods = shopState
-                ? shopState.items.filter(i => i.category !== '独家私藏').map(i => `${i.name}(${i.priceText})`).join('、') || '（暂无）'
+                ? shopState.items.filter(i => i.category !== '独家私藏').map(i =>
+                    (i.dealSpecial && i.dealPrice != null)
+                        ? `${i.name}(原价${i.priceText}，今日特惠半价$${i.dealPrice.toFixed(2)})`
+                        : `${i.name}(${i.priceText})`
+                ).join('、') || '（暂无）'
                 : '（货架陈列中的商品）';
             const base = `【在场成员】${present}\n【店内商品】${goods}`;
             if (scene === 'enter') {
@@ -3179,8 +3184,13 @@
                     ? '这是店主与这批客人的初次会面（或交情尚浅），不要把他们当熟客或老主顾，以“这位客人”相称。'
                     : (aff < 0 ? '店主对这批客人心怀反感或积怨（好感为负），冷言以对。' : '店主与这批小队已有旧交情（好感度见 system），可按熟客口吻演绎。');
                 const welcome = `逐一点名欢迎在场玩家角色（${present}），每人一句招呼，热情而不谄媚。`;
-                return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue${mateLine}。无玩家台词，省略affection。${familiarity}${welcome}]`;
+                const sale = currentSaleItem();
+                const saleLine = sale
+                    ? `店主今日挂出了特惠：${sale.name} 半价（$${sale.dealPrice.toFixed(2)}）。迎宾时自然提一句这件特惠，并按角色给个随口的理由（清库存、进错了货、心情好、旧账清仓之类），不要像念广告词。`
+                    : '';
+                return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue${mateLine}。无玩家台词，省略affection。${familiarity}${welcome}${saleLine}]`;
             }
+            if (scene === 'sale') return `${base}\n\n[系统指令：${extra || ''}\n以${keeper}的口吻向在场玩家介绍这件特惠（结合最近剧情），1~2条dialogue${mateLine}。无玩家台词，省略affection。]`;
             if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度）${mateLine}，affection按玩家爽快程度判定。]`;
             if (scene === 'chat') return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应${mateLine}，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。]`;
             if (scene === 'bargain') return `${base}\n\n[系统指令：${extra}]`;
@@ -3459,9 +3469,11 @@
         async function triggerEnterReaction() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             logShopEvent('dialog', `[对话] ${keeper}抬起头，打量着刚进店的小队。`);
+            const sale = currentSaleItem();
             // 开场问候开关：关闭则零 token 消耗，只显示内置迎宾
             if (llmConfig.greetEnabled === false) {
                 showKeeperDialogue(keeper, '欢迎光临。看看有什么合用的，尽管开口。', true);
+                if (sale) announceSaleFallback(sale); // 零 token 特惠兜底讲解
                 return;
             }
             let result = null;
@@ -3477,6 +3489,7 @@
             } else {
                 // 内置文案回退
                 showKeeperDialogue(keeper, '欢迎光临。看看有什么合用的，尽管开口。', true);
+                if (sale) announceSaleFallback(sale);
             }
         }
 
@@ -3496,6 +3509,53 @@
                 await applyLLMResult(result, { scene: 'buy' });
             } else {
                 showKeeperDialogue(keeper, '（ Built-in 成交词 ）货款两讫，欢迎下次再来。', true);
+            }
+        }
+
+        // 当前特惠商品（程序层进店五折；恢复/讲解/提示词共用一个取数点）
+        function currentSaleItem() {
+            return (shopState && shopState.items.find(i => i.dealSpecial && i.dealPrice != null && !i.sold)) || null;
+        }
+
+        // 特惠兜底台词（迎宾被关闭/LLM 失败时保底）：通用模板池，不绑任何特定世界观
+        const SALE_FALLBACK = [
+            (n, p) => `今日特惠：${n} 只卖 $${p}。压在手里太久的东西，趁早出手才是正经生意。`,
+            (n, p) => `看上那件 ${n} 了吗？今天半价，$${p}——清货架的规矩，先到先得。`,
+            (n, p) => `${n} 打了对折，$${p}。别用那种眼神看我，只是想让老面孔们得点实惠。`
+        ];
+        function announceSaleFallback(sale) {
+            if (!sale) return;
+            const keeper = shopState ? shopState.keeper : '店主';
+            const token = shopGenerationToken;
+            const tpl = SALE_FALLBACK[Math.floor(Math.random() * SALE_FALLBACK.length)];
+            const text = tpl(sale.name, sale.dealPrice.toFixed(2));
+            // 迎宾台词先落（气泡约3.5s），特惠台词随后接上，避免两泡重叠
+            setTimeout(() => {
+                if (token !== shopGenerationToken) return; // 期间换店则作废
+                logSessionDialog(keeper, text);
+                showKeeperDialogue(keeper, text, true);
+            }, 3600);
+        }
+
+        // 独立特惠讲解（同块跨楼补掷等无迎宾时机的场景）：LLM 失败回退内置台词
+        async function triggerSaleReaction(item) {
+            if (!item) return;
+            const keeper = shopState ? shopState.keeper : '店主';
+            const token = shopGenerationToken; // 请求期间换店则废弃本轮回复
+            let result = null;
+            if (llmConfig.apiKey) {
+                for (let attempt = 0; attempt < 2 && !result; attempt++) {
+                    try {
+                        result = await callShopLLM('sale',
+                            `店主刚挂出今日特惠：${item.name}，原价${item.priceText}，现在半价 $${item.dealPrice.toFixed(2)}。用一个符合角色与世界观的随口理由介绍它（清库存、进错了货、心情好、旧账清仓等）。`);
+                    } catch (e) { console.warn(`[ShopBlock] 特惠讲解 LLM 第${attempt + 1}次失败:`, e.message); }
+                }
+            }
+            if (token !== shopGenerationToken) return;
+            if (hasLlmPayload(result)) {
+                await applyLLMResult(result, { scene: 'sale', allowAffection: false });
+            } else {
+                announceSaleFallback(item);
             }
         }
 
@@ -4370,7 +4430,9 @@
         // 「新进入」判定 = 当前楼层 id ≠ 店铺 $meta.lastDiscountFloor（同楼重渲染/swipe/重 boot 不重掷，
         // 同楼恢复已掷特惠；同块跨楼回到本店由 pollFloorTick 补掷）。上轮特惠以 dealSpecial 标记还原，
         // 不碰玩家砍价成果（dealPrice 无标记）。
-        async function enterDiscountRoll() {
+        // standalone：独立讲解开关——载入流程传空（特惠由迎宾 prompt 带出）；同块跨楼补掷传 true
+        // （无迎宾时机，由 triggerSaleReaction 独立讲解）
+        async function enterDiscountRoll(standalone) {
             if (!shopState) return;
             const floorId = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
             let lastFloor, discountItem, discountPrice;
@@ -4405,6 +4467,7 @@
             pick.dealBy = '今日特惠';
             pick.dealSpecial = true;
             logShopEvent('sale', `今日特惠：${pick.name} 五折（$${pick.dealPrice.toFixed(2)}）`, { item: pick.name });
+            if (standalone) triggerSaleReaction(pick); // 无迎宾时机 → 独立讲解（LLM 优先，内置兜底）
             // 记录到店铺 $meta：楼层 + 特惠商品，供同楼恢复与跨楼「新进入」判定
             if (floorId != null) {
                 try {
@@ -6274,11 +6337,12 @@
                 if (!block) return false;
                 if (block === appliedFloorBlockText) {
                     // 同块跨楼（离开后回来，LLM 复述了同一块）：会话态保留不重载，
-                    // 但楼层推进 = 新进入 → 补掷进店特惠（enterDiscountRoll 内部同楼保护）
+                    // 但楼层推进 = 新进入 → 补掷进店特惠（enterDiscountRoll 内部同楼保护；
+                    // 此路径无迎宾 → standalone 独立讲解）
                     const fid = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
                     if (shopState && fid != null && fid !== lastShopFloorId) {
                         lastShopFloorId = fid;
-                        enterDiscountRoll();
+                        enterDiscountRoll(true);
                     }
                     return false;
                 }
