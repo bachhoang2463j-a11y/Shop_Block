@@ -262,10 +262,11 @@ async function runFlow() {
     let assignErr = null;
     try { await shopEval('openAssignPanel()'); } catch (e) { assignErr = String(e && e.message); }
     assert(assignErr === null && shopEval('!!assignState') === true, '空底栏下归属面板不崩（assignState 建立，err=' + assignErr + '）');
-    try { await shopEval('checkoutCart()'); } catch (e) { /* 未分配 → alert 后 return */ }
+    try { await shopEval('checkoutCart()'); } catch (e) { /* 未分配 → toast 后 return */ }
     await sleep(200);
-    const alerts = shopEval('JSON.stringify(window.__alerts)');
-    assert(String(alerts).includes('不匹配'), '未分配结算提示带根因（alerts=' + alerts + '）');
+    // 8a81229 起结算提示由 alert 改为顶部 toast（showTopToast → #topToast），断言随行为更新
+    const toastText = shopEval("document.getElementById('topToast') ? document.getElementById('topToast').textContent : ''");
+    assert(String(toastText).includes('不匹配'), '未分配结算提示带根因（toast=' + toastText + '）');
 
     // ============ D. 无酒馆 API：零副作用 ============
     log('== D. 无 TavernHelper API（纯 IAB / 静态打开）：零副作用 ==', 'head');

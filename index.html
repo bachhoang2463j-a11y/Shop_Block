@@ -1734,7 +1734,7 @@
         /* 动画 */
         @keyframes flameFlicker {
             0%, 100% { opacity: 0.9; transform: scale(1); }
-            50% { opacity: 1; transform: scale(1.04); text-shadow: 0 0 14px rgba(198, 155, 63, 0.8); }
+            50% { opacity: 1; transform: scale(1.04); }
         }
 
         @keyframes torchFlicker {
@@ -2665,6 +2665,9 @@
 
         // 当前商店会话状态（解析结果驱动；无块时回退 demo 数据）
         let shopState = null;
+        // 店铺代际令牌（RpgCombat combatToken 模式）：换店/载入新块时换代，
+        // 在途 LLM 请求返回后快照比对，过期即废弃，防旧店回复污染新店
+        let shopGenerationToken = {};
 
         // 从任意文本提取最后一个 <Shop_block>（大小写不敏感，RpgCombat 同款 lastIndexOf 法）
         function extractShopBlock(text) {
@@ -3453,11 +3456,13 @@
                 return;
             }
             let result = null;
+            const token = shopGenerationToken; // 请求期间换店则废弃本轮回复
             for (let attempt = 0; attempt < 2 && !result; attempt++) {
                 if (!llmConfig.apiKey) break;
                 try { result = await callShopLLM('enter'); }
                 catch (e) { console.warn(`[ShopBlock] 进店反应 LLM 第${attempt + 1}次失败:`, e.message); }
             }
+            if (token !== shopGenerationToken) return;
             if (hasLlmPayload(result)) {
                 await applyLLMResult(result, { scene: 'enter', allowAffection: false });
             } else {
@@ -3470,12 +3475,14 @@
         async function triggerBuyReaction(buySummary) {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             let result = null;
+            const token = shopGenerationToken; // 请求期间换店则废弃本轮回复
             if (llmConfig.apiKey) {
                 for (let attempt = 0; attempt < 2 && !result; attempt++) {
                     try { result = await callShopLLM('buy', buySummary); }
                     catch (e) { console.warn(`[ShopBlock] 购买回应 LLM 第${attempt + 1}次失败:`, e.message); }
                 }
             }
+            if (token !== shopGenerationToken) return;
             if (hasLlmPayload(result)) {
                 await applyLLMResult(result, { scene: 'buy' });
             } else {
@@ -3485,6 +3492,7 @@
 
         // LLM 结果落地：白名单过滤 → 渲染 → affection 落地
         async function applyLLMResult(result, options = {}) {
+            const token = shopGenerationToken; // 应用期间换店则作废后续落地（台词/好感/命令）
             hideKeeperThinking(); // 兜底：对话渲染前确保等待气泡已移除
             const scene = options.scene || 'chat';
             const allowAffection = options.allowAffection !== false && scene !== 'enter';
@@ -3510,6 +3518,7 @@
             if (allowAffection && affection !== 0 && shopState) {
                 try {
                     const nv = await changeShopAffection(shopState.shopName, affection);
+                    if (token !== shopGenerationToken) return; // 好感落库期间已换店
                     if (nv != null && effectiveAffection) {
                         bubbleTitleName.textContent = keeperDisplayName(keeper, effectiveAffection);
                         setTimeout(() => { if (shopState) bubbleTitleName.textContent = shopState.keeper; }, 2400);
@@ -3526,6 +3535,7 @@
                 await showDialogueSequence(lines.slice(0, 4));
             }
             // add 命令：跑通期只保留最小字段与正价格校验，结果必须可见
+            if (token !== shopGenerationToken) return; // 台词播放期间已换店：命令不再落地
             if (Array.isArray(result.commands)) {
                 for (const cmd of result.commands) {
                     let outcome;
@@ -3569,9 +3579,10 @@
             dots.innerHTML = '<span class="llm-thinking-dot">·</span><span class="llm-thinking-dot">·</span><span class="llm-thinking-dot">·</span>';
             bubble.appendChild(dots);
             document.body.appendChild(bubble);
-            const width = bubble.getBoundingClientRect().width;
-            bubble.style.left = `${Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2))}px`;
-            bubble.style.top = `${Math.max(8, rect.top - bubble.getBoundingClientRect().height - 10)}px`;
+            // 宽高一次读完再写（写 left 后读 height 会触发第二次强制重排）
+            const size = bubble.getBoundingClientRect();
+            bubble.style.left = `${Math.max(8, Math.min(window.innerWidth - size.width - 8, rect.left + rect.width / 2 - size.width / 2))}px`;
+            bubble.style.top = `${Math.max(8, rect.top - size.height - 10)}px`;
         }
         function hideKeeperThinking() {
             const old = document.getElementById('keeperThinkingBubble');
@@ -3804,6 +3815,7 @@
 
             // LLM 四分支回应，失败回退内置文案
             let result = null;
+            const token = shopGenerationToken; // 请求期间换店则废弃本轮回复
             if (llmConfig.apiKey) {
                 for (let attempt = 0; attempt < 2 && !result; attempt++) {
                     try {
@@ -3812,6 +3824,7 @@
                     } catch (e) { console.warn(`[ShopBlock] 砍价 LLM 第${attempt + 1}次失败:`, e.message); }
                 }
             }
+            if (token !== shopGenerationToken) return;
             if (hasLlmPayload(result)) {
                 await applyLLMResult(result, { scene: 'bargain' });
             } else {
@@ -3829,6 +3842,21 @@
             if (typeof getVariables !== 'function' || typeof getLastMessageId !== 'function') return null;
             try {
                 const lastId = getLastMessageId();
+                // 快速路径：getVariables(message) 有向前继承语义，当前楼读到的 $mms_meta.mesId
+                // 自报了数据实际写入的楼层，直接跳楼校验（常态 2 次 IPC 替代逐楼串行扫描）
+                const top = await getVariables({ type: 'message', message_id: lastId });
+                if (top && top.stat_data) {
+                    const topMeta = top['$mms_meta'];
+                    if (topMeta && Number(topMeta.mesId) === lastId) return { floorId: lastId, vars: top, stat: top.stat_data };
+                    const jump = Number(topMeta && topMeta.mesId);
+                    if (Number.isFinite(jump) && jump >= 0 && jump < lastId) {
+                        const vars = await getVariables({ type: 'message', message_id: jump });
+                        const meta = vars && vars['$mms_meta'];
+                        if (vars && vars.stat_data && meta && Number(meta.mesId) === jump) {
+                            return { floorId: jump, vars, stat: vars.stat_data };
+                        }
+                    }
+                }
                 for (let id = lastId; id >= Math.max(0, lastId - 50); id--) {
                     const vars = await getVariables({ type: 'message', message_id: id });
                     if (!vars || !vars.stat_data) continue;
@@ -4287,6 +4315,8 @@
 
             const restored = persistedShopToState(persisted);
             if (!restored) return false;
+            shopGenerationToken = {}; // 换代：作废在途 LLM 回复与等待气泡
+            hideKeeperThinking();
             shopState = restored;
             window.__shopAffection = Number.isFinite(Number(persisted['好感度'])) ? Number(persisted['好感度']) : SHOP_AFFECTION_INIT;
             playerState.cart = [];        // 换店/换块清空购物车
@@ -4324,12 +4354,13 @@
                 ? ['all'].concat(shopState.categories, shopState.hasExclusive && exclusiveUnlocked() ? ['独家私藏'] : [])
                 : ['all', 'weapon', 'armor', 'ammo', 'exclusive'];
             const icons = { 'all': '❖', '独家私藏': '🗝️', 'armor': '🛡️', 'weapon': '⚔️', 'ammo': '🪙' };
+            // 重入保持：新类目表仍含当前类目则沿用（载入/上架/解锁后不把用户踢回"全部"）
+            const keep = cats.includes(currentCategory) ? currentCategory : 'all';
             categoryTabs.innerHTML = '';
-            let first = true;
             cats.forEach(cat => {
                 const count = countItemsInCategory(cat);
                 const btn = document.createElement('button');
-                btn.className = 'cat-tab' + (first ? ' active' : '');
+                btn.className = 'cat-tab' + (cat === keep ? ' active' : '');
                 btn.dataset.category = cat;
                 const label = shopState ? (cat === 'all' ? '全部' : cat) : (cat === 'all' ? '全部' : demoLabels[cat]);
                 btn.innerHTML = `
@@ -4344,9 +4375,8 @@
                     renderCabinet();
                 });
                 categoryTabs.appendChild(btn);
-                first = false;
             });
-            currentCategory = 'all';
+            currentCategory = keep;
         }
 
         // 私藏解锁判定（SPEC：好感度 100 才可解锁购买）
@@ -4928,10 +4958,9 @@
         // 当前选中类目（动态 Tab 驱动；demo 模式用 tier 值）
         let currentCategory = 'all';
 
-        function renderCabinet() {
+        function renderCabinet(preserveScroll) {
+            const prevScroll = preserveScroll ? woodenCabinet.scrollTop : 0;
             woodenCabinet.innerHTML = '';
-            // 柜内独立滚动：每次重渲染回到顶部
-            woodenCabinet.scrollTop = 0;
             let all = activeItems();
             // 私藏未解锁：整类隐藏（不可见不可买）
             if (!exclusiveUnlocked()) all = all.filter(i => i.category !== '独家私藏');
@@ -4941,6 +4970,7 @@
             const list = currentCategory === 'all' ? all : all.filter(i =>
                 shopState ? i.category === currentCategory : i.tier === currentCategory
             );
+            const frag = document.createDocumentFragment();
             list.forEach((item, index) => {
                 const cell = document.createElement('div');
                 cell.className = 'shelf-cell';
@@ -4973,33 +5003,13 @@
                     ${stockBadge}
                     <div class="item-icon-box">${item.emoji}</div>
                     <div class="item-meta">
-                        <span class="item-name" title="${item.name}">${item.name}</span>
+                        <span class="item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
                         <span class="item-price${hiked ? ' hiked' : ''}">${priceHtml}</span>
                     </div>
                     ${item.sold ? '<div class="sold-stamp">SOLD</div>' : ''}
                 `;
 
-                // 点击逻辑：砍价模式弹砍价拉条；正常模式单个直入/复数拉条
-                cell.addEventListener('click', () => {
-                    if (item.sold) return;
-                    // 私藏未解锁：点击给出店主婉拒提示
-                    if (item.category === '独家私藏' && !exclusiveUnlocked()) {
-                        sound.playWoodClick();
-                        showKeeperDialogue(shopState ? shopState.keeper : '店主', '（那个柜子上了锁）那些是非卖品，您还不够格，朋友。', true);
-                        return;
-                    }
-                    sound.playWoodClick();
-
-                    if (bargainMode) {
-                        openBargainModal(item);
-                    } else if (item.isStackable) {
-                        openQuantityModal(item);
-                    } else {
-                        // 单个商品直接加入购物车！
-                        addDirectToCart(item, 1);
-                    }
-                });
-
+                // 点击逻辑走 woodenCabinet 上的单点委托；此处仅保留不冒泡的 hover 预览
                 cell.addEventListener('pointerenter', () => {
                     if (!item.sold && supportsHoverProductPreview()) {
                         clearTimeout(hoverBubbleTimer);
@@ -5013,9 +5023,34 @@
                     bossSpeechBubble.classList.remove('show');
                 });
 
-                woodenCabinet.appendChild(cell);
+                frag.appendChild(cell);
             });
+            woodenCabinet.appendChild(frag);
+            if (preserveScroll) woodenCabinet.scrollTop = prevScroll;
         }
+
+        // 货架点击委托：单点监听替代逐格绑定，货架重建无需重复注册
+        woodenCabinet.addEventListener('click', (e) => {
+            const cell = e.target.closest('.shelf-cell');
+            if (!cell) return;
+            const item = activeItems().find(i => String(i.id) === String(cell.dataset.id));
+            if (!item || item.sold) return;
+            // 私藏未解锁：点击给出店主婉拒提示
+            if (item.category === '独家私藏' && !exclusiveUnlocked()) {
+                sound.playWoodClick();
+                showKeeperDialogue(shopState ? shopState.keeper : '店主', '（那个柜子上了锁）那些是非卖品，您还不够格，朋友。', true);
+                return;
+            }
+            sound.playWoodClick();
+            if (bargainMode) {
+                openBargainModal(item);
+            } else if (item.isStackable) {
+                openQuantityModal(item);
+            } else {
+                // 单个商品直接加入购物车！
+                addDirectToCart(item, 1);
+            }
+        });
 
         // ====================================================
         // 老板头像上方弹出对话气泡，介绍商品
@@ -5245,25 +5280,19 @@
                 btnExpandCart.disabled = false;
                 cartMiniScroller.innerHTML = '';
                 // 缩略状态：仅显示图标和数量
+                const frag = document.createDocumentFragment();
                 playerState.cart.forEach(entry => {
                     const chip = document.createElement('div');
                     chip.className = 'cart-mini-chip';
                     chip.title = `${entry.item.name} (${entry.quantity} ${entry.item.unit || '件'}) - 点击放回货架`;
+                    chip.dataset.entryId = String(entry.id);
                     chip.innerHTML = `
                         <span class="mini-emoji">${entry.item.emoji}</span>
                         <span class="mini-qty">×${entry.quantity}</span>
                     `;
-                    // 点 chip = 放回货架（与结算弹窗 × 同构的移除链路）
-                    chip.addEventListener('click', () => {
-                        playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
-                        if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
-                        logShopEvent('cart', `[购物车] 放回货架 ${entry.item.name}`);
-                        sound.playWoodClick();
-                        updateCartUI();
-                        renderCabinet();
-                    });
-                    cartMiniScroller.appendChild(chip);
+                    frag.appendChild(chip);
                 });
+                cartMiniScroller.appendChild(frag);
 
                 const mmsCash0 = (typeof assignState !== 'undefined' && assignState && assignState.mms) ? assignState.mms.cash : null;
                 const cashRef0 = mmsCash0 != null ? mmsCash0 : playerState.cash;
@@ -5271,6 +5300,20 @@
                 cartCheckoutBtn.textContent = (cashRef0 < total) ? "现钞不足" : `结算 ($${total.toFixed(2)})`;
             }
         }
+
+        // 底栏 chip 点击委托：放回货架（与结算弹窗 × 同构的移除链路）
+        cartMiniScroller.addEventListener('click', (e) => {
+            const chip = e.target.closest('.cart-mini-chip');
+            if (!chip) return;
+            const entry = playerState.cart.find(c => String(c.id) === chip.dataset.entryId);
+            if (!entry) return;
+            playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
+            if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
+            logShopEvent('cart', `[购物车] 放回货架 ${entry.item.name}`);
+            sound.playWoodClick();
+            updateCartUI();
+            renderCabinet(true);
+        });
 
         // ====================================================
         // 购物车详情展开面板 (弹窗明细)
@@ -5293,12 +5336,11 @@
         });
 
         // 购物车详情（函数名沿用，调用点遍布结算链路）：现渲染左柜商品卡——
-        // 点卡片=归属/撤销/改派给右栏选中对象，数量加减与移除都在卡上
+        // 点卡片=归属/撤销/改派给右栏选中对象，数量加减与移除都走 cartCabinet 单点委托
         function renderCartDetailTable() {
             const cabinet = document.getElementById('cartCabinet');
             if (!cabinet) return;
             cabinet.innerHTML = '';
-            let total = 0;
 
             if (playerState.cart.length === 0) {
                 cabinet.innerHTML = '<div class="shop-event-empty">购物车空空如也。</div>';
@@ -5307,9 +5349,9 @@
                 return;
             }
 
+            const frag = document.createDocumentFragment();
             playerState.cart.forEach(entry => {
                 const itemTotal = effPrice(entry.item) * entry.quantity;
-                total += itemTotal;
                 const assigned = assignState && assignState.assigned.find(a => a.entryId === entry.id);
                 const priceNote = entry.item.dealPrice != null
                     ? ' <span class="cart-price-note deal">(已砍价)</span>'
@@ -5318,6 +5360,7 @@
                 const card = document.createElement('div');
                 card.className = 'cart-shelf-cell' + (assigned ? ' assigned' : '');
                 card.title = '点击分配给右侧选中对象；再点撤销';
+                card.dataset.entryId = String(entry.id);
                 card.innerHTML = `
                     <button class="table-del-btn cart-cell-del" title="移出清单">&times;</button>
                     <div class="cart-cell-owner">${assigned ? `● ${assigned.kind === 'vehicle' ? '🚙' : '🧑'} ${escapeHtml(assigned.owner)}` : '○ 未分配'}</div>
@@ -5331,79 +5374,104 @@
                     <div class="cart-cell-price">$${effPrice(entry.item).toFixed(2)}${priceNote}</div>
                     <div class="cart-cell-subtotal">$${itemTotal.toFixed(2)}</div>
                 `;
-
-                // 点卡片 = 分配/撤销/改派（数量与移除按钮内部已 stopPropagation）
-                card.addEventListener('click', () => {
-                    if (!assignState || !assignState.activeTarget) {
-                        showTopToast('请先在右侧点选一个角色或载具作为归属对象', 3000);
-                        return;
-                    }
-                    const t = assignState.activeTarget;
-                    const existing = assignState.assigned.find(a => a.entryId === entry.id);
-                    if (existing && existing.owner === t.name) {
-                        assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
-                        logShopEvent('cart', `[购物车] ${entry.item.name} 撤销归属（${t.name}）`);
-                    } else {
-                        // 一件商品只归属一处：先清旧
-                        assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
-                        assignState.assigned.push({ entryId: entry.id, owner: t.name, kind: t.kind });
-                        logShopEvent('cart', `[购物车] ${entry.item.name}×${entry.quantity} 分配给 ${t.name}`);
-                    }
-                    sound.playWoodClick();
-                    renderCartDetailTable();
-                });
-
-                // 调整数量（减到 1 再减 = 移除）
-                card.querySelector('.btn-minus').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (entry.quantity > 1) {
-                        entry.quantity--;
-                        logShopEvent('cart', `[购物车] ${entry.item.name} 数量调整为 ×${entry.quantity}`);
-                    } else {
-                        playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
-                        if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
-                        logShopEvent('cart', `[购物车] 移除 ${entry.item.name}`);
-                    }
-                    sound.playWoodClick();
-                    renderCartDetailTable();
-                    updateCartUI();
-                    renderCabinet();
-                });
-
-                card.querySelector('.btn-plus').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const max = entry.item.isStackable ? entry.item.stock : 1;
-                    if (entry.quantity < max) {
-                        entry.quantity++;
-                        logShopEvent('cart', `[购物车] ${entry.item.name} 数量调整为 ×${entry.quantity}`);
-                        sound.playWoodClick();
-                        renderCartDetailTable();
-                        updateCartUI();
-                        renderCabinet();
-                    }
-                });
-
-                // 移除
-                card.querySelector('.cart-cell-del').addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
-                    if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
-                    logShopEvent('cart', `[购物车] 移除 ${entry.item.name}`);
-                    sound.playWoodClick();
-                    renderCartDetailTable();
-                    updateCartUI();
-                    renderCabinet();
-                });
-
-                cabinet.appendChild(card);
+                frag.appendChild(card);
             });
+            cabinet.appendChild(frag);
+            updateCartTotals();
+        }
 
+        // 结算弹窗总计/结算按钮态（数量增减差量更新时单独调用，避免整表重建）
+        function updateCartTotals() {
+            let total = 0;
+            playerState.cart.forEach(entry => { total += effPrice(entry.item) * entry.quantity; });
             cartModalTotal.textContent = `$${total.toFixed(2)}`;
             const mmsCash = assignState && assignState.mms ? assignState.mms.cash : null;
             const cashRef = mmsCash != null ? mmsCash : playerState.cash;
             cartModalCheckoutBtn.disabled = (cashRef < total);
             cartModalCheckoutBtn.textContent = (cashRef < total) ? "现钞不足以支付" : `确认结算 ($${total.toFixed(2)})`;
         }
+
+        // 归属态局部刷新到卡片（不重建整表，保留弹窗滚动位置）
+        function applyCartOwnerToCard(card, entry) {
+            const assigned = assignState && assignState.assigned.find(a => a.entryId === entry.id);
+            card.classList.toggle('assigned', !!assigned);
+            card.querySelector('.cart-cell-owner').innerHTML = assigned
+                ? `● ${assigned.kind === 'vehicle' ? '🚙' : '🧑'} ${escapeHtml(assigned.owner)}`
+                : '○ 未分配';
+        }
+
+        // 数量 ±（差量：仅更新本卡数字/小计与总计浮标；数量变化不影响货架——入车商品已取下）
+        function changeCartQty(entry, card, delta) {
+            if (delta < 0) {
+                if (entry.quantity > 1) {
+                    entry.quantity--;
+                    logShopEvent('cart', `[购物车] ${entry.item.name} 数量调整为 ×${entry.quantity}`);
+                } else {
+                    removeCartEntry(entry, card);
+                    return;
+                }
+            } else {
+                const max = entry.item.isStackable ? entry.item.stock : 1;
+                if (entry.quantity >= max) return;
+                entry.quantity++;
+                logShopEvent('cart', `[购物车] ${entry.item.name} 数量调整为 ×${entry.quantity}`);
+            }
+            sound.playWoodClick();
+            card.querySelector('.stepper-val').textContent = entry.quantity;
+            card.querySelector('.cart-cell-subtotal').textContent = `$${(effPrice(entry.item) * entry.quantity).toFixed(2)}`;
+            updateCartTotals();
+            updateCartUI();
+        }
+
+        // 移除单条（×/减到0）：卡片节点直接摘除，货架差量恢复并保留滚动
+        function removeCartEntry(entry, card) {
+            playerState.cart = playerState.cart.filter(c => c.id !== entry.id);
+            if (assignState) assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
+            logShopEvent('cart', `[购物车] 移除 ${entry.item.name}`);
+            sound.playWoodClick();
+            if (playerState.cart.length) {
+                card.remove();
+                updateCartTotals();
+            } else {
+                renderCartDetailTable(); // 恢复空态文案与结算禁用
+            }
+            updateCartUI();
+            renderCabinet(true);
+        }
+
+        // 点卡片 = 分配/撤销/改派（按钮命中时委托先行返回，替代原 stopPropagation）
+        function assignCartEntry(entry, card) {
+            if (!assignState || !assignState.activeTarget) {
+                showTopToast('请先在右侧点选一个角色或载具作为归属对象', 3000);
+                return;
+            }
+            const t = assignState.activeTarget;
+            const existing = assignState.assigned.find(a => a.entryId === entry.id);
+            if (existing && existing.owner === t.name) {
+                assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
+                logShopEvent('cart', `[购物车] ${entry.item.name} 撤销归属（${t.name}）`);
+            } else {
+                // 一件商品只归属一处：先清旧
+                assignState.assigned = assignState.assigned.filter(a => a.entryId !== entry.id);
+                assignState.assigned.push({ entryId: entry.id, owner: t.name, kind: t.kind });
+                logShopEvent('cart', `[购物车] ${entry.item.name}×${entry.quantity} 分配给 ${t.name}`);
+            }
+            sound.playWoodClick();
+            applyCartOwnerToCard(card, entry);
+        }
+
+        // 结算卡事件委托：×/−/+/归属单点分发，卡片重建无需逐卡注册
+        const cartCabinetEl = document.getElementById('cartCabinet');
+        if (cartCabinetEl) cartCabinetEl.addEventListener('click', (e) => {
+            const card = e.target.closest('.cart-shelf-cell');
+            if (!card) return;
+            const entry = playerState.cart.find(c => String(c.id) === card.dataset.entryId);
+            if (!entry) return;
+            if (e.target.closest('.cart-cell-del')) { removeCartEntry(entry, card); return; }
+            if (e.target.closest('.btn-minus')) { changeCartQty(entry, card, -1); return; }
+            if (e.target.closest('.btn-plus')) { changeCartQty(entry, card, 1); return; }
+            assignCartEntry(entry, card);
+        });
 
         // 清空购物车
         cartModalClearBtn.addEventListener('click', () => {
@@ -5412,7 +5480,7 @@
             sound.playWoodClick();
             renderCartDetailTable();
             updateCartUI();
-            renderCabinet();
+            renderCabinet(true);
         });
 
         // 结算购买执行（M6：多选归属 + MMS 直连 + 幂等台账，见 checkoutCart）
@@ -5439,6 +5507,7 @@
                 return;
             }
             shopEventLog.innerHTML = '';
+            const frag = document.createDocumentFragment();
             visible.forEach(event => {
                 const row = document.createElement('div');
                 row.className = 'shop-event-row';
@@ -5449,8 +5518,9 @@
                 stamp.textContent = time;
                 row.appendChild(stamp);
                 row.appendChild(document.createTextNode(event.text));
-                shopEventLog.appendChild(row);
+                frag.appendChild(row);
             });
+            shopEventLog.appendChild(frag);
             shopEventLog.scrollTop = shopEventLog.scrollHeight;
         }
 
@@ -5615,6 +5685,7 @@
             // M4 通道：自由对话场景（chat），失败回退旧 demo 关键词库
             shopChatRequesting = true;
             let result = null;
+            const token = shopGenerationToken; // 请求期间换店则废弃本轮回复
             if (llmConfig.apiKey) {
                 for (let attempt = 0; attempt < 2 && !result; attempt++) {
                     try { result = await callShopLLM('chat', text); }
@@ -5622,6 +5693,7 @@
                 }
             }
             shopChatRequesting = false;
+            if (token !== shopGenerationToken) return;
             if (hasLlmPayload(result)) {
                 const savedNarrator = playerState.narratorEnabled;
                 playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
