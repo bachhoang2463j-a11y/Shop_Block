@@ -3837,17 +3837,20 @@
 
         // 投骰判定纯函数（monkey-patch Math.random 可测）
         // 返回 { branch: success|fail1|fail2|greedy|exhausted, rolled?, target?, success, penalty }
+        function randomIntInclusive(min, max) {
+            return min + Math.floor(Math.random() * (max - min + 1));
+        }
+
         function resolveBargain(item, d, affection) {
             const count = item.bargainCount || 0;
             if (count >= 2) return { branch: 'exhausted', success: false, penalty: 0, noRoll: true };
             if (count === 1 && d >= (item.lastBargainD || 0)) {
-                return { branch: 'greedy', success: false, penalty: -2, noRoll: true };
+                return { branch: 'greedy', success: false, penalty: -randomIntInclusive(1, 3), noRoll: true };
             }
             const rolled = 1 + Math.floor(Math.random() * 100);
             const target = 40 + d * 2;
             const success = rolled + affection * 0.5 >= target;
-            const ceil = Math.ceil(d / 10);
-            const penalty = success ? 0 : -(count === 0 ? ceil : ceil * 2);
+            const penalty = success ? 0 : -(count === 0 ? randomIntInclusive(0, 2) : randomIntInclusive(1, 3));
             return { branch: success ? 'success' : (count === 0 ? 'fail1' : 'fail2'), rolled, target, success, penalty };
         }
 
