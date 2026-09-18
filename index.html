@@ -3037,16 +3037,82 @@
             return null;
         }
 
+        // 角色名比较键：去掉 emoji 前缀和空白，避免 MMS/块内/LLM 使用不同显示名时错配。
+        function speakerKey(name) {
+            return plainName(name).replace(/\s+/g, '').toLocaleLowerCase();
+        }
+
+        function speakerNameMentioned(text, name) {
+            const source = String(text == null ? '' : text).replace(/\s+/g, '');
+            const target = plainName(name).replace(/\s+/g, '');
+            return !!target && source.includes(target);
+        }
+
+        // 以 Shop_block 在场名单为范围，优先采用 MMS/底栏的显示名；无块时才使用整支 demo 小队。
+        function buildSpeakerRoster() {
+            const blockNames = shopState && Array.isArray(shopState.presentMembers)
+                ? shopState.presentMembers.filter(Boolean)
+                : [];
+            const partyNames = Array.isArray(partyMembers)
+                ? partyMembers.map(p => p && p.name).filter(Boolean)
+                : [];
+            const source = partyNames.length
+                ? (blockNames.length
+                    ? blockNames.filter(raw => partyNames.some(name => {
+                        const a = speakerKey(raw);
+                        const b = speakerKey(name);
+                        return a === b || a.includes(b) || b.includes(a);
+                    }))
+                    : partyNames)
+                : blockNames;
+            const out = [];
+            const seen = new Set();
+            source.forEach(raw => {
+                const key = speakerKey(raw);
+                if (!key || seen.has(key)) return;
+                const matched = partyNames.find(name => speakerKey(name) === key)
+                    || partyNames.find(name => speakerKey(name).includes(key) || key.includes(speakerKey(name)));
+                const name = String(matched || raw).trim();
+                const finalKey = speakerKey(name);
+                if (!finalKey || seen.has(finalKey)) return;
+                seen.add(finalKey);
+                out.push({ name, key: finalKey });
+            });
+            return out;
+        }
+
+        function resolveSpeakerName(rawName, keeper) {
+            const raw = String(rawName == null ? '' : rawName).trim();
+            if (!raw) return keeper;
+            const key = speakerKey(raw);
+            if (key && key === speakerKey(keeper)) return keeper;
+            const roster = buildSpeakerRoster();
+            const exact = roster.find(entry => entry.key === key);
+            if (exact) return exact.name;
+            const fuzzy = roster.find(entry => key && (key.includes(entry.key) || entry.key.includes(key)));
+            return fuzzy ? fuzzy.name : raw;
+        }
+
+        function mentionedTeammates(text) {
+            const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
+            if (narratorOff) return [];
+            const keeperKey = speakerKey(shopState ? shopState.keeper : '店主');
+            const activeKey = activeSpeaker ? speakerKey(activeSpeaker.name) : '';
+            return buildSpeakerRoster()
+                .filter(entry => entry.key !== keeperKey && entry.key !== activeKey)
+                .filter(entry => speakerNameMentioned(text, entry.name));
+        }
+
         // 代言白名单：店主 + 在场固定角色 − 当前发言玩家角色（SPEC 硬规则）
         function buildSpeakerWhitelist(excludePlayer) {
             const list = new Set();
-            if (shopState) {
-                list.add(shopState.keeper);
-                shopState.presentMembers.forEach(n => list.add(n));
+            const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            list.add(keeper);
+            buildSpeakerRoster().forEach(entry => list.add(entry.name));
+            if (excludePlayer && activeSpeaker) {
+                const activeKey = speakerKey(activeSpeaker.name);
+                Array.from(list).forEach(name => { if (speakerKey(name) === activeKey) list.delete(name); });
             }
-            // demo 模式：店主 + 全小队
-            partyMembers.forEach(p => list.add(p.name));
-            if (excludePlayer && activeSpeaker) list.delete(activeSpeaker.name);
             return list;
         }
 
@@ -3094,9 +3160,7 @@
             }
         }
 
-        // 组装 system prompt（四场景共用骨架，八节模板：身份→契约→世界观→店主人设→好感→名单→补充人设→commands→示例）
-        // 人设层次：①世界观=设置页文本框（通用时代氛围，始终注入） ②店主人设=块内「店主性格」+ 立绘类型语气锚
-        // ③出场角色人设=设置页人设表按在场名单裁剪注入；好感度按四档数值表演绎
+        // 组装 system prompt：固定规则短而靠后，减少小模型在长模板中漏读关键约束。
         function buildShopSystemPrompt() {
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             const persona = (shopState && shopState.keeperPersona) || '精明谨慎的店主';
@@ -3105,30 +3169,42 @@
             const worldview = (rawWorldview && !BUILTIN_PERSONA_DEFAULTS.includes(rawWorldview)) ? rawWorldview : DEFAULT_WORLDVIEW;
             const affection = shopState ? (window.__shopAffection != null ? window.__shopAffection : 30) : 30;
             const attitude = affectionRelationship(affection);
-            // 名单排除玩家操控角色：代言白名单即“可说话名单”，LLM 只能从中取值
             const whitelist = Array.from(buildSpeakerWhitelist(true)).join('、');
             const partyPersonas = buildPartyPersonaBlock();
-            // 旁白开关 OFF：只演店主，不演队友（名单只留店主，人设块省略）
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
             const speakList = narratorOff ? keeper : whitelist;
+            const hardRules = narratorOff
+                ? `## 一、输出契约
+1. 只输出 JSON 本体，不要解释或 markdown。
+2. 顶层只允许 dialogue、affection、commands；commands 必须存在。
+3. dialogue 为 1~3 条，全部由店主说，第一条就是店主。
+4. 有玩家台词才返回 affection，整数 -5~+1；负值台词要不悦，正值台词要缓和。
+5. 无上架时 commands 必须是 []。每条 text ≤60字；同一话术本轮只用一次。`
+                : `## 一、输出契约
+1. 只输出 JSON 本体，不要解释或 markdown。
+2. 顶层只允许 dialogue、affection、commands；commands 必须存在。
+3. dialogue 1~4 条，第一条必须是店主；speaker 只能用第五节名单原名。
+4. 玩家点名某队友时，必须紧接店主输出该队友的一条回应；未点名普通对话只写店主 1~2 条，不主动扩写队友。
+5. 有玩家台词才返回 affection，整数 -5~+1；负值台词要不悦，正值台词要缓和。
+6. 无上架时 commands 必须是 []。每条 text ≤60字；同一话术本轮只用一次。`;
+
             const parts = [
                 narratorOff
-                    ? `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主。`
-                    : `玩家团队当前进入了一间商店，请你严格按照人设和世界观扮演店主和在场队友。`,
-                narratorOff
-                    ? `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~3 条，由店主独白；每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时台词必须明确体现店主不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`
-                    : `## 一、输出契约\n1. 只输出合法 JSON 本体，禁止解释文字与 markdown 代码块。\n2. 顶层只允许以下键，不得自创：{"dialogue":[],"affection":0,"commands":[]}。\n3. dialogue：1~4 条，店主先说；玩家台词点名某队友（称呼/提问/委托）时，该队友必须在dialogue中插话回应，speaker用名单原名；未点名队友的普通回合以店主1~2条为宜，避免店主连珠炮独白。每条 {"speaker":"说话人","text":"台词"}，台词≤60字。\n4. affection：-5到1的整数，表示玩家本轮言行对店主好感的影响；无玩家台词时省略该键。负值时店主台词必须明确体现不悦、责备或态度转冷；正值时必须体现满意或态度缓和；禁止台词态度与数值相反。\n5. commands：数组，每项必须是扁平对象，禁止 {"add":{…}} 这类嵌套；本轮无上架时输出 []，不得省略该键。\n6. 同一话术（如看手相、打算盘）每轮最多用一次，不得条条重复。`,
+                    ? '玩家团队正在商店中。只扮演店主，不扮演队友。'
+                    : '玩家团队正在商店中。扮演店主，并只在规则要求时扮演在场队友。',
+                hardRules,
                 `## 二、世界观\n${worldview}`,
-                `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n说话风格：${tone}。` : ''),
-                `## 四、好感度\n当前店主对玩家的好感度：${affection}（范围-100~100）。\n态度对照表：80~100熟络热络，50~79客气有礼，20~49公事公办，-19~19冷淡戒备，-100~-20厌恶抵触（态度尖酸刻薄、商品价格上浮20%）。按当前分档（${attitude}）演绎，不得跳档。80以下视为初识，店主不知玩家姓名。`,
+                `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n语气：${tone}。` : ''),
+                `## 四、好感度\n当前好感：${affection}；关系档位：${attitude}。${attitude === '厌恶抵触' ? '本档位报价可上浮两成。' : ''}按此档位演绎，不得跳档。好感低于80时称玩家“这位客人”，不要直呼玩家名。`,
                 narratorOff
-                    ? `## 五、可说话名单\n你可以让这些角色说话：${speakList}。\nspeaker只能从本名单中取值，禁止输出名单外的名字，禁止让队友插话。好感未达熟络（<80）时，text内称呼玩家用“这位客人”，不得直呼玩家名；speaker键照常用名单原名。`
-                    : `## 五、可说话名单\n你可以让这些角色说话：${speakList}。\nspeaker只能从本名单中取值，禁止输出名单外的名字。好感未达熟络（<80）时，text内称呼玩家用“这位客人”，不得直呼玩家名；speaker键照常用名单原名。`
+                    ? `## 五、可说话名单\n唯一可说话人：${keeper}。禁止队友发言。`
+                    : `## 五、可说话名单\n可说话人：${speakList}。名单外禁言；玩家当前操控角色不由你代言。点名回应时使用名单中的原名。`,
             ];
-            if (partyPersonas && !narratorOff) parts.push(`## 六、出场角色补充人设\n${partyPersonas}`);
+            if (partyPersonas && !narratorOff) parts.push(`## 六、出场角色人设\n${partyPersonas}`);
+            else parts.push('## 六、出场角色人设\n无额外人设。');
             parts.push(
-                `## 七、commands 指令规范（仅在玩家明确询问店内没有的常规补给品时输出，否则输出 []）\n- 上架指令为扁平对象：{"cmd":"add","category":"类目","name":"emoji 商品名","price":"0.50美元","count":1,"unit":"件","desc":"一句话介绍"}。\n- 字段规则：cmd 固定为 "add"；name 必须带 emoji 前缀（无合适时可省略，前端无前缀默认📦）；price 必须是 "数字+美元" 的字符串（如 "0.50美元"，禁止纯数字）；count/unit 缺省为 1/件。\n- 价格只允许出现在 price 字段，不得写进 name。`,
-                `## 八、输出示例（仅示范格式，人物与商品均为虚构，不得照抄）\n{"dialogue":[{"speaker":"示例店主","text":"要看点什么？新到的货都在柜上。"},{"speaker":"示例队友","text":"这家的东西一向实在。"}],"affection":1,"commands":[{"cmd":"add","category":"生活用品","name":"🧺 示例毛巾","price":"0.50美元","count":1,"unit":"条","desc":"吸水耐用的粗棉毛巾"}]}`
+                `## 七、commands 指令规范\n仅在玩家明确询问店内没有的常规补给品时添加；否则 commands=[]。每项必须是扁平对象：{"cmd":"add","category":"类目","name":"🧰 商品名","price":"1.00美元","count":1,"unit":"件","desc":"简述"}。name 可带 emoji，price 必须是“数字+美元”，价格不能写进 name。`,
+                `## 八、输出示例与最终检查\n输出形状：{"dialogue":[{"speaker":"名单原名","text":"台词"}],"affection":0,"commands":[]}。输出前检查：JSON合法；第一条是店主；点名队友已回应；speaker未越权。`
             );
             return parts.join('\n');
         }
@@ -3151,68 +3227,69 @@
         function buildPartyPersonaBlock() {
             const arr = migratePartyPersonas(llmConfig.partyPersonas);
             if (!arr.length) return '';
-            // 出场名单以底栏实际渲染的小队为准（MMS 交集后的最终名单），无底栏时退回块内「在场成员」
-            const roster = partyMembers.length
-                ? partyMembers.map(p => p.name)
-                : (shopState ? shopState.presentMembers.slice() : []);
+            const roster = buildSpeakerRoster();
             if (!roster.length) return '';
-            const outNames = new Set(roster.map(n => String(n).trim()).filter(Boolean));
             const lines = [];
             arr.forEach(cp => {
-                const name = String(cp.name || '').trim();
+                const rawName = String(cp.name || '').trim();
                 const prompt = String(cp.prompt || '').trim();
-                if (!name || !prompt) return;
-                if (outNames.has(name)) lines.push(`  ${name}：${prompt}`);
+                if (!rawName || !prompt) return;
+                const key = speakerKey(rawName);
+                const matched = roster.find(entry => entry.key === key || entry.key.includes(key) || key.includes(entry.key));
+                if (matched) lines.push(`  ${matched.name}：${prompt}`);
             });
             return lines.length ? lines.join('\n') : '';
         }
 
-        // 场景触发器
-        function buildSceneTrigger(scene, extra) {
-            const keeper = shopState ? shopState.keeper : '店主';
-            const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
-            const mateLine = narratorOff ? '' : '，队友可插话';
-            const present = shopState ? shopState.presentMembers.join('、') : partyMembers.map(p => p.name).join('、');
-            // 特惠/售罄/库存标注：所有场景（对话/砍价/结算/迎宾）店主都知道特惠、售罄与剩余库存
-            const goods = shopState
-                ? shopState.items.filter(i => i.category !== '独家私藏').map(i => {
+        function buildShopGoodsSummary() {
+            if (!shopState) return '（货架陈列中的商品）';
+            const goods = shopState.items
+                .filter(i => i.category !== '独家私藏' || exclusiveUnlocked())
+                .map(i => {
                     if (i.sold) return `${i.name}(${i.priceText}，已售罄)`;
                     const stockNote = i.isStackable ? `，剩${i.stock}${i.unit}` : '';
                     if (i.dealSpecial && i.dealPrice != null) {
                         return `${i.name}(原价${i.priceText}，今日特惠半价$${i.dealPrice.toFixed(2)}${stockNote})`;
                     }
                     return `${i.name}(${i.priceText}${stockNote})`;
-                }).join('、') || '（暂无）'
-                : '（货架陈列中的商品）';
-            const base = `【在场成员】${present}\n【店内商品】${goods}`;
+                });
+            return goods.join('、') || '（暂无）';
+        }
+
+        // 场景触发器：商品和在场名单各只出现一次，任务放在 user 消息末尾。
+        function buildSceneTrigger(scene, extra, correction) {
+            const keeper = shopState ? shopState.keeper : '店主';
+            const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
+            const mateLine = narratorOff ? '' : '；仅在任务点名时让队友插话';
+            const present = buildSpeakerRoster().map(entry => entry.name).join('、') || '（暂无）';
+            const base = `【在场成员】${present}\n【店内商品】${buildShopGoodsSummary()}`;
+            const correctionLine = correction ? `\n【纠错】上一版漏掉队友「${correction}」；本轮必须补一条 speaker 为该角色原名的回应。` : '';
             if (scene === 'enter') {
-                // 熟客感来自好感度：仅当好感度仍贴近初始值时明确“初次会面”，防 LLM 演绎成老主顾
                 const aff = (typeof window.__shopAffection === 'number') ? window.__shopAffection : SHOP_AFFECTION_INIT;
                 const familiarity = (aff >= 0 && aff <= SHOP_AFFECTION_INIT + 2)
-                    ? '这是店主与这批客人的初次会面（或交情尚浅），不要把他们当熟客或老主顾，以“这位客人”相称。'
-                    : (aff < 0 ? '店主对这批客人心怀反感或积怨（好感为负），冷言以对。' : '店主与这批小队已有旧交情（好感度见 system），可按熟客口吻演绎。');
-                const welcome = `逐一点名欢迎在场玩家角色（${present}），每人一句招呼，热情而不谄媚。`;
+                    ? '这是店主与这批客人的初次会面或交情尚浅，要称“这位客人”。'
+                    : (aff < 0 ? '店主对这批客人心怀反感或积怨，冷言以对。' : '店主与这支小队已有旧交情，可按熟客口吻演绎。');
+                const welcome = `逐一点名欢迎在场玩家角色（${present}），每人一句招呼。`;
                 const sale = currentSaleItem();
                 const saleLine = sale
-                    ? `店主今日挂出了特惠：${sale.name} 半价（$${sale.dealPrice.toFixed(2)}）。迎宾时自然提一句这件特惠，并按角色给个随口的理由（清库存、进错了货、心情好、旧账清仓之类），不要像念广告词。`
+                    ? `店主今日挂出特惠：${sale.name} 半价（$${sale.dealPrice.toFixed(2)}），自然提一句理由，不要像广告。`
                     : '';
-                return `${base}\n\n[系统指令：小队刚进店。以${keeper}的口吻对进店的玩家作出反应（结合最近剧情），1~3条dialogue${mateLine}。无玩家台词，省略affection。${familiarity}${welcome}${saleLine}]`;
+                return `${base}\n\n【本轮任务】小队刚进店。以${keeper}口吻回应，1~3条dialogue${mateLine}；无玩家台词，省略affection。${familiarity}${welcome}${saleLine}${correctionLine}`;
             }
-            if (scene === 'sale') return `${base}\n\n[系统指令：${extra || ''}\n以${keeper}的口吻向在场玩家介绍这件特惠（结合最近剧情），1~2条dialogue${mateLine}。无玩家台词，省略affection。]`;
-            if (scene === 'buy') return `${base}\n\n[系统指令：玩家刚完成购买。${extra || ''}\n以${keeper}的口吻回应这笔生意（对折后价/大额/小气各有态度）${mateLine}，affection按玩家爽快程度判定。]`;
+            if (scene === 'sale') return `${base}\n\n【本轮任务】${extra || ''}\n以${keeper}口吻介绍特惠，1~2条dialogue${mateLine}；无玩家台词，省略affection。${correctionLine}`;
+            if (scene === 'buy') return `${base}\n\n【本轮任务】玩家刚完成购买。${extra || ''}\n以${keeper}口吻回应生意${mateLine}；affection按玩家爽快程度判定。${correctionLine}`;
             if (scene === 'chat') {
-                // 点名检测：玩家台词提到在场可说话队友 → 提醒 LLM 让该队友插话（缓解队友失声）
-                const roster = partyMembers.map(p => p.name).filter(n => n && n !== activeSpeaker.name);
-                const mentioned = roster.filter(n => (extra || '').includes(n));
+                const mentioned = mentionedTeammates(extra);
                 const mentionLine = mentioned.length
-                    ? `玩家这句话点名了「${mentioned.join('、')}」：请让该队友在dialogue中插话回应一句（speaker用名单原名），不要全程只有店主说话。`
-                    : '';
+                    ? `玩家点名了「${mentioned.map(entry => entry.name).join('、')}」；第一条先由店主说，随后必须各输出一条对应队友回应，speaker 使用名单原名。`
+                    : '玩家没有点名队友；只输出店主1~2条，不要主动扩写队友。';
                 const irritationLine = shopBrowseIrritationPending
-                    ? `本轮触发了“只看不买”的不耐烦：玩家已经连续闲聊却没有购买，店主必须在dialogue中明确表现出催促、冷淡或不耐烦（例如询问何时购买、表示不要把店当展览），禁止用热情客套台词冲淡；本轮affection不要返回正值。`
+                    ? '本轮触发了“只看不买”的不耐烦：必须明确催促、冷淡或不耐烦，禁止热情客套冲淡；本轮 affection 不得为正值。'
                     : '';
-                return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应${mateLine}，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。${mentionLine}${irritationLine}]`;
+                const activeName = activeSpeaker ? activeSpeaker.name : '当前玩家';
+                return `${base}\n\n【本轮任务】玩家操控「${activeName}」对${keeper}说：${extra || ''}\n以${keeper}口吻回应${mateLine}；affection按玩家言辞判定。${mentionLine}若玩家问店里没有的常规补给品，可在commands中用add上架。${irritationLine}${correctionLine}`;
             }
-            if (scene === 'bargain') return `${base}\n\n[系统指令：${extra}]`;
+            if (scene === 'bargain') return `${base}\n\n【本轮任务】${extra || ''}${correctionLine}`;
             return base;
         }
 
@@ -3321,7 +3398,7 @@
                     const sysSecs = splitShopPrompt(sysText, ['## 一、', '## 二、', '## 三、', '## 四、', '## 五、', '## 六、', '## 七、', '## 八、']);
                     console.info(`${tag} ── system（${sysText.length}字，分${sysSecs.length}节）──`);
                     sysSecs.forEach((s, i) => console.info(`  [sys ${i + 1}/${sysSecs.length}] ${s.title}（${s.body.length}字）\n${s.body}`));
-                    const userSecs = splitShopPrompt(userText, ['【最近剧情】', '【市面风声】', '【近日报纸】', '【当前持久化商店】', '【在场成员】', '[系统指令']);
+                    const userSecs = splitShopPrompt(userText, ['【最近剧情】', '【市面风声】', '【近日报纸】', '【在场成员】', '【店内商品】', '【本轮任务】', '【纠错】']);
                     console.info(`${tag} ── user（${userText.length}字，分${userSecs.length}节）──`);
                     userSecs.forEach((s, i) => console.info(`  [user ${i + 1}/${userSecs.length}] ${s.title}（${s.body.length}字）\n${s.body}`));
                     console.info(`${tag} Final messages pretty-JSON:\n` + JSON.stringify(messages, null, 2));
@@ -3371,6 +3448,17 @@
             return extractJsonLoose(result.text);
         }
 
+        function requiredChatReplies(scene, extra) {
+            return scene === 'chat' ? mentionedTeammates(extra) : [];
+        }
+
+        function missingRequiredReplies(parsed, required) {
+            if (!required.length) return [];
+            const returned = new Set((parsed && Array.isArray(parsed.dialogue) ? parsed.dialogue : [])
+                .map(line => speakerKey(resolveSpeakerName(line && line.speaker, shopState ? shopState.keeper : '店主'))));
+            return required.filter(entry => !returned.has(entry.key));
+        }
+
         let shopLlmRequesting = false;
 
         // 主调用：scene ∈ enter|buy|chat|bargain，extra 为场景附加文本
@@ -3382,29 +3470,37 @@
                 const sys = buildShopSystemPrompt();
                 const floors = await collectRecentStoryFloors(2);
                 const optional = await collectOptionalContext();
-                let persistedContext = '';
-                try {
-                    const all = await readAllShops();
-                    const saved = shopState && all[shopState.shopName];
-                    if (saved) persistedContext = `\n【当前持久化商店】\n${jsyaml.dump(saved, { noRefs: true, lineWidth: 120 })}\n请以此店铺档案为准，除非本轮明确发生变化，不得擅自改写店主、人设或商品。\n`;
-                } catch (e) { /* 持久化上下文不可用时自动降级 */ }
                 const story = floors.length ? `\n【最近剧情】\n${floors.join('\n---\n')}\n` : '';
                 const optPart = optional ? `\n${optional}\n` : '';
-                const user = `${story}${optPart}${persistedContext}${buildSceneTrigger(scene, extra)}`;
+                const required = requiredChatReplies(scene, extra);
                 const requestId = nextShopLlmId();
-                const result = await requestShopLlm(sys, user, { maxTokens: 8192, scene, requestId });
-                const parsed = extractJsonLoose(result.text);
-                if (parsed) return parsed;
-                if (result.finishReason === 'length') {
-                    try {
-                        const supplement = await requestMissingCommands(sys, user, result.text, { scene, requestId });
-                        if (supplement && Array.isArray(supplement.commands)) return { dialogue: [], commands: supplement.commands, _supplemented: true };
-                    } catch (e) {
-                        logShopEvent('error', 'LLM 返回被截断，commands 补全失败：' + e.message);
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    const user = `${story}${optPart}${buildSceneTrigger(scene, extra, attempt ? required.map(entry => entry.name).join('、') : '')}`;
+                    const result = await requestShopLlm(sys, user, { maxTokens: 8192, scene, requestId });
+                    const parsed = extractJsonLoose(result.text);
+                    if (parsed) {
+                        const missing = missingRequiredReplies(parsed, required);
+                        if (!missing.length) return parsed;
+                        if (attempt === 0) {
+                            console.warn('[ShopBlock] LLM 漏掉点名队友，发起一次纠错重试:', missing.map(entry => entry.name).join('、'));
+                            continue;
+                        }
+                        const err = new Error(`LLM 未回应点名队友：${missing.map(entry => entry.name).join('、')}`);
+                        err.code = 'MISSING_MENTIONED_REPLY';
+                        throw err;
                     }
-                    throw new Error('LLM 返回被截断，未能解析 JSON');
+                    if (result.finishReason === 'length') {
+                        try {
+                            const supplement = await requestMissingCommands(sys, user, result.text, { scene, requestId });
+                            if (supplement && Array.isArray(supplement.commands)) return { dialogue: [], commands: supplement.commands, _supplemented: true };
+                        } catch (e) {
+                            logShopEvent('error', 'LLM 返回被截断，commands 补全失败：' + e.message);
+                        }
+                        throw new Error('LLM 返回被截断，未能解析 JSON');
+                    }
+                    throw new Error('LLM 返回不是有效 JSON');
                 }
-                throw new Error('LLM 返回不是有效 JSON');
+                throw new Error('LLM 语义校验失败');
             } finally {
                 hideKeeperThinking();
                 shopLlmRequesting = false;
@@ -3585,16 +3681,21 @@
             const scene = options.scene || 'chat';
             const allowAffection = options.allowAffection !== false && scene !== 'enter';
             const whitelist = buildSpeakerWhitelist(true); // 排除当前玩家角色
+            const allowedKeys = new Set(Array.from(whitelist).map(speakerKey));
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
+            const keeperKey = speakerKey(keeper);
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
             const rawLines = (result.dialogue || [])
                 .filter(d => d && typeof d.text === 'string' && d.text.trim())
-                .map(d => ({ speaker: String(d.speaker || '').trim() || keeper, text: d.text.trim() }))
+                .map(d => ({
+                    speaker: resolveSpeakerName(d.speaker, keeper),
+                    text: d.text.trim()
+                }))
                 // 旁白 OFF 双保险：模型不听话仍写队友台词时，前端直接丢弃
-                .filter(d => !narratorOff || d.speaker === keeper);
-            const dropped = rawLines.filter(d => !(whitelist.has(d.speaker) || d.speaker === keeper));
+                .filter(d => !narratorOff || speakerKey(d.speaker) === keeperKey);
+            const dropped = rawLines.filter(d => !allowedKeys.has(speakerKey(d.speaker)) && speakerKey(d.speaker) !== keeperKey);
             if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
-            const lines = rawLines.filter(d => whitelist.has(d.speaker) || d.speaker === keeper);
+            const lines = rawLines.filter(d => allowedKeys.has(speakerKey(d.speaker)) || speakerKey(d.speaker) === keeperKey);
             const rawAffection = Number(result.affection);
             const affection = Number.isFinite(rawAffection) ? Math.max(-5, Math.min(1, Math.trunc(rawAffection))) : 0;
             const currentAffection = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
@@ -5938,7 +6039,10 @@
             if (llmConfig.apiKey) {
                 for (let attempt = 0; attempt < 2 && !result; attempt++) {
                     try { result = await callShopLLM('chat', text); }
-                    catch (e) { console.warn(`[ShopBlock] 对话 LLM 第${attempt + 1}次失败:`, e.message); }
+                    catch (e) {
+                        console.warn(`[ShopBlock] 对话 LLM 第${attempt + 1}次失败:`, e.message);
+                        if (e && e.code === 'MISSING_MENTIONED_REPLY') break;
+                    }
                 }
             }
             shopChatRequesting = false;

@@ -181,8 +181,8 @@
 - `integration-test/poll-harness.html`：楼层块自动捕获 + MMS 三态（在场/缺失/零匹配）回归，走产物管线（35 断言）。
 - `integration-test/avatar-harness.html`：头像取值链回归（27 断言）。验证：MMS 生效表导出落盘且只含 avatar、initializeGlobal 共享句柄活引用（名册覆盖后即时可见）、ShopBlock 侧六级链（共享表 → 导出键 → 旧快照 → 名册原值 → 本地映射 → 首字占位）、名册值三种形态（名称键/完整 URL/裸文件名）、中文名不再拼成本地坏链、归属面板与底栏同源。IAB 内用 parent 注册表实现同语义 stub。
 - `integration-test/midwide-harness.html`：中屏/高缩放/短视高回归。853×760/600/480、700×600 紧凑双栏；920×760 高缩放档（左栏 280–360 + 4 列 + 展台等高 + 立绘 80% 填充）；1366×760 真基线（左栏 430 + 5 列）；横屏有限视高时顶栏/底栏固定在组件视口，主陈列区内部纵向滚动，150% 缩放不再裁掉底部 UI。
-- `integration-test/llm-history-harness.html`：LLM/ADD/购物记录/头像气泡/世界观人设回归（25 断言）。覆盖 ADD 跑通期开关、非法价格明示、截断 commands 补问、记录筛选、body 级气泡清理、三级上下文退化、共享请求锁、世界观默认/存量迁移/自定义注入、出场人设裁剪、进店熟客信号。
-- `integration-test/shops-manager-harness.html`：已有商店一览/注入/全量记录回归（34 断言）。覆盖酒馆输入框三路注入（parent#send_textarea 追加 + input 事件 + 草稿保留）、Shop_Record 全量对话与余额公式、applyLLMResult 记录层全量/显示层限量、手风琴渲染、好感钳制、人设手动优先锁定（新块导入不覆盖 + blockPersona 快照）、恢复块内人设、整店删除、debug 导入仍可用。
+- `integration-test/llm-history-harness.html`：LLM/ADD/购物记录/头像气泡/世界观人设回归（47 断言）。覆盖 ADD 跑通期开关、非法价格明示、截断 commands 补问、记录筛选、body 级气泡清理、三级上下文退化、共享请求锁、世界观默认/存量迁移/自定义注入、出场人设裁剪、进店熟客信号、商品上下文单一来源（无档案整包/清单只出现一次）、点名漏答语义纠错重试、emoji 变体 speaker 归一。
+- `integration-test/shops-manager-harness.html`：已有商店一览/注入/全量记录回归（72 断言）。覆盖酒馆输入框三路注入（parent#send_textarea 追加 + input 事件 + 草稿保留）、Shop_Record 全量对话与余额公式、applyLLMResult 记录层全量/显示层限量、手风琴渲染、好感钳制、人设手动优先锁定（新块导入不覆盖 + blockPersona 快照）、恢复块内人设、整店删除、debug 导入仍可用、触发器单次注入与在场名单归一（含 emoji 前缀点名识别）。
 - **商店管理说明**：右上「已有商店一览」展示 `$shops` 持久化店铺（手风琴：人设、好感和商品均可编辑，店主/立绘由正文块维护，支持保存/恢复/删除）；商品可逐件修改名称、类目、价格、数量、单位、介绍和标签，保存后同步当前货柜；手动保存人设后新块导入不再覆盖（`$meta.personaOverride` 锁定），「恢复块内人设」解除锁定；原「导入商店块」为 debug 功能，收在一览弹窗底部折叠区。
 - **LLM 设置说明**：设置页提示词框现在是「世界观提示词」（通用时代/氛围背景，始终注入）；店主人设由块内「店主性格」+ 立绘类型演绎。出场角色人设在新文本区按「角色名：人设」填写，只注入当前出场名单。旧版固定老板文本在读取时自动迁移为世界观默认。
 - 立绘资源：本地服务器 `D:\Project\my_assets\shop_resources\`（8766 端口），头像 `D:\Project\my_assets\头像\`。

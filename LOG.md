@@ -123,3 +123,14 @@
 - **③ 已有商店一览（原「导入商店块」按钮，debug 合并）**：顶栏按钮改名「已有商店一览」（id 保留）；弹窗顶部为 `$shops` 持久化店铺手风琴（原生 `<details>`，摘要=店名/店主/立绘/好感/件数/人设锁定标记），展开=店主立绘只读 + 店主人设 textarea + 好感 number（0-100 钳制）+ 商品只读（按类目列名/价格/数量）+ 保存修改/恢复块内人设/删除店铺；原导入 textarea + 解析载入 + 恢复示例商店整体下移到弹窗底部折叠「导入商店块（debug）」区。**人设手动优先**（用户确认）：`$meta.personaOverride` 锁定 + `$meta.blockPersona` 快照，`mergeShopIntoAll` 合并同名新块时锁定则持久层与运行态 `shopState.keeperPersona` 均用手动值（新块人设仅记快照），「恢复块内人设」写回快照并解除锁定；老数据无字段视为新块优先。删除复用 `deleteShop`（replaceVariables 整体替换），删当前店不强行清空运行态。新增 `escapeHtml`（实体 `\u0026` 拼写防解码歧义——首版实体被工具解码写坏成无操作，已发现即修）。
 - **不做**：载入此店（从 `$shops` 反向构造运行态，范围外）；商品单条删除/编辑（用户明确不要）。
 - **验证**：新增 `integration-test/shops-manager-harness.html`（mock 酒馆 API + parent 页 `#send_textarea`，34 断言）：注入链路 5 条（追加/草稿保留/input 事件/自身输入框不覆盖）、Shop_Record 组装 7 条（开头/最早对话/超 80 字全量/分行/余额 4816.40-26.75=4789.65）、applyLLMResult 全量入库 5 条、一览管理 17 条（好感钳制/锁定/同步/快照/恢复/删店）、debug 导入 2 条——**34/34 全绿**。回归：product-harness 10/10、llm-history-harness 36/36、poll-harness 35/35、duo-harness 25/25。IAB 目检：管理弹窗桌面 1280px 与窄屏 375px 手风琴/编辑区/按钮渲染正常、卡片 86vh 内滚动。`build-regex.cjs` 重建产物通过（0 裸围栏、脚本语法 OK、$数字免疫、管线模拟全绿）。真机（酒馆 `/setinput` 回退与 live iframe 行为）待用户导入验证。
+
+## 2026-09-18 · Prompt 提亮：单一商品上下文 + canonical speaker + 点名语义重试
+
+- **缘起**：gemini-2.5-flash-lite 实测三类失效——①`callShopLLM` 同时注入 `$shops` 整包 YAML（【当前持久化商店】）与触发器【店内商品】，商品/在场成员双份约 1.3K 字冗余，小模型注意力被稀释；②玩家点名"弗兰克"时模型只回店主（截图证据：账簿连排塔尼亚婆婆独白），点名仅一句软提醒且落地层无校验；③白名单同时收块内名与 MMS/底栏名，`弗兰克`/`🛡️弗兰克` 变体可能重复进名单或让点名检测漏判。
+- **改造**：
+  1. **system prompt 八节重写**（`buildShopSystemPrompt`）：规则短句化并前移——输出契约节直接写"只输出 JSON/顶层三键且 commands 必存/第一条必须是店主/点名队友必须紧跟回应/未点名只写店主 1~2 条/affection 与台词同向/无上架 commands=[]"；好感度四档数值表改为 `affectionRelationship` 单档位名演绎（厌恶档保留"报价可上浮两成"提示）；删除长篇虚构输出示例（防小模型照抄"示例店主"），改为"输出形状 + 输出前检查清单"收尾，利用小模型 recency 注意力。
+  2. **商品上下文单一来源**：删除 `callShopLLM` 中 `jsyaml.dump($shops[店名])` 整包注入；新增 `buildShopGoodsSummary()` 在触发器【店内商品】一处生成全部商品状态（价格/剩余库存/售罄/特惠半价；独家私藏仅好感 100 解锁后并入，未解锁不泄漏给模型）。`$shops` 照常持久化与合并，只是不再发给独立 LLM。debug 分节标记同步更新（【在场成员】【店内商品】【本轮任务】【纠错】）。
+  3. **canonical speaker 归一**：新增 `speakerKey`（plainName 剥 emoji + 去空白 + 小写）、`buildSpeakerRoster()`（块内在场名单为范围、MMS/底栏显示名优先、按键去重）、`resolveSpeakerName()`（LLM 变体名 → 名单原名）、`mentionedTeammates()`（归一键点名检测）。白名单、system 可说话名单、触发器在场名单、点名检测、`applyLLMResult` 落地过滤、出场人设匹配全部走同一套；emoji 变体 speaker 不再被整条丢弃。
+  4. **点名语义重试**：chat 场景解析 JSON 后校验 dialogue 是否包含全部被点名队友；缺失则在触发器追加【纠错】行重试恰一次；二次仍缺失抛 `MISSING_MENTIONED_REPLY`，`handleSendMessage` 识别该错误码不再套第二层重试（严格两次请求封顶），走内置回退文案并 console.warn——不编造队友台词。
+  5. 场景触发器统一为【在场成员】+【店内商品】+【本轮任务】结构；"只看不买"不耐烦强制项保留在 chat 任务行。
+- **验证**：`llm-history-harness` 47/47（新增 12 条：无档案整包/【店内商品】【在场成员】各只出现一次/未点名无纠错行/点名漏答恰好重试一次且第二次请求带【纠错】/纠错后含队友回应/emoji 变体 speaker 归一入库/无长篇示例/店主先说与点名硬规则前置）；`shops-manager-harness` 72/72（新增 F2 5 条：触发器单次注入×2/在场名单与底栏对齐无重复/emoji 前缀点名识别）；回归 product 18/18、poll 35/35、avatar 27/27、narrow 15/15、midwide 95/95；duo 23/25（2 个现金断言失败经 `git stash` 基线复跑确认为**既有问题**，与本次无关）。`node build-regex.cjs` 产物重建通过（0 裸围栏、管线模拟全绿）。真机 Gemini 效果待用户导入验证。
