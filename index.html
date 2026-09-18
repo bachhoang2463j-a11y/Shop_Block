@@ -5292,14 +5292,16 @@
         }
 
         // 立绘加载：枚举名 → img src；new Image() 预探测成功才上屏，
-        // 失败/超时回退占卜商妇（IAB 等不可见环境中 img.onerror 可能不派发，必须代码层兜底）
+        // 失败/超时回退占卜商妇（IAB 等不可见环境中 img.onerror 可能不派发，必须代码层兜底）。
+        // 代号守卫：boot 的 demo 立绘探测与商店立绘探测并发时，晚完成的旧探测不得覆盖新立绘
+        // （刷新/切正则后偶发 demo 铁匠立绘残留的根因：各调用独立 settled，最后完成者赢）。
+        let keeperPortraitSeq = 0;
         function loadKeeperPortrait(enumName) {
+            const seq = ++keeperPortraitSeq;
             const target = portraitUrl(enumName);
             const fallback = portraitUrl('占卜商妇');
-            let settled = false;
             const apply = (url) => {
-                if (settled) return;
-                settled = true;
+                if (seq !== keeperPortraitSeq) return;
                 clearTimeout(timer);
                 blacksmithImg.src = url;
             };
@@ -5310,7 +5312,11 @@
                 // 目标失败 → 探测回退图；回退图也失败 → 空串（显示 alt 占位）
                 const fb = new Image();
                 fb.onload = () => apply(fallback);
-                fb.onerror = () => { settled = true; clearTimeout(timer); blacksmithImg.removeAttribute('src'); };
+                fb.onerror = () => {
+                    if (seq !== keeperPortraitSeq) return;
+                    clearTimeout(timer);
+                    blacksmithImg.removeAttribute('src');
+                };
                 fb.src = fallback;
             };
             probe.src = target;
