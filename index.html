@@ -6075,13 +6075,10 @@
             if (token !== shopGenerationToken) return;
             if (hasLlmPayload(result)) {
                 const requiredReplies = mentionedTeammates(text).map(entry => entry.name);
-                const savedNarrator = playerState.narratorEnabled;
-                playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
                 const savedAffection = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
                 if (browseIrritated) window.__shopAffection = Math.min(savedAffection, -1);
                 await applyLLMResult(result, { scene: 'chat', allowAffection: !browseIrritated, requiredReplies });
                 window.__shopAffection = savedAffection;
-                playerState.narratorEnabled = savedNarrator;
                 shopBrowseIrritationPending = false;
                 shopBrowseIrritationDelta = 0;
                 return;
