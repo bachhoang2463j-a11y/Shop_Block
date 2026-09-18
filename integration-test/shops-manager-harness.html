@@ -254,6 +254,22 @@ window.confirm = function () { return true; };
     assert(shopEval('buildSceneTrigger("chat", "弗兰克你怎么看").includes("「弗兰克」")') === true, '提醒内容含被点名的队友名');
     assert(shopEval('buildSceneTrigger("chat", "随便看看").includes("点名了")') === false, '未点名时不注入提醒');
 
+    log('== G. 只看不买厌恶机制 ==');
+    // 固定随机 0.05：首句 10% 概率必触发，扣分幅度第二次随机固定为 1
+    shopEval('window.__hMr = Math.random; Math.random = function(){ return 0.05; }; resetShopBrowseGate(7);');
+    const browseTrigger = shopEval('prepareBrowseIrritation()');
+    assert(browseTrigger === true, '首次闲聊按10%概率触发不耐烦');
+    assert(shopEval('shopBrowseChatCount') === 1, '本楼层闲聊计数从1开始');
+    assert(shopEval('shopBrowseIrritationDelta === 1 || shopBrowseIrritationDelta === 2') === true, '触发时随机扣1~2点好感');
+    const browsePrompt = shopEval('buildSceneTrigger("chat", "随便看看")');
+    assert(browsePrompt.includes('只看不买') && browsePrompt.includes('必须') && browsePrompt.includes('不耐烦'), '触发后LLM提示词强制体现不耐烦');
+    // 购买闸门：同楼重载不得把已购买状态重置回来
+    shopEval('shopBrowsePurchased = true;');
+    shopWin().__hYamlG = YAML1;
+    await shopEval('onShopDataReceived(window.__hYamlG)');
+    assert(shopEval('shopBrowsePurchased === true') === true, '购买后同楼重载仍关闭只看不买机制');
+    shopEval('Math.random = window.__hMr;');
+
     const total = passCount + failCount;
     document.getElementById('summary').textContent = failCount === 0
         ? '✅ ' + passCount + '/' + total + ' 全绿'

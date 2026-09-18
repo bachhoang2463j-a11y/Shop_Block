@@ -3207,7 +3207,10 @@
                 const mentionLine = mentioned.length
                     ? `玩家这句话点名了「${mentioned.join('、')}」：请让该队友在dialogue中插话回应一句（speaker用名单原名），不要全程只有店主说话。`
                     : '';
-                return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应${mateLine}，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。${mentionLine}]`;
+                const irritationLine = shopBrowseIrritationPending
+                    ? `本轮触发了“只看不买”的不耐烦：玩家已经连续闲聊却没有购买，店主必须在dialogue中明确表现出催促、冷淡或不耐烦（例如询问何时购买、表示不要把店当展览），禁止用热情客套台词冲淡；本轮affection不要返回正值。`
+                    : '';
+                return `${base}\n\n[系统指令：玩家操控「${activeSpeaker.name}」对${keeper}说：${extra || ''}\n以${keeper}的口吻回应${mateLine}，affection按玩家言辞判定。若玩家问店里没有的常规补给品，可在commands中用add上架。${mentionLine}${irritationLine}]`;
             }
             if (scene === 'bargain') return `${base}\n\n[系统指令：${extra}]`;
             return base;
@@ -4194,6 +4197,10 @@
             } else if (window.__mockVars) {
                 Object.assign(window.__mockVars, { '$shop_deal_result': payload, '$shop_sync': { lastId: dealId, appliedFloor: payload.floorId, ts: payload.ts } });
             }
+            // 本楼层一旦完成任意购买，关闭“只看不买”机制；后续对话不再随机厌恶
+            shopBrowsePurchased = true;
+            shopBrowseIrritationPending = false;
+            shopBrowseIrritationDelta = 0;
 
             // 购物好感：每满 $5 +1 不设上限（SPEC 第六节）
             if (shopState) {
@@ -4541,9 +4548,14 @@
 
             const restored = persistedShopToState(persisted);
             if (!restored) return false;
+            const previousShopName = shopState ? shopState.shopName : null;
+            const currentFloorId = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
             shopGenerationToken = {}; // 换代：作废在途 LLM 回复与等待气泡
             hideKeeperThinking();
             shopState = restored;
+            if (previousShopName !== restored.shopName || shopBrowseFloorId !== currentFloorId) {
+                resetShopBrowseGate(currentFloorId);
+            }
             window.__shopAffection = Number.isFinite(Number(persisted['好感度'])) ? Number(persisted['好感度']) : SHOP_AFFECTION_INIT;
             playerState.cart = [];        // 换店/换块清空购物车
             addLandedThisSession = 0;     // 新会话重置 add 频率限制
@@ -5911,6 +5923,12 @@
             if (playerState.narratorEnabled) showAvatarChatBubble(activeSpeaker.name, text);
 
             // M4 通道：自由对话场景（chat），失败回退旧 demo 关键词库
+            const browseIrritated = prepareBrowseIrritation();
+            if (browseIrritated && shopState) {
+                try {
+                    await changeShopAffection(shopState.shopName, -shopBrowseIrritationDelta, { unlockDialogue: false });
+                } catch (e) { console.warn('[ShopBlock] 只看不买厌恶落地失败:', e); }
+            }
             shopChatRequesting = true;
             let result = null;
             const token = shopGenerationToken; // 请求期间换店则废弃本轮回复
@@ -5925,8 +5943,13 @@
             if (hasLlmPayload(result)) {
                 const savedNarrator = playerState.narratorEnabled;
                 playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
-                await applyLLMResult(result, { scene: 'chat' });
+                const savedAffection = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
+                if (browseIrritated) window.__shopAffection = Math.min(savedAffection, -1);
+                await applyLLMResult(result, { scene: 'chat', allowAffection: !browseIrritated });
+                window.__shopAffection = savedAffection;
                 playerState.narratorEnabled = savedNarrator;
+                shopBrowseIrritationPending = false;
+                shopBrowseIrritationDelta = 0;
                 return;
             }
 
@@ -5948,6 +5971,9 @@
                     reply = `“${randomQuotes[Math.floor(Math.random() * randomQuotes.length)]}”`;
                 }
                 showKeeperDialogue(keeper, reply, true);
+                if (browseIrritated) showBrowseIrritationFallback();
+                shopBrowseIrritationPending = false;
+                shopBrowseIrritationDelta = 0;
             }, 300);
         }
 
@@ -6333,6 +6359,45 @@
         let appliedFloorBlockText = null;  // 已应用块文本（防重复应用清空购物车/砍价会话态）
         let lastShopFloorId = null;        // 已应用块的楼层（同块跨楼补掷进店特惠的门槛）
 
+        // 只看不买机制：每个楼层独立计数；首次聊天 10%，之后每句 +10%，购买结算后本楼层关闭
+        let shopBrowseFloorId = null;
+        let shopBrowseChatCount = 0;
+        let shopBrowsePurchased = false;
+        let shopBrowseIrritationPending = false;
+        let shopBrowseIrritationDelta = 0;
+
+        function resetShopBrowseGate(floorId = null) {
+            shopBrowseFloorId = floorId;
+            shopBrowseChatCount = 0;
+            shopBrowsePurchased = false;
+            shopBrowseIrritationPending = false;
+            shopBrowseIrritationDelta = 0;
+        }
+
+        function prepareBrowseIrritation() {
+            const floorId = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
+            if (floorId != null && floorId !== shopBrowseFloorId) resetShopBrowseGate(floorId);
+            if (shopBrowsePurchased) return false;
+            shopBrowseChatCount++;
+            const chance = Math.min(1, shopBrowseChatCount * 0.1);
+            const triggered = Math.random() < chance;
+            shopBrowseIrritationDelta = triggered ? (Math.random() < 0.5 ? 1 : 2) : 0;
+            shopBrowseIrritationPending = triggered;
+            return triggered;
+        }
+
+        const BROWSE_IRRITATION_FALLBACK = [
+            name => `只看不买也该有个限度，${name}。别把这里当免费展览。`,
+            name => `又问不买？${name}，我的耐心和货架空间一样有限。`,
+            () => '先看看当然可以，但别让我陪你把每件商品都介绍一遍却一件不带走。'
+        ];
+
+        function showBrowseIrritationFallback() {
+            const keeper = shopState ? shopState.keeper : '店主';
+            const text = BROWSE_IRRITATION_FALLBACK[Math.floor(Math.random() * BROWSE_IRRITATION_FALLBACK.length)](keeper);
+            showKeeperDialogue(keeper, text, true);
+        }
+
         function floorApiAvailable() {
             return (typeof getChatMessages === 'function' && typeof getCurrentMessageId === 'function')
                 || typeof getCurrentMessage === 'function';
@@ -6376,6 +6441,7 @@
                     const fid = (typeof getCurrentMessageId === 'function') ? getCurrentMessageId() : null;
                     if (shopState && fid != null && fid !== lastShopFloorId) {
                         lastShopFloorId = fid;
+                        resetShopBrowseGate(fid);
                         enterDiscountRoll(true);
                     }
                     return false;
