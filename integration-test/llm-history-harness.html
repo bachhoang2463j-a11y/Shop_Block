@@ -62,6 +62,12 @@ assert(w.eval('window.__retryUser2').includes('【纠错】')&&w.eval('window.__
 w.eval(`window.__normN=0;window.fetch=async function(u,o){window.__normN++;return {ok:true,json:async()=>({choices:[{finish_reason:'stop',message:{content:'{"dialogue":[{"speaker":"老布莱克伍德","text":"嗯"},{"speaker":"🛡️弗兰克","text":"变体回应测试"}],"affection":0,"commands":[]}]}'}}]})}};`);
 await w.eval(`applyLLMResult({dialogue:[{speaker:'老布莱克伍德',text:'嗯'},{speaker:'🛡️弗兰克',text:'变体回应测试'}],commands:[]})`);
 assert(w.eval(`shopEventHistory.some(e=>e.kind==='dialog'&&e.speaker==='弗兰克'&&e.text.includes('变体回应测试'))`),'emoji变体speaker归一为名单原名入库');
+w.eval(`playerState.narratorEnabled=false`);
+await w.eval(`applyLLMResult({dialogue:[{speaker:'老布莱克伍德',text:'OFF店主台词'},{speaker:'弗兰克',text:'OFF未点名队友台词'}],commands:[]},{scene:'chat'})`);
+assert(w.eval(`shopEventHistory.some(e=>e.kind==='dialog'&&e.text.includes('OFF未点名队友台词'))`)===false,'旁白OFF未点名队友台词仍被丢弃');
+await w.eval(`applyLLMResult({dialogue:[{speaker:'老布莱克伍德',text:'OFF店主台词二'},{speaker:'弗兰克',text:'OFF点名队友回应'}],commands:[]},{scene:'chat',requiredReplies:['弗兰克']})`);
+assert(w.eval(`shopEventHistory.some(e=>e.kind==='dialog'&&e.text.includes('OFF点名队友回应'))`)===true,'旁白OFF被点名队友台词放行');
+w.eval(`playerState.narratorEnabled=true`);
 log('== finish_reason 截断补问 ==','head');
 w.eval(`llmConfig.apiKey='test'; window.__fetchCount=0; window.fetch=async function(){window.__fetchCount++;return {ok:true,json:async()=>window.__fetchCount===1?{choices:[{finish_reason:'length',message:{content:'{"dialogue":['}}]}:{choices:[{finish_reason:'stop',message:{content:'{"commands":[{"cmd":"add","category":"补给","name":"🧼 补问肥皂","price":"1.20美元"}]}'}}]}}}`);
 const repaired=await w.eval(`callShopLLM('chat','请补一块肥皂')`);
@@ -106,11 +112,13 @@ assert(!speakLine.includes('埃利奥特'),'玩家操控角色已从可说话名
 assert(speakLine.includes('弗兰克')||speakLine.includes('老布莱克伍德'),'其余名单成员保留');
 assert(sysExcl.includes('这位客人'),'熟络前匿名约束句存在');
 assert(w.eval(`buildSceneTrigger('enter')`).includes('逐一点名欢迎'),'进店欢迎提示词存在');
+assert(w.eval(`buildSceneTrigger('chat','hi')`).includes('1~2条队友插话'),'旁白ON未点名仍要求1~2条队友插话');
 w.eval(`playerState.narratorEnabled=false`);
 const sysOff=w.eval(`buildShopSystemPrompt()`);
 const speakOff=(sysOff.split('\n').find(l=>l.includes('可说话人'))||'');
-assert(!speakOff.includes('弗兰克')&&speakOff.includes('老布莱克伍德'),'旁白OFF名单仅店主');
-assert(!w.eval(`buildSceneTrigger('chat','hi')`).includes('队友可插话'),'旁白OFF场景无插话');
+assert(speakOff.includes('未点名时只有店主说话'),'旁白OFF名单默认仅店主发言');
+assert(sysOff.includes('除店主外必须输出一条该队友的插话'),'旁白OFF点名仍要求队友插话');
+assert(!w.eval(`buildSceneTrigger('chat','hi')`).includes('队友可插话'),'旁白OFF未点名场景无插话');
 w.eval(`playerState.narratorEnabled=true`);
 w.eval(`llmConfig.greetEnabled=false`);
 w.eval(`window.__fetchCount=0; window.fetch=async function(){window.__fetchCount++;return {ok:true,json:async()=>({choices:[{finish_reason:'stop',message:{content:'{"dialogue":[]}'}}]})}}`);

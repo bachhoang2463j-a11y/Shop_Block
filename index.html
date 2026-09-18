@@ -3094,8 +3094,6 @@
         }
 
         function mentionedTeammates(text) {
-            const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
-            if (narratorOff) return [];
             const keeperKey = speakerKey(shopState ? shopState.keeper : '店主');
             const activeKey = activeSpeaker ? speakerKey(activeSpeaker.name) : '';
             return buildSpeakerRoster()
@@ -3172,33 +3170,32 @@
             const whitelist = Array.from(buildSpeakerWhitelist(true)).join('、');
             const partyPersonas = buildPartyPersonaBlock();
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
-            const speakList = narratorOff ? keeper : whitelist;
+            const speakList = whitelist;
             const hardRules = narratorOff
                 ? `## 一、输出契约
 1. 只输出 JSON 本体，不要解释或 markdown。
 2. 顶层只允许 dialogue、affection、commands；commands 必须存在。
-3. dialogue 为 1~3 条，全部由店主说，第一条就是店主。
-4. 有玩家台词才返回 affection，整数 -5~+1；负值台词要不悦，正值台词要缓和。
-5. 无上架时 commands 必须是 []。每条 text ≤60字；同一话术本轮只用一次。`
+3. dialogue 1~3 条，第一条必须是店主；玩家未点名队友时全部由店主说。
+4. 玩家点名某队友时，除店主外必须输出一条该队友的插话，speaker 用名单原名。
+5. 有玩家台词才返回 affection，整数 -5~+1；负值台词要不悦，正值台词要缓和。
+6. 无上架时 commands 必须是 []。每条 text ≤60字；同一话术本轮只用一次。`
                 : `## 一、输出契约
 1. 只输出 JSON 本体，不要解释或 markdown。
 2. 顶层只允许 dialogue、affection、commands；commands 必须存在。
 3. dialogue 1~4 条，第一条必须是店主；speaker 只能用第五节名单原名。
-4. 玩家点名某队友时，必须紧接店主输出该队友的一条回应；未点名普通对话只写店主 1~2 条，不主动扩写队友。
+4. 每轮除店主外还应输出1~2条队友插话（在场队友不足时有多少说多少）；玩家点名某队友时，插话队友必须包含点名对象。
 5. 有玩家台词才返回 affection，整数 -5~+1；负值台词要不悦，正值台词要缓和。
 6. 无上架时 commands 必须是 []。每条 text ≤60字；同一话术本轮只用一次。`;
 
             const parts = [
                 narratorOff
-                    ? '玩家团队正在商店中。只扮演店主，不扮演队友。'
-                    : '玩家团队正在商店中。扮演店主，并只在规则要求时扮演在场队友。',
+                    ? '玩家团队正在商店中，请你扮演店主。'
+                    : '玩家团队正在商店中，请你扮演店主和1~2个随行队友。',
                 hardRules,
                 `## 二、世界观\n${worldview}`,
                 `## 三、店主人设\n店主「${keeper}」：${persona}。` + (tone ? `\n语气：${tone}。` : ''),
                 `## 四、好感度\n当前好感：${affection}；关系档位：${attitude}。${attitude === '厌恶抵触' ? '本档位报价可上浮两成。' : ''}按此档位演绎，不得跳档。好感低于80时称玩家“这位客人”，不要直呼玩家名。`,
-                narratorOff
-                    ? `## 五、可说话名单\n唯一可说话人：${keeper}。禁止队友发言。`
-                    : `## 五、可说话名单\n可说话人：${speakList}。名单外禁言；玩家当前操控角色不由你代言。点名回应时使用名单中的原名。`,
+                `## 五、可说话名单\n可说话人：${speakList}。名单外禁言；玩家当前操控角色不由你代言。` + (narratorOff ? '未点名时只有店主说话；玩家点名时仅被点名队友插一条。' : '点名回应时使用名单中的原名。'),
             ];
             if (partyPersonas && !narratorOff) parts.push(`## 六、出场角色人设\n${partyPersonas}`);
             else parts.push('## 六、出场角色人设\n无额外人设。');
@@ -3257,10 +3254,11 @@
         }
 
         // 场景触发器：商品和在场名单各只出现一次，任务放在 user 消息末尾。
+        // 旁白OFF：默认店主独白，仅点名队友时插话；旁白ON：每轮必带1~2条队友插话，点名必含对象。
         function buildSceneTrigger(scene, extra, correction) {
             const keeper = shopState ? shopState.keeper : '店主';
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
-            const mateLine = narratorOff ? '' : '；仅在任务点名时让队友插话';
+            const mateLine = narratorOff ? '' : '；除店主外输出1~2条队友插话（在场队友不足时有多少说多少）';
             const present = buildSpeakerRoster().map(entry => entry.name).join('、') || '（暂无）';
             const base = `【在场成员】${present}\n【店内商品】${buildShopGoodsSummary()}`;
             const correctionLine = correction ? `\n【纠错】上一版漏掉队友「${correction}」；本轮必须补一条 speaker 为该角色原名的回应。` : '';
@@ -3280,9 +3278,17 @@
             if (scene === 'buy') return `${base}\n\n【本轮任务】玩家刚完成购买。${extra || ''}\n以${keeper}口吻回应生意${mateLine}；affection按玩家爽快程度判定。${correctionLine}`;
             if (scene === 'chat') {
                 const mentioned = mentionedTeammates(extra);
-                const mentionLine = mentioned.length
-                    ? `玩家点名了「${mentioned.map(entry => entry.name).join('、')}」；第一条先由店主说，随后必须各输出一条对应队友回应，speaker 使用名单原名。`
-                    : '玩家没有点名队友；只输出店主1~2条，不要主动扩写队友。';
+                const names = mentioned.map(entry => entry.name).join('、');
+                let mentionLine;
+                if (mentioned.length) {
+                    mentionLine = narratorOff
+                        ? `玩家点名了「${names}」；第一条先由店主说，随后必须各输出一条对应队友的插话回应，speaker 使用名单原名。`
+                        : `玩家点名了「${names}」；第一条先由店主说，队友发言必须包含「${names}」的回应，speaker 使用名单原名。`;
+                } else {
+                    mentionLine = narratorOff
+                        ? '玩家没有点名队友；只写店主管话，不写队友。'
+                        : '玩家没有点名队友；插话队友从在场队友中任选1~2位。';
+                }
                 const irritationLine = shopBrowseIrritationPending
                     ? '本轮触发了“只看不买”的不耐烦：必须明确催促、冷淡或不耐烦，禁止热情客套冲淡；本轮 affection 不得为正值。'
                     : '';
@@ -3685,14 +3691,15 @@
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             const keeperKey = speakerKey(keeper);
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
+            // 旁白 OFF 双保险：模型未点名却自行扩写的队友台词直接丢弃；本轮被点名的队友放行
+            const requiredKeys = new Set((Array.isArray(options.requiredReplies) ? options.requiredReplies : []).map(speakerKey));
             const rawLines = (result.dialogue || [])
                 .filter(d => d && typeof d.text === 'string' && d.text.trim())
                 .map(d => ({
                     speaker: resolveSpeakerName(d.speaker, keeper),
                     text: d.text.trim()
                 }))
-                // 旁白 OFF 双保险：模型不听话仍写队友台词时，前端直接丢弃
-                .filter(d => !narratorOff || speakerKey(d.speaker) === keeperKey);
+                .filter(d => !narratorOff || speakerKey(d.speaker) === keeperKey || requiredKeys.has(speakerKey(d.speaker)));
             const dropped = rawLines.filter(d => !allowedKeys.has(speakerKey(d.speaker)) && speakerKey(d.speaker) !== keeperKey);
             if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
             const lines = rawLines.filter(d => allowedKeys.has(speakerKey(d.speaker)) || speakerKey(d.speaker) === keeperKey);
@@ -6048,11 +6055,12 @@
             shopChatRequesting = false;
             if (token !== shopGenerationToken) return;
             if (hasLlmPayload(result)) {
+                const requiredReplies = mentionedTeammates(text).map(entry => entry.name);
                 const savedNarrator = playerState.narratorEnabled;
                 playerState.narratorEnabled = false; // applyLLMResult 自己渲染对话行
                 const savedAffection = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
                 if (browseIrritated) window.__shopAffection = Math.min(savedAffection, -1);
-                await applyLLMResult(result, { scene: 'chat', allowAffection: !browseIrritated });
+                await applyLLMResult(result, { scene: 'chat', allowAffection: !browseIrritated, requiredReplies });
                 window.__shopAffection = savedAffection;
                 playerState.narratorEnabled = savedNarrator;
                 shopBrowseIrritationPending = false;
