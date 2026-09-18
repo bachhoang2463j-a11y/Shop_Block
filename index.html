@@ -3037,47 +3037,40 @@
             return null;
         }
 
-        // 角色名比较键：去掉 emoji 前缀和空白，避免 MMS/块内/LLM 使用不同显示名时错配。
+        // 角色名比较键：剥除全部非中文/字母数字字符（emoji 前后缀、间隔号、空白一律忽略）后小写，
+        // 让 MMS 名册、块内在场名单、LLM 输出的各种显示名变体（🔮埃利奥特/埃利奥特/🛡️弗兰克）落在同一键上。
         function speakerKey(name) {
-            return plainName(name).replace(/\s+/g, '').toLocaleLowerCase();
+            return String(name == null ? '' : name)
+                .replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, '')
+                .toLocaleLowerCase();
         }
 
         function speakerNameMentioned(text, name) {
-            const source = String(text == null ? '' : text).replace(/\s+/g, '');
-            const target = plainName(name).replace(/\s+/g, '');
+            const source = speakerKey(text);
+            const target = speakerKey(name);
             return !!target && source.includes(target);
         }
 
-        // 以 Shop_block 在场名单为范围，优先采用 MMS/底栏的显示名；无块时才使用整支 demo 小队。
+        // 在场名单 = MMS/底栏名册 ∪ 块内「在场成员」，按比较键去重（底栏显示名优先）。
+        // 取并集而非交集：交集口径曾在真机把带 emoji 前缀的变体漏出白名单，导致队友台词被前端拦截。
         function buildSpeakerRoster() {
-            const blockNames = shopState && Array.isArray(shopState.presentMembers)
-                ? shopState.presentMembers.filter(Boolean)
-                : [];
             const partyNames = Array.isArray(partyMembers)
                 ? partyMembers.map(p => p && p.name).filter(Boolean)
                 : [];
-            const source = partyNames.length
-                ? (blockNames.length
-                    ? blockNames.filter(raw => partyNames.some(name => {
-                        const a = speakerKey(raw);
-                        const b = speakerKey(name);
-                        return a === b || a.includes(b) || b.includes(a);
-                    }))
-                    : partyNames)
-                : blockNames;
+            const blockNames = shopState && Array.isArray(shopState.presentMembers)
+                ? shopState.presentMembers.filter(Boolean)
+                : [];
             const out = [];
             const seen = new Set();
-            source.forEach(raw => {
-                const key = speakerKey(raw);
+            const push = raw => {
+                const name = String(raw == null ? '' : raw).trim();
+                const key = speakerKey(name);
                 if (!key || seen.has(key)) return;
-                const matched = partyNames.find(name => speakerKey(name) === key)
-                    || partyNames.find(name => speakerKey(name).includes(key) || key.includes(speakerKey(name)));
-                const name = String(matched || raw).trim();
-                const finalKey = speakerKey(name);
-                if (!finalKey || seen.has(finalKey)) return;
-                seen.add(finalKey);
-                out.push({ name, key: finalKey });
-            });
+                seen.add(key);
+                out.push({ name, key });
+            };
+            partyNames.forEach(push);
+            blockNames.forEach(push);
             return out;
         }
 
@@ -3224,7 +3217,19 @@
         function buildPartyPersonaBlock() {
             const arr = migratePartyPersonas(llmConfig.partyPersonas);
             if (!arr.length) return '';
-            const roster = buildSpeakerRoster();
+            // 人设出场口径仍以底栏为准（MMS 交集结果），无底栏时回退块内名单——与代言白名单的并集口径不同
+            const base = (Array.isArray(partyMembers) && partyMembers.length)
+                ? partyMembers.map(p => p && p.name)
+                : (shopState && Array.isArray(shopState.presentMembers) ? shopState.presentMembers : []);
+            const roster = [];
+            const seen = new Set();
+            (base || []).forEach(raw => {
+                const name = String(raw == null ? '' : raw).trim();
+                const key = speakerKey(name);
+                if (!key || seen.has(key)) return;
+                seen.add(key);
+                roster.push({ name, key });
+            });
             if (!roster.length) return '';
             const lines = [];
             arr.forEach(cp => {
@@ -3687,9 +3692,17 @@
             const scene = options.scene || 'chat';
             const allowAffection = options.allowAffection !== false && scene !== 'enter';
             const whitelist = buildSpeakerWhitelist(true); // 排除当前玩家角色
-            const allowedKeys = new Set(Array.from(whitelist).map(speakerKey));
+            const allowedKeys = Array.from(whitelist).map(speakerKey).filter(Boolean);
             const keeper = shopState ? shopState.keeper : '老布莱克伍德';
             const keeperKey = speakerKey(keeper);
+            const activeKey = activeSpeaker ? speakerKey(activeSpeaker.name) : '';
+            // 宽松匹配：归一键相等或双向包含即视为同一在场角色；操控者的任何变体双向排除，AI 永不代言
+            const speakerAllowed = (key) => {
+                if (!key) return false;
+                if (activeKey && (key === activeKey || key.includes(activeKey) || activeKey.includes(key))) return false;
+                if (key === keeperKey) return true;
+                return allowedKeys.some(k => key === k || key.includes(k) || k.includes(key));
+            };
             const narratorOff = (typeof playerState !== 'undefined' && playerState && playerState.narratorEnabled === false);
             // 旁白 OFF 双保险：模型未点名却自行扩写的队友台词直接丢弃；本轮被点名的队友放行
             const requiredKeys = new Set((Array.isArray(options.requiredReplies) ? options.requiredReplies : []).map(speakerKey));
@@ -3700,9 +3713,9 @@
                     text: d.text.trim()
                 }))
                 .filter(d => !narratorOff || speakerKey(d.speaker) === keeperKey || requiredKeys.has(speakerKey(d.speaker)));
-            const dropped = rawLines.filter(d => !allowedKeys.has(speakerKey(d.speaker)) && speakerKey(d.speaker) !== keeperKey);
+            const dropped = rawLines.filter(d => !speakerAllowed(speakerKey(d.speaker)));
             if (dropped.length) console.warn('[ShopBlock] 白名单过滤发言:', dropped.map(d => d.speaker).join('、'), '白名单=', Array.from(whitelist).join('、'));
-            const lines = rawLines.filter(d => allowedKeys.has(speakerKey(d.speaker)) || speakerKey(d.speaker) === keeperKey);
+            const lines = rawLines.filter(d => speakerAllowed(speakerKey(d.speaker)));
             const rawAffection = Number(result.affection);
             const affection = Number.isFinite(rawAffection) ? Math.max(-5, Math.min(1, Math.trunc(rawAffection))) : 0;
             const currentAffection = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;

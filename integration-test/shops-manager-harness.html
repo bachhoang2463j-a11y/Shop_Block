@@ -258,7 +258,7 @@ window.confirm = function () { return true; };
     const trigOnce = shopEval('buildSceneTrigger("chat", "测试")');
     assert((trigOnce.match(/【店内商品】/g) || []).length === 1, '触发器中店内商品清单只出现一次');
     assert((trigOnce.match(/【在场成员】/g) || []).length === 1, '触发器中在场名单只出现一次');
-    assert(shopEval('(function(){var r=buildSpeakerRoster().map(function(e){return e.name});return r.length===2&&r.indexOf("埃利奥特")>=0&&r.indexOf("弗兰克")>=0;})()') === true, '在场名单与底栏对齐且无重复变体');
+    assert(shopEval('(function(){var r=buildSpeakerRoster();var k=r.map(function(e){return e.key});return k.length===new Set(k).size&&r.some(function(e){return e.name.indexOf("埃利奥特")>=0})&&r.some(function(e){return e.name.indexOf("弗兰克")>=0});})()') === true, '在场名单为底栏∪块内并集且按键去重');
     const trigMention = shopEval('buildSceneTrigger("chat", "🛡️弗兰克你觉得呢")');
     assert(trigMention.includes('点名了') && trigMention.includes('「弗兰克」'), '带emoji前缀的点名仍可识别');
 
