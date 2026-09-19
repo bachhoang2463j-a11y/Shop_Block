@@ -4172,7 +4172,9 @@
                 if (filtered.length) present = filtered;
                 else { present = []; state = 'mismatch'; }
             }
-            return { floorId: found.floorId, stat: found.stat, members: snap.members, present, cash: snap.cash, cashModule: snap.cashModule, vehicles: snap.vehicles, state: state };
+            const meta = found.vars ? found.vars['$mms_meta'] : null;
+            const metaTs = meta && typeof meta.ts === 'number' ? meta.ts : null;
+            return { floorId: found.floorId, metaTs: metaTs, stat: found.stat, members: snap.members, present, cash: snap.cash, cashModule: snap.cashModule, vehicles: snap.vehicles, state: state };
         }
 
         // ====================================================
@@ -4440,6 +4442,14 @@
             if (typeof getVariables !== 'function' || typeof replaceVariables !== 'function') return false;
             const vars = await getVariables({ type: 'message', message_id: ctx.floorId });
             if (!vars || !vars.stat_data) return false;
+            // 并发写检测：商店面板取数后该楼 stat_data 已被重写（如 MMS 更新链），提示冲突风险。
+            // 只告警不改写盘行为；基线无 ts（旧数据无 $mms_meta）不判
+            const curMeta = vars['$mms_meta'];
+            const curTs = curMeta && typeof curMeta.ts === 'number' ? curMeta.ts : null;
+            if (curTs !== null && typeof ctx.metaTs === 'number' && curTs !== ctx.metaTs) {
+                console.warn('[ShopBlock] 检测到并发写入：楼 ' + ctx.floorId + ' 的 stat_data 在商店面板取数后已被重写（meta.ts ' + ctx.metaTs + ' → ' + curTs + '），结算落盘可能与对方改动互相覆盖', curMeta);
+                showTopToast('检测到状态栏数据在结算期间已被其他模块更新，本次结算可能与该改动冲突（详情见控制台）', 8000);
+            }
             const stat = JSON.parse(JSON.stringify(vars.stat_data));
             const root = stat['状态栏'] || stat;
 
