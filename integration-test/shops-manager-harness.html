@@ -179,7 +179,7 @@ window.confirm = function () { return true; };
     assert(await waitUntil(() => shopEval('shopState && shopState.shopName === "出征杂货铺"')), 'debug 导入解析并载入（出征杂货铺）');
     assert(await waitUntil(() => shopEval('!!window.__mockVars["$shops"]["出征杂货铺"]')), 'debug 导入同样持久化');
 
-    log('== F. 售罄补货掷骰 + 进店特惠楼层保护 ==');
+    log('== F. 库存持久化（刷新不补货）+ 进店特惠楼层保护 ==');
     shopWin().__hYamlF = YAML1;
     await shopEval('onShopDataReceived(window.__hYamlF)');
     const soldOk = await shopEval(`(async function () {
@@ -203,27 +203,30 @@ window.confirm = function () { return true; };
     assert(await waitUntil(() => shopEval('(function(){var acc=document.querySelector(\'.shop-acc[data-shop="铜铃杂货铺"]\');return acc ? acc.textContent.indexOf("件售罄") >= 0 : false;})()')), '一览 summary 标注售罄件数');
     assert(shopEval('(function(){var acc=document.querySelector(\'.shop-acc[data-shop="铜铃杂货铺"]\');return acc ? acc.querySelector(".shop-good-sold-badge") != null : false;})()') === true, '一览商品行带已售罄徽标');
 
-    // stub 随机 0.9：≥0.5 → 维持售罄（soldMap 标记保留）
-    shopEval('window.__hMr = Math.random; Math.random = function(){ return 0.9; };');
+    // 库存持久化（SPEC 第九节 · Q22 已确认）：刷新 / 重进 / 重复渲染一律不补货。
+    // 原「50% 掷骰补货」已移除——随机数即使落在旧补货区间也不回升；
+    // 只有「剧情补货」（正文块声明量上升）与一览手动调整才会回升。
+    shopEval('window.__hMr = Math.random; Math.random = function(){ return 0.4; };');
     shopWin().__hYamlF2 = YAML1;
     await shopEval('onShopDataReceived(window.__hYamlF2)');
     shopEval('Math.random = window.__hMr;');
-    assert(shopEval('shopState.items.find(i => i.name === "精炼枪油").sold') === true, '掷骰 0.9 → 维持售罄');
-    assert(shopEval('(function(){var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return m.soldMap && m.soldMap["精炼枪油"] === true;})()') === true, '维持售罄时 soldMap 标记保留');
+    const rk0 = shopEval('(function(){var it=shopState.items.find(i => i.name === "精炼枪油");return {sold: it.sold, stock: it.stock};})()');
+    assert(rk0.sold === true, '重进商店不补货（仍售罄，随机数落在旧补货区间也不回升）');
+    assert(rk0.stock === 0, '重进商店剩余量保持 0（实际 ' + rk0.stock + '）');
+    assert(shopEval('(function(){var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return m.stockMap && m.stockMap["精炼枪油"] === 0;})()') === true, '剩余量持久化到 $meta.stockMap');
+    assert(shopEval('(function(){var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return m.soldMap && m.soldMap["精炼枪油"] === true;})()') === true, '重进后售罄标记仍在（soldMap 与 stockMap 一致）');
 
-    // stub 随机 0.4：<0.5 → 补货，数量 = round(5×(0.3+0.4×0.7)) = 3，soldMap 清除
-    shopEval('window.__hMr = Math.random; Math.random = function(){ return 0.4; };');
-    shopWin().__hYamlF3 = YAML1;
+    // 剧情补货：新块声明量高于上次声明量 → 只补差额（5→12 补 7）
+    shopWin().__hYamlF3 = YAML1.replace('数量: 5', '数量: 12');
     await shopEval('onShopDataReceived(window.__hYamlF3)');
-    shopEval('Math.random = window.__hMr;');
     const rk = shopEval('(function(){var it=shopState.items.find(i => i.name === "精炼枪油");return {sold: it.sold, stock: it.stock};})()');
-    assert(rk.sold === false, '掷骰 0.4 → 补货 sold=false');
-    assert(rk.stock === 3, '补货数量 = round(5×0.58) = 3（实际 ' + rk.stock + '）');
+    assert(rk.stock === 7, '剧情补货只补差额（声明 5→12 → 剩 7，实际 ' + rk.stock + '）');
+    assert(rk.sold === false, '补货后恢复在售（sold=false）');
     assert(shopEval('(function(){var m=window.__mockVars["$shops"]["铜铃杂货铺"].$meta;return !m.soldMap || !m.soldMap["精炼枪油"];})()') === true, '补货后 $meta.soldMap 标记清除');
     // AI 感知：补货后清单不再标售罄，且带剩余库存
     const trigAfterRestock = shopEval('buildSceneTrigger("chat", "测试")');
     assert(trigAfterRestock.includes('已售罄') === false, '补货后 LLM 清单不再标注售罄');
-    assert(trigAfterRestock.includes('剩3罐') === true, 'LLM 清单带剩余库存标注（剩3罐）');
+    assert(trigAfterRestock.includes('剩7罐') === true, 'LLM 清单带剩余库存标注（剩7罐）');
 
     // 进店特惠：楼层 7 首掷 → 恰好一件非私藏在售商品半价
     const d1 = shopEval('(function(){var sp=shopState.items.filter(function(i){return i.dealSpecial;});return {n: sp.length, half: sp.every(function(i){return i.dealPrice === Math.round(i.price*0.5*100)/100;})};})()');

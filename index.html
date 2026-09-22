@@ -1031,6 +1031,326 @@
         /* ====================================================
            弹窗系统 (数量拉条弹窗、购物车详情面板、账本、LLM设置)
         ==================================================== */
+        /* ===== 货架上的档位徽章与"非卖品"印章（价目表的可见面） ===== */
+        .shelf-tier-tag {
+            display: inline-block;
+            margin-top: 2px;
+            font-size: 9px;
+            padding: 0 5px;
+            border-radius: 999px;
+            border: 1px solid #4a3322;
+            color: #b9a288;
+            line-height: 14px;
+        }
+
+        .shelf-tier-tag.tier-common { border-color: #4a6b3a; color: #a8cf90; }
+
+        .shelf-tier-tag.tier-high { border-color: #6a5a2a; color: #e8c874; }
+
+        .shelf-tier-tag.tier-legendary { border-color: #7a3a34; color: #e79b93; }
+
+        .shelf-cell.blocked { opacity: 0.78; }
+
+        /* 格内信息入口：右下角，避开左上编号与右上库存角标；不抢主点击 */
+        .shelf-info-btn {
+            position: absolute;
+            right: 4px;
+            bottom: 4px;
+            width: 18px;
+            height: 18px;
+            padding: 0;
+            border-radius: 50%;
+            border: 1px solid #4a3322;
+            background: rgba(20, 13, 10, 0.85);
+            color: #b9a288;
+            font-size: 11px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 3;
+        }
+
+        .shelf-info-btn:hover { border-color: var(--dd-gold); color: var(--dd-gold-bright); }
+
+        .shelf-cell.blocked .item-price { color: #8c7360; }
+
+        .blocked-stamp {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-14deg);
+            border: 2px solid #6a5030;
+            color: #c8a878;
+            background: rgba(20, 13, 10, 0.88);
+            padding: 2px 8px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            border-radius: 3px;
+            pointer-events: none;
+        }
+
+        /* ===== 交易方向切换（购买 / 出售） ===== */
+        .trade-mode-switch {
+            display: flex;
+            border: 1px solid #4a3322;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .trade-mode-btn {
+            background: #160f0c;
+            border: none;
+            color: #a48e78;
+            padding: 3px 14px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .trade-mode-btn.active {
+            background: var(--dd-gold);
+            color: #160f0c;
+            font-weight: 700;
+        }
+
+        /* ===== 出售面板：文字清单（背包物品没有 emoji 图标，不以图标为主要信息载体） ===== */
+        .sell-panel {
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .sell-panel.show { display: flex; }
+
+        .sell-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            border-bottom: 1px solid #382417;
+            padding-bottom: 8px;
+            gap: 8px;
+        }
+
+        .sell-cash-label { font-size: 11px; color: #8c7360; margin-right: 6px; }
+
+        .sell-cash strong {
+            font-family: var(--font-title);
+            font-size: 20px;
+            color: var(--dd-gold-bright);
+        }
+
+        .sell-head-hint { font-size: 11px; color: #8c7360; }
+
+        .sell-owners { display: flex; flex-wrap: wrap; gap: 6px; }
+
+        .sell-owner-chip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #160f0c;
+            border: 1px solid #4a3322;
+            border-radius: 999px;
+            padding: 3px 10px 3px 4px;
+            color: #a48e78;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .sell-owner-chip.active { border-color: var(--dd-gold-bright); color: #f0dcae; background: #241a12; }
+
+        .sell-owner-chip img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+
+        .sell-owner-face {
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sell-list {
+            max-height: 320px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-right: 4px;
+        }
+
+        .sell-row {
+            display: grid;
+            grid-template-columns: 28px minmax(0, 1fr) auto auto;
+            gap: 10px;
+            align-items: center;
+            background: rgba(12, 8, 6, 0.72);
+            border: 1px solid #352319;
+            border-left: 3px solid #6e5036;
+            padding: 8px 10px;
+            cursor: pointer;
+        }
+
+        .sell-row:hover { border-left-color: var(--dd-gold); background: #1d1410; }
+
+        .sell-row.selected { border-left-color: #8fb573; }
+
+        .sell-row-icon { font-size: 18px; text-align: center; }
+
+        .sell-row-main { min-width: 0; }
+
+        .sell-row-name {
+            color: #e5d7c3;
+            font-size: 13px;
+            font-weight: 600;
+            word-break: break-word;
+        }
+
+        .sell-row-sub { font-size: 11px; color: #8c7360; margin-top: 2px; word-break: break-word; }
+
+        .sell-row-price {
+            text-align: right;
+            white-space: nowrap;
+            color: #dfb06c;
+            font-weight: 700;
+            font-size: 13px;
+        }
+
+        .sell-price-sub { display: block; font-weight: 400; font-size: 10px; color: #8c7360; }
+
+        .sell-row-price.tbd { color: #8c7360; font-weight: 400; }
+
+        .sell-row-price.over { color: #c0605a; }
+
+        .sell-row-pick {
+            width: 22px;
+            height: 22px;
+            border: 1px solid #4a3322;
+            border-radius: 4px;
+            background: #160f0c;
+            color: transparent;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+        }
+
+        .sell-row.selected .sell-row-pick { background: #4a6b3a; border-color: #8fb573; color: #eaf5e0; }
+
+        .sell-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid #382417;
+            padding-top: 10px;
+            margin-top: 2px;
+            gap: 10px;
+        }
+
+        .sell-summary { font-size: 12px; color: #e5d7c3; }
+
+        .sell-actions { display: flex; gap: 8px; }
+
+        /* ===== 商品详情：悬浮气泡内的结构化行 + 详情弹窗 ===== */
+        .bubble-detail {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #4a3322;
+            font-size: 11px;
+            color: #c8b39a;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            line-height: 1.55;
+        }
+
+        .bubble-detail .bd-tier { color: var(--dd-gold-bright); font-weight: 700; }
+
+        .bubble-detail .bd-hint { color: #8c7360; }
+
+        .detail-grid { display: flex; flex-direction: column; gap: 10px; }
+
+        .detail-chipbar { display: flex; flex-wrap: wrap; gap: 6px; }
+
+        .detail-chip {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid #4a3322;
+            color: #c8b39a;
+            background: #160f0c;
+        }
+
+        .detail-chip.tier-common { border-color: #4a6b3a; color: #a8cf90; }
+
+        .detail-chip.tier-high { border-color: #6a5a2a; color: #e8c874; }
+
+        .detail-chip.tier-legendary { border-color: #7a3a34; color: #e79b93; }
+
+        .detail-section {
+            background: rgba(12, 8, 6, 0.72);
+            border: 1px solid #352319;
+            border-radius: 4px;
+            padding: 9px 11px;
+        }
+
+        .detail-section-title { font-size: 11px; color: #8c7360; margin-bottom: 5px; }
+
+        .detail-effects {
+            margin: 0;
+            padding-left: 16px;
+            color: #e5d7c3;
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        .detail-quote { color: #b9a288; font-size: 12px; font-style: italic; line-height: 1.6; }
+
+        .detail-price-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+
+        .detail-price-big {
+            font-family: var(--font-title);
+            font-size: 22px;
+            font-weight: 900;
+            color: var(--dd-gold-bright);
+        }
+
+        .detail-action-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+
+        .sell-review-group { margin-bottom: 10px; }
+
+        .sell-review-owner {
+            font-size: 12px;
+            color: var(--dd-gold-bright);
+            margin-bottom: 4px;
+            border-bottom: 1px solid #382417;
+            padding-bottom: 3px;
+        }
+
+        .sell-review-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 12px;
+            color: #e5d7c3;
+            padding: 3px 0;
+        }
+
+        .sell-review-note { font-size: 11px; color: #8c7360; margin-top: 8px; line-height: 1.6; }
+
+        @media (max-width: 720px) {
+            .sell-row { grid-template-columns: 24px minmax(0, 1fr) auto; }
+
+            .sell-row-price { grid-column: 2 / 4; text-align: left; }
+
+            .sell-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+            .sell-footer { flex-direction: column; align-items: stretch; }
+
+            .sell-actions { justify-content: flex-end; }
+        }
+
         .inspect-modal-backdrop {
             position: fixed;
             inset: 0;
@@ -2166,6 +2486,8 @@
                 <div class="bubble-text" id="bossBubbleText">
                     “好眼光。约翰·勃朗宁的杰作，一枪就能把私酒贩子的狂吠咽回肚子里。”
                 </div>
+                <!-- 结构化详情行（战斗效果/档位/次数/估值）：与详情弹窗同一份数据，悬浮即可读 -->
+                <div class="bubble-detail" id="bossBubbleDetail"></div>
             </div>
 
             <div class="portrait-wrapper">
@@ -2216,12 +2538,39 @@
                     <button class="top-pill-btn" id="btnRegroup" style="padding:2px 8px;font-size:11px;" title="由店主AI重新归类商品，合并二次进店产生的重复类目">
                         <span>🗂️</span><span>重排商品</span>
                     </button>
+                    <!-- 交易方向切换：购买走货架，出售走背包清单（两单独立结算，不互相抵扣） -->
+                    <div class="trade-mode-switch" id="tradeModeSwitch">
+                        <button class="trade-mode-btn active" data-mode="buy" type="button">购买</button>
+                        <button class="trade-mode-btn" data-mode="sell" type="button">出售</button>
+                    </div>
                 </div>
             </div>
 
             <!-- 实木柜子 (20个储物托盘) -->
             <div class="wooden-cabinet" id="woodenCabinet">
                 <!-- 由 JavaScript 动态渲染 20 个货架槽位 -->
+            </div>
+
+            <!-- 出售面板（购买模式下隐藏）：归属筛选 + 无 emoji 依赖的文字清单。
+                 收购资格与售卖资格分开——店主现金足够就能收任何档位，但只有符合本店
+                 售卖权限的回收品会重新上架（传说奇物只留收购记录） -->
+            <div class="sell-panel" id="sellPanel">
+                <div class="sell-head">
+                    <div class="sell-cash">
+                        <span class="sell-cash-label">店主可用现金</span>
+                        <strong id="sellKeeperCash">$0</strong>
+                    </div>
+                    <div class="sell-head-hint" id="sellHeadHint">选择归属，点物品查看收购价</div>
+                </div>
+                <div class="sell-owners" id="sellOwners"><!-- 归属筛选（JS 渲染） --></div>
+                <div class="sell-list" id="sellList"><!-- 可售清单（JS 渲染） --></div>
+                <div class="sell-footer">
+                    <div class="sell-summary" id="sellSummary">已选 0 件 · 预计收入 $0.00</div>
+                    <div class="sell-actions">
+                        <button class="cart-clear-btn" id="sellClearBtn" type="button">清空选择</button>
+                        <button class="buy-btn" id="sellReviewBtn" type="button" disabled>查看出售清单</button>
+                    </div>
+                </div>
             </div>
         </section>
     </main>
@@ -2378,6 +2727,73 @@
                 <div style="display: flex; gap: 10px;">
                     <button class="cart-clear-btn" id="cartModalClearBtn">清空清单</button>
                     <button class="buy-btn" id="cartModalCheckoutBtn">确认结算 (CHECKOUT)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================
+         弹窗：商品详情（悬浮气泡的"钉住"版；手机端唯一详情入口）
+         战斗效果直接读该物品的目录定义行，展示与战斗端同一份效果，不另抄一份文案
+    ==================================================== -->
+    <div class="inspect-modal-backdrop" id="itemDetailModal">
+        <div class="parchment-card" style="width: 480px;">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div id="detailEmoji" style="font-size: 32px;">📦</div>
+                    <div>
+                        <div class="modal-item-name" id="detailName">商品名</div>
+                        <div class="modal-item-tier" id="detailSubtitle">店主口吻介绍</div>
+                    </div>
+                </div>
+                <button class="modal-close-btn" id="detailCloseBtn">&times;</button>
+            </div>
+            <div class="detail-grid">
+                <div class="detail-chipbar" id="detailChips"></div>
+                <div class="detail-section" id="detailEffectSection">
+                    <div class="detail-section-title">战斗效果</div>
+                    <ul class="detail-effects" id="detailEffects"></ul>
+                </div>
+                <div class="detail-section" id="detailQuoteSection">
+                    <div class="detail-section-title">店主说法</div>
+                    <div class="detail-quote" id="detailQuote"></div>
+                </div>
+                <div class="detail-section">
+                    <div class="detail-section-title" id="detailPriceLabel">基准估值</div>
+                    <div class="detail-price-row">
+                        <div class="detail-price-big" id="detailPrice">$0.00</div>
+                        <div style="font-size: 11px; color: #8c7360; text-align: right;" id="detailPriceNote"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="detail-action-row" id="detailActions"></div>
+        </div>
+    </div>
+
+    <!-- ====================================================
+         弹窗：出售清单确认（按物主分组；同名不同物主不合并，避免不知道卖掉的是谁的）
+    ==================================================== -->
+    <div class="inspect-modal-backdrop" id="sellReviewModal">
+        <div class="parchment-card cart-detail-card">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div style="font-size: 32px;">💵</div>
+                    <div>
+                        <div class="modal-item-name">出售清单确认</div>
+                        <div class="modal-item-tier">SELL ORDER REVIEW · 逐件核对归属与收购价</div>
+                    </div>
+                </div>
+                <button class="modal-close-btn" id="sellReviewCloseBtn">&times;</button>
+            </div>
+            <div class="sell-review-body" id="sellReviewBody"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #382417; padding-top: 14px; margin-top: 14px; gap: 10px; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 11px; color: #8c7360;">团队收入 TOTAL</div>
+                    <div style="font-family: var(--font-title); font-size: 24px; font-weight: 900; color: #8fb573;" id="sellReviewTotal">$0.00</div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="cart-clear-btn" id="sellReviewBackBtn">返回调整</button>
+                    <button class="buy-btn" id="sellReviewConfirmBtn">确认出售 (SELL)</button>
                 </div>
             </div>
         </div>
@@ -2706,9 +3122,20 @@
             const price = parsePriceString(g['价格']);
             if (!isFinite(price) || price < 0) return null;
             const count = parseInt(g['数量'], 10);
-            const stock = isFinite(count) && count > 0 ? count : 1;
+            // 数量 0 = 已售罄（库存持久化的落点：刷新/重进不补货，只有剧情补货或手动调整才回升）
+            const hasStock = isFinite(count);
+            const stock = hasStock ? Math.max(0, count) : 1;
+            const soldOut = hasStock && stock <= 0;
             const intro = String(g['介绍'] || '（店主没有多作介绍。）').trim();
             const tags = String(g['标签'] || '').trim();
+            // 奇物声明（可选字段，正文块给）：效果=战斗定义行，奇物=档位，形态=可复用/一次性
+            // 未声明则保持普通商品，继续按正文报价——普通枪械不会因为招式带 [传奇] 就被抬成传说奇物
+            const relicLine = String(g['效果'] || g['战斗'] || '').trim();
+            const relicTier = String(g['奇物'] || g['档位'] || '').trim();
+            const relicForm = String(g['形态'] || '').trim();
+            const relicSeed = (relicLine || relicTier)
+                ? { line: relicLine, tier: relicTier, form: relicForm, name: name, category: category, tags: tags }
+                : null;
             return {
                 id: idCounter.n++,
                 name: name,
@@ -2718,10 +3145,13 @@
                 emoji: parsed.emoji,
                 isStackable: stock > 1,
                 stock: stock,
+                sold: soldOut || undefined,
                 unit: String(g['单位'] || '件').trim(),
                 tier: 'shop',
                 tierText: tags || (category + ' · ' + name.slice(0, 8)),
                 quote: intro,
+                relic: null,                   // 由 hydrateShopRelics 依据目录/声明填充
+                relicSeed: relicSeed,
                 _raw: JSON.parse(JSON.stringify(g)) // 原文中键结构，$shops 持久化零转换（SPEC 第四节）
             };
         }
@@ -2794,6 +3224,13 @@
                     return Array.isArray(catRoot[c]) && catRoot[c].length > 0;
                 }),
                 hasExclusive: exclusive.length > 0,
+                // 店铺类型：块可显式声明（店铺类型: 奢侈），缺省按立绘推断；首次落店后由 $shops 锁定
+                shopType: normalizeShopType(root['店铺类型'] || root['店型'], portrait),
+                // 店主现金：块可显式给（剧情补钱），缺省 null 表示"沿用已存或首次掷取"
+                keeperCash: (function () {
+                    const v = parsePriceString(root['店主现金']);
+                    return isFinite(v) && v >= 0 ? v : null;
+                })(),
                 items: allItems
             };
         }
@@ -2839,6 +3276,252 @@
             await writeAllShops(all);
         }
 
+        // ====================================================
+        // 物品目录（SPEC 第九节）：$shop_catalog —— 奇物与战斗物品的档案 + 归属索引
+        // 只存"定义"与"归属关系"，不存数量：数量真值始终在 stat_data（禁止第二份可独立增减的库存）
+        //   items[id] = { id,name,emoji,category,kind,tier,form,uses,battle,val,quote,status,source,ts }
+        //   holds[k]  = { itemId,owner,ownerKind,field,name }   k = ownerKey + '|' + itemId
+        //   sold[id]  = { owner,ownerKind,ts }  售出墓碑：防旧战斗 YAML / 持久化档把已售物品复活
+        // ====================================================
+        const CATALOG_VAR_KEY = '$shop_catalog';
+        const catalogMem = { v: 1, ts: 0, items: {}, holds: {}, sold: {} };
+
+        function normalizeCatalog(raw) {
+            const c = (raw && typeof raw === 'object') ? raw : {};
+            if (!c.items || typeof c.items !== 'object') c.items = {};
+            if (!c.holds || typeof c.holds !== 'object') c.holds = {};
+            if (!c.sold || typeof c.sold !== 'object') c.sold = {};
+            c.v = 1;
+            return c;
+        }
+
+        async function readCatalog() {
+            if (tavernVarsApiAvailable()) {
+                const vars = await getVariables({ type: 'chat' });
+                return normalizeCatalog(vars && vars[CATALOG_VAR_KEY]);
+            }
+            return normalizeCatalog(catalogMem);
+        }
+
+        // 目录写入走整体替换（insertOrAssign 深合并删不掉键，售出墓碑与归属清理都会被旧值顶回来）
+        async function writeCatalog(cat) {
+            const next = normalizeCatalog(cat);
+            next.ts = Date.now();
+            if (tavernVarsApiAvailable() && typeof replaceVariables === 'function') {
+                const vars = await getVariables({ type: 'chat' });
+                await replaceVariables(Object.assign({}, vars || {}, { [CATALOG_VAR_KEY]: next }), { type: 'chat' });
+                return next;
+            }
+            const snapshot = JSON.parse(JSON.stringify(next));
+            Object.keys(catalogMem).forEach(k => delete catalogMem[k]);
+            Object.assign(catalogMem, snapshot);
+            return next;
+        }
+
+        function catalogNameSlug(name) {
+            const s = String(name || '').replace(/\s+/g, '');
+            let h = 5381;
+            for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+            return 'it' + h.toString(36);
+        }
+
+        function catalogOwnerKey(owner, ownerKind) {
+            return speakerKey(owner) + '|' + String(ownerKind || 'char');
+        }
+
+        // 稳定 id：同名同定义复用同一 id；同名不同定义才追加序号区分（同一物主的同名异定义不混库存）
+        function catalogIdFor(cat, name, battleLine) {
+            const base = catalogNameSlug(name);
+            const line = String(battleLine || '');
+            let id = base;
+            for (let n = 2; n <= 50; n++) {
+                const rec = cat.items[id];
+                if (!rec) return id;
+                if (String(rec.name) === String(name)
+                    && String((rec.battle && rec.battle.line) || '') === line
+                    && String(rec.form || '') === '') return id;
+                if (String(rec.name) === String(name) && String((rec.battle && rec.battle.line) || '') === line) return id;
+                id = base + '-' + n;
+            }
+            return base + '-x';
+        }
+
+        // 由战斗定义行构造奇物档案（档位/形态/次数/效果系数/估值一次算清并落档，之后买卖都读这份）
+        function buildRelicRecord(seed) {
+            const s = seed || {};
+            const line = parseBattleItemLine(s.line);
+            if (!line) return null;
+            // 组合道具：父行常只有 [道具][次数:N]，效果在子技能行里。子技能槽并入效果池——
+            // 但次数与形态只看父行（子技能共享父道具的次数，不是每种各算一次）
+            const childLines = (Array.isArray(s.children) ? s.children : []).map(v => String(v).trim()).filter(Boolean);
+            const kids = childLines.map(parseBattleItemLine).filter(Boolean);
+            const form = RELIC_FORM_ALIAS[s.form] || relicFormOf(line.category);
+            if (!form) return null;                       // 弹药或无类别标签：不进奇物体系
+            const tier = RELIC_TIER_ALIAS[s.tier] || guessRelicTier({
+                name: s.name || line.name, category: s.category, tags: s.tags, slots: line.slots
+            });
+            const E = relicEffectFactor({ slots: line.slots, children: kids.map(k => ({ slots: k.slots })) });
+            if (E == null) return null;                   // 无已收录效果：不按奇物估价（交鉴定确认）
+            const uses = form === 'reusable' ? Math.max(1, line.uses || parseInt(s.uses, 10) || 1) : 0;
+            const val = relicValuationOf(tier, form, E, uses);
+            if (!val) return null;
+            return {
+                name: String(s.name || line.name).trim(),
+                emoji: s.emoji || '📦',
+                category: String(s.category || '').trim(),
+                kind: 'relic',
+                tier: val.tier,
+                form: val.form,
+                uses: val.uses,
+                battle: {
+                    line: String(s.line), category: line.category, slots: line.slots,
+                    count: line.count, children: childLines
+                },
+                val: { E: val.E, U: val.U, M: val.M, core: val.core, price: val.price, floor: val.floor, band: val.band },
+                quote: String(s.quote || '').trim(),
+                source: s.source || 'shop',
+                status: 'owned',
+                ts: Date.now()
+            };
+        }
+
+        // 把档案记录投影成商品/背包物品可用的紧凑结构
+        function relicViewOf(rec, itemId) {
+            if (!rec || !rec.val || !RELIC_TIERS[rec.tier]) return null;
+            return {
+                id: itemId, tier: rec.tier, form: rec.form, uses: rec.uses,
+                E: rec.val.E, price: rec.val.price, floor: rec.val.floor, band: rec.val.band,
+                line: (rec.battle && rec.battle.line) || '',
+                children: (rec.battle && Array.isArray(rec.battle.children)) ? rec.battle.children : [],
+                source: rec.source || ''
+            };
+        }
+
+        // 目录登记：已有同 id 只补空字段（定义不因 AI 重述而漂移）
+        function catalogRegister(cat, seed) {
+            const def = buildRelicRecord(seed);
+            if (!def) return null;
+            const id = catalogIdFor(cat, def.name, def.battle.line);
+            const prev = cat.items[id];
+            if (prev) {
+                const merged = Object.assign({}, prev, def, {
+                    quote: def.quote || prev.quote || '',
+                    emoji: def.emoji !== '📦' ? def.emoji : (prev.emoji || '📦'),
+                    status: prev.status === 'sold' ? 'sold' : 'owned',
+                    ts: prev.ts || def.ts
+                });
+                cat.items[id] = merged;
+            } else {
+                cat.items[id] = Object.assign({ id: id }, def);
+            }
+            return { id: id, record: cat.items[id] };
+        }
+
+        function catalogLink(cat, itemId, owner, ownerKind, field, name) {
+            if (!itemId || !owner) return;
+            const k = catalogOwnerKey(owner, ownerKind) + '|' + itemId;
+            const prev = cat.holds[k];
+            cat.holds[k] = {
+                itemId: itemId, owner: String(owner), ownerKind: ownerKind === 'vehicle' ? 'vehicle' : 'char',
+                field: field || (prev && prev.field) || '物品',
+                name: name || (prev && prev.name) || ''
+            };
+        }
+
+        function catalogUnlink(cat, itemId, owner, ownerKind) {
+            const k = catalogOwnerKey(owner, ownerKind) + '|' + itemId;
+            if (cat.holds[k]) delete cat.holds[k];
+        }
+
+        function catalogHoldsOf(cat, owner, ownerKind) {
+            const prefix = catalogOwnerKey(owner, ownerKind) + '|';
+            return Object.keys(cat.holds)
+                .filter(k => k.indexOf(prefix) === 0)
+                .map(k => cat.holds[k])
+                .filter(Boolean);
+        }
+
+        // 售出墓碑：数量归零后仍留档，战斗端据此拒绝把物品重新带回来
+        function catalogMarkSold(cat, itemId, owner, ownerKind) {
+            const rec = cat.items[itemId];
+            if (rec) rec.status = 'sold';
+            cat.sold[itemId] = { owner: String(owner || ''), ownerKind: ownerKind === 'vehicle' ? 'vehicle' : 'char', ts: Date.now() };
+        }
+
+        function catalogRevive(cat, itemId) {
+            const rec = cat.items[itemId];
+            if (rec) rec.status = 'owned';
+            if (cat.sold[itemId]) delete cat.sold[itemId];
+        }
+
+        // 战斗定义桥：把正文块里已定义过的物品按名索引，供商店商品/玩家背包物品接上真实效果。
+        // 用 YAML 解析而非逐行正则——组合道具的父行往往只有 [道具][次数:N] 而没有效果槽，
+        // 效果全在子技能里（安魂曲音叉即此形），只扫父行会把它们误判成普通商品。
+        let battleItemIndexCache = null;
+
+        function extractCombatBlockItems(text) {
+            const out = {};
+            const src = String(text || '');
+            if (!src) return out;
+            const open = src.toLowerCase().lastIndexOf('<combat_block>');
+            const close = src.toLowerCase().lastIndexOf('</combat_block>');
+            if (open === -1 || close <= open) return out;
+            const block = src.substring(open + '<combat_block>'.length, close);
+            let data;
+            try { data = jsyaml.load(block); } catch (e) { return out; }
+            const root = data && typeof data === 'object' ? (data['战斗数据栏'] || data) : null;
+            if (!root || typeof root !== 'object') return out;
+            const sides = [].concat(root['我方列表'] || [], root['敌方列表'] || []);
+            const absorb = (entry) => {
+                if (typeof entry === 'string') {
+                    const p = parseBattleItemLine(entry);
+                    if (p && p.category && !out[p.name]) out[p.name] = { line: entry.trim(), children: [] };
+                    return;
+                }
+                if (!entry || typeof entry !== 'object') return;
+                Object.keys(entry).forEach(key => {
+                    const p = parseBattleItemLine(key);
+                    if (!p || !p.category) return;
+                    const kids = Array.isArray(entry[key]) ? entry[key].map(v => String(v).trim()).filter(Boolean) : [];
+                    if (!out[p.name]) out[p.name] = { line: key.trim(), children: kids };
+                });
+            };
+            sides.forEach(side => {
+                const ch = side && side['角色'];
+                if (!ch || typeof ch !== 'object' || !Array.isArray(ch['物品'])) return;
+                ch['物品'].forEach(absorb);
+            });
+            return out;
+        }
+
+        // 从最近楼层正文里按名找战斗定义（找不到返回 null，由鉴定流程兜底，不静默按便宜货上架）
+        async function findBattleItemByName(name) {
+            const target = String(name || '').trim();
+            if (!target) return null;
+            if (battleItemIndexCache && battleItemIndexCache[target]) return battleItemIndexCache[target];
+            let texts = [];
+            try {
+                if (typeof getChatMessages === 'function' && typeof getLastMessageId === 'function') {
+                    const lastId = getLastMessageId();
+                    const from = Math.max(0, lastId - 19);
+                    const msgs = await getChatMessages(from, lastId - from + 1);
+                    if (Array.isArray(msgs)) texts = msgs.map(m => String((m && (m.message || m.mes || m.raw_content)) || ''));
+                }
+            } catch (e) { /* 无聊天接口：跳过，走鉴定兜底 */ }
+            if (!battleItemIndexCache) battleItemIndexCache = {};
+            for (let i = texts.length - 1; i >= 0; i--) {
+                const idx = extractCombatBlockItems(texts[i]);
+                Object.keys(idx).forEach(k => { if (!battleItemIndexCache[k]) battleItemIndexCache[k] = idx[k]; });
+                if (battleItemIndexCache[target]) return battleItemIndexCache[target];
+            }
+            return null;
+        }
+
+        async function findBattleLineByName(name) {
+            const hit = await findBattleItemByName(name);
+            return hit ? hit.line : '';
+        }
+
         function persistedShopToState(shop) {
             if (!shop || typeof shop !== 'object') return null;
             return normalizeShopData({
@@ -2846,6 +3529,9 @@
                 '店主': shop['店主'],
                 '立绘': shop['立绘'],
                 '店主性格': shop['店主性格'],
+                // 类型与现金由 $shops 持有（本块不含），显式回传以免按立绘重新推断、把奢侈品店降回普通店
+                '店铺类型': shop['店铺类型'],
+                '店主现金': shop['店主现金'],
                 '在场成员': Array.isArray(shop['在场成员']) ? shop['在场成员'] : [],
                 '分类商品': shop['分类商品'] || {},
                 '独家私藏': Array.isArray(shop['独家私藏']) ? shop['独家私藏'] : []
@@ -2901,6 +3587,47 @@
 
             const prevMeta = (prev && prev['$meta'] && typeof prev['$meta'] === 'object') ? prev['$meta'] : {};
             const personaOverride = prevMeta.personaOverride === true;
+
+            // 库存持久化（SPEC 第九节）：数量由玩家买卖真实增减，刷新/重进/重复渲染一律不补货。
+            //   剩余量存 $meta.stockMap；AI 声明的数量存 $meta.declaredStock，仅用于识别"剧情补货"——
+            //   新块声明量大于上次声明量 = 明确补货信号，把差额累加回剩余量；否则沿用已存剩余量。
+            const prevStock = (prevMeta.stockMap && typeof prevMeta.stockMap === 'object') ? prevMeta.stockMap : {};
+            const prevDeclared = (prevMeta.declaredStock && typeof prevMeta.declaredStock === 'object') ? prevMeta.declaredStock : {};
+            const stockMap = {};
+            const declaredStock = {};
+            const soldMap = {};
+            const applyStockMerge = entryList => {
+                entryList.forEach(entry => {
+                    const g = (entry && entry['商品'] && typeof entry['商品'] === 'object') ? entry['商品'] : entry;
+                    if (!g || typeof g !== 'object') return;
+                    const nm = getCleanNameAndEmoji(g['名字']).name;
+                    if (!nm) return;
+                    const declared = parseInt(g['数量'], 10);
+                    const declaredNum = isFinite(declared) && declared > 0 ? declared : 1;
+                    const lastDeclared = parseInt(prevDeclared[nm], 10);
+                    let remaining;
+                    if (!Object.prototype.hasOwnProperty.call(prevStock, nm)) {
+                        remaining = declaredNum;
+                    } else {
+                        remaining = Math.max(0, parseInt(prevStock[nm], 10) || 0);
+                        if (isFinite(lastDeclared) && declaredNum > lastDeclared) remaining += (declaredNum - lastDeclared);
+                    }
+                    g['数量'] = remaining;
+                    stockMap[nm] = remaining;
+                    declaredStock[nm] = declaredNum;
+                    if (remaining <= 0) soldMap[nm] = true;
+                });
+            };
+            Object.keys(merged).forEach(cat => applyStockMerge(merged[cat]));
+            applyStockMerge(exclusive);
+
+            const shopType = (prev && prev['店铺类型'])
+                ? normalizeShopType(prev['店铺类型'], (prev && prev['立绘']) || parsed.portrait)
+                : (parsed.shopType || '普通');
+            const keeperCash = (prev && Number.isFinite(Number(prev['店主现金'])))
+                ? Number(prev['店主现金'])
+                : (parsed.keeperCash != null ? parsed.keeperCash : rollShopCash(shopType));
+
             const payload = {
                 '店名': name,
                 // 身份三件套随店锁定：同店名再输出不换店主/立绘/性格（违和防护），仅新店首载以块为准
@@ -2908,14 +3635,16 @@
                 '立绘': (prev && prev['立绘']) ? prev['立绘'] : parsed.portrait,
                 '店主性格': (prev && prev['店主性格']) ? prev['店主性格'] : parsed.keeperPersona,
                 '好感度': (prev && Number.isFinite(prev['好感度'])) ? prev['好感度'] : SHOP_AFFECTION_INIT,
+                // 店铺类型与店主现金同样随店锁定：首次落店定档，之后不因换立绘/重述而重置
+                '店铺类型': shopType,
+                '店主现金': keeperCash,
                 '在场成员': parsed.presentMembers.slice(),
                 '分类商品': merged,
                 '独家私藏': exclusive,
-                // $meta 重建时延续运行态字段：soldMap（售罄掷骰）/ lastDiscountFloor+discount*（进店特惠）
-                // 否则同店重载即满血复活、特惠重掷，掷骰机制形同虚设
+                // $meta 重建时延续运行态字段：soldMap（售罄派生）/ stockMap+declaredStock（库存持久化）/
+                // lastDiscountFloor+discount*（进店特惠）——否则同店重载即满血复活、特惠重掷
                 '$meta': Object.assign(
-                    { version: 1, floorId: floorId, ts: Date.now(), personaOverride, blockPersona: parsed.keeperPersona },
-                    (prevMeta.soldMap && typeof prevMeta.soldMap === 'object') ? { soldMap: prevMeta.soldMap } : {},
+                    { version: 1, floorId: floorId, ts: Date.now(), personaOverride, blockPersona: parsed.keeperPersona, stockMap: stockMap, declaredStock: declaredStock, soldMap: soldMap },
                     (prevMeta.lastDiscountFloor != null) ? { lastDiscountFloor: prevMeta.lastDiscountFloor } : {},
                     (prevMeta.discountItem != null) ? { discountItem: prevMeta.discountItem, discountPrice: prevMeta.discountPrice } : {}
                 )
@@ -3940,20 +4669,318 @@
             return aff <= -20;
         }
 
-        // 基准售价：好感 <= -20 涨价 20%（四舍五入保留2位小数），否则返回原价
+        // 基准售价：好感 <= -20 涨价 20%（四舍五入保留2位小数），否则返回原价。
+        // 奇物一律以公式基准价为基准——正文块写的价格不参与，否则模型重述一次价格就漂移，
+        // "整理价目表" 就落空了（正文报价只在普通商品上生效）。
         function getBasePrice(item) {
             if (!item) return 0;
-            const price = Number.isFinite(Number(item.price)) ? Number(item.price) : 0;
+            const price = isRelicItem(item)
+                ? baseValuation(item)
+                : (Number.isFinite(Number(item.price)) ? Number(item.price) : 0);
             if (isPriceHiked()) {
                 return Math.round(price * 1.2 * 100) / 100;
             }
             return price;
         }
 
-        // 生效价：砍价锁定价优先，否则为基准售价
+        // ====================================================
+        // 奇物定价内核（SPEC 第九节）
+        // 普通商品（药品/弹药/枪械/工业耗材）继续按正文块报价——模型的时代知识足够可靠；
+        // 本内核只约束"带战斗定义的奇物"：档位定数量级、效果系数定档内差价、形态与次数定倍率。
+        // 公式（先夹档位价格带，再乘一次性系数）：P = M × clamp(B × E × U, L, H)，购买底价 = M × L
+        //   B 档位基价 | L~H 价格带 | E 效果系数(0.8/1.0/1.25/1.5) | M 形态系数 | U 每场次数系数
+        // 校准锚点：奇异海螺（常规·每场1次）=$500；芭斯特的猫眼石（高阶·每场2次）=$5,000
+        // ====================================================
+        const RELIC_TIERS = {
+            common:    { B: 500,   lo: 200,   hi: 1000,  label: '常规奇物' },
+            high:      { B: 4000,  lo: 2000,  hi: 8000,  label: '高阶奇物' },
+            legendary: { B: 20000, lo: 10000, hi: 50000, label: '传说奇物' }
+        };
+        const RELIC_TIER_ORDER = ['common', 'high', 'legendary'];
+        const RELIC_FORM_M = { reusable: 1, consumable: 0.25 };
+        const RELIC_FORM_LABEL = { reusable: '可复用道具', consumable: '一次性消耗品' };
+        const RELIC_TIER_ALIAS = {
+            '常规': 'common', '常规奇物': 'common', '高阶': 'high', '高阶奇物': 'high',
+            '传说': 'legendary', '传说奇物': 'legendary',
+            'common': 'common', 'high': 'high', 'legendary': 'legendary'
+        };
+        const RELIC_FORM_ALIAS = {
+            '可复用': 'reusable', '道具': 'reusable', '复用': 'reusable',
+            '一次性': 'consumable', '消耗品': 'consumable', '单次': 'consumable',
+            'reusable': 'reusable', 'consumable': 'consumable'
+        };
+
+        // 战斗效果标签 → 效果族与参照值（参照值写死，不随购买者生命/魔力浮动，否则同物换人变价）
+        const RELIC_EFFECT_CLASS = {
+            '单回': { cls: 'heal', ref: 50 }, '群回': { cls: 'heal', ref: 50 },
+            '单回蓝': { cls: 'mana', ref: 10 }, '群回蓝': { cls: 'mana', ref: 10 }, '吸蓝': { cls: 'mana', ref: 10 },
+            '单体': { cls: 'dmg', ref: 100 }, '群攻': { cls: 'dmg', ref: 100 },
+            '穿透': { cls: 'dmg', ref: 100 }, '散射': { cls: 'dmg', ref: 100 }, '眩晕': { cls: 'dmg', ref: 100 },
+            '单盾': { cls: 'ward', ref: 80 }, '群盾': { cls: 'ward', ref: 80 }, '肃正': { cls: 'ward', ref: 80 },
+            '单防': { cls: 'ward', ref: 80 }, '群防': { cls: 'ward', ref: 80 },
+            '免伤': { cls: 'ward', ref: 80 }, '回避': { cls: 'ward', ref: 80 }, '反击': { cls: 'ward', ref: 80 },
+            '单盲': { cls: 'ctrl', ref: 20 }, '群盲': { cls: 'ctrl', ref: 20 }, '自盲': { cls: 'ctrl', ref: 20 },
+            '单滞': { cls: 'ctrl', ref: 20 }, '群滞': { cls: 'ctrl', ref: 20 },
+            '单弱': { cls: 'ctrl', ref: 20 }, '群弱': { cls: 'ctrl', ref: 20 },
+            '单降': { cls: 'ctrl', ref: 20 }, '群降': { cls: 'ctrl', ref: 20 },
+            '中毒': { cls: 'ctrl', ref: 20 }, '群中毒': { cls: 'ctrl', ref: 20 },
+            '燃烧': { cls: 'ctrl', ref: 20 }, '群燃烧': { cls: 'ctrl', ref: 20 },
+            '麻痹': { cls: 'ctrl', ref: 20 }, '群麻痹': { cls: 'ctrl', ref: 20 }, '嘲讽': { cls: 'ctrl', ref: 20 },
+            '单增': { cls: 'buff', ref: 50 }, '群增': { cls: 'buff', ref: 50 },
+            '单瞄': { cls: 'buff', ref: 50 }, '群瞄': { cls: 'buff', ref: 50 },
+            '单速': { cls: 'buff', ref: 50 }, '群速': { cls: 'buff', ref: 50 }, '单冲': { cls: 'buff', ref: 50 },
+            '召唤': { cls: 'spec', ref: 1 }, '再动': { cls: 'spec', ref: 1 },
+            '驱散': { cls: 'spec', ref: 1 }, '群驱散': { cls: 'spec', ref: 1 }, '看破': { cls: 'spec', ref: 1 }
+        };
+
+        function roundMoney(n) {
+            return Math.round((Number(n) || 0) * 100) / 100;
+        }
+
+        function clampNum(n, lo, hi) {
+            return Math.min(hi, Math.max(lo, n));
+        }
+
+        // 战斗物品行解析：「【名】[标签;power:N][类别][次数:N]…」→ { name, category, uses, count, slots, tags }
+        // 只解析定价需要的部分（类别/次数/数量/效果槽），不重复实现 RpgCombat 的战斗解析器
+        function parseBattleItemLine(text) {
+            const s = String(text == null ? '' : text).trim();
+            const m = s.match(/^【([^】]+)】([\s\S]*)$/);
+            if (!m) return null;
+            const name = m[1].trim();
+            if (!name) return null;
+            const segs = m[2].match(/\[[^\[\]]*\]/g) || [];
+            const slots = [];
+            const tags = [];
+            let category = '';
+            let uses = 0;
+            let count = 0;
+            segs.forEach(seg => {
+                const body = seg.slice(1, -1).trim();
+                if (!body) return;
+                const parts = body.split(';');
+                const head = String(parts[0] || '').trim();
+                const hi = head.indexOf(':');
+                const tag = hi < 0 ? head : head.slice(0, hi).trim();
+                if (!tag) return;
+                const params = {};
+                if (hi >= 0) params.value = head.slice(hi + 1).trim();
+                for (let i = 1; i < parts.length; i++) {
+                    const p = String(parts[i] || '').trim();
+                    if (!p) continue;
+                    const idx = p.indexOf(':');
+                    if (idx < 0) { params[p] = true; continue; }
+                    params[p.slice(0, idx).trim()] = p.slice(idx + 1).trim();
+                }
+                const slot = { tag: tag, params: params };
+                slots.push(slot);
+                tags.push(tag);
+                if (tag === '消耗品' || tag === '道具' || tag === '弹药') category = tag;
+                else if (tag === '次数') uses = parseInt(params.value, 10) || 0;
+                else if (tag === '数量') count = parseInt(params.value, 10) || 0;
+            });
+            return { name: name, category: category, uses: uses, count: count, slots: slots, tags: tags };
+        }
+
+        // 槽位参数取值（params 键大小写不敏感：power/Power、Turns/turns 混用都吃）
+        function slotParam(slot, key) {
+            if (!slot || !slot.params) return null;
+            const lower = String(key).toLowerCase();
+            const keys = Object.keys(slot.params);
+            for (let i = 0; i < keys.length; i++) {
+                if (keys[i].toLowerCase() === lower) return slot.params[keys[i]];
+            }
+            return null;
+        }
+
+        function slotNum(slot, key) {
+            const v = slotParam(slot, key);
+            if (v == null || v === true) return null;
+            const n = parseFloat(v);
+            return isFinite(n) ? n : null;
+        }
+
+        function hasSlotTag(slots, tag) {
+            return (Array.isArray(slots) ? slots : []).some(s => s && s.tag === tag);
+        }
+
+        // 效果槽池：父行槽 + 子技能槽（组合道具的强度由全部可选效果共同体现）
+        function battleSlotsOf(battle) {
+            if (!battle) return [];
+            const out = Array.isArray(battle.slots) ? battle.slots.slice() : [];
+            if (Array.isArray(battle.children)) {
+                battle.children.forEach(ch => {
+                    if (ch && Array.isArray(ch.slots)) out.push.apply(out, ch.slots);
+                });
+            }
+            return out;
+        }
+
+        // 效果系数 E：确定式评分 → 四档（0.8/1.0/1.25/1.5）。模型不能直接填这个值
+        // 主效果取最强一项，附加效果每项 +0.15，范围/必中/穿透/持续加成，资源与延迟轻度减分
+        function relicEffectFactor(battle) {
+            const slots = battleSlotsOf(battle);
+            if (!slots.length) return null;
+            const ratios = [];
+            let group = false, others = false, guaranteed = false, pierce = false;
+            let turns = 0, costPoints = 0, delay = 0;
+            slots.forEach(s => {
+                const tag = String(s.tag || '');
+                if (!tag) return;
+                if (tag === 'MP' || tag === 'HP' || tag === 'TP') {
+                    costPoints += Math.max(0, slotNum(s, 'value') || 0);
+                    return;
+                }
+                if (tag === '延迟') { delay = Math.max(delay, slotNum(s, 'value') || 0); return; }
+                if (tag === 'Turns' || tag === 'turns') { turns = Math.max(turns, slotNum(s, 'value') || 0); return; }
+                if (tag === '他人') { others = true; return; }
+                if (tag === '必中') { guaranteed = true; return; }
+                if (tag === '穿透') pierce = true;
+                if (tag.indexOf('群') === 0) group = true;
+                const cls = RELIC_EFFECT_CLASS[tag];
+                if (!cls) return;
+                if (cls.cls === 'spec') { ratios.push(1.0); return; }
+                const power = slotNum(s, 'power');
+                const p = power == null ? 0 : power;
+                ratios.push(cls.cls === 'ctrl' ? (p > 0 ? p / cls.ref : 0.5) : p / cls.ref);
+            });
+            if (!ratios.length) return null;
+            const sorted = ratios.slice().sort((a, b) => b - a);
+            let score = sorted[0];
+            for (let i = 1; i < sorted.length; i++) { if (sorted[i] >= 0.5) score += 0.15; }
+            if (group) score += 0.15;
+            if (others) score += 0.05;
+            if (guaranteed) score += 0.1;
+            if (pierce) score += 0.2;
+            if (turns >= 3) score += 0.1;
+            score -= Math.min(0.3, (costPoints / 60) * 0.2 + delay * 0.05);
+            return score < 0.7 ? 0.8 : score < 1.3 ? 1.0 : score < 1.9 ? 1.25 : 1.5;
+        }
+
+        // 形态：弹药永不入奇物体系；道具＝可复用（次数每场重置），消耗品＝一次性（跨场扣减）
+        function relicFormOf(category) {
+            if (category === '道具') return 'reusable';
+            if (category === '消耗品') return 'consumable';
+            return null;
+        }
+
+        // 档位：显式声明 > 物品行 [传奇]/[高阶] 标签 > 名称/类目的神秘词 > 常规
+        // 刻意保守：普通枪械即使配了 [传奇] 招式，只要商品定义本身没有奇物信号就仍是普通商品
+        const RELIC_TIER_KEYWORDS = {
+            legendary: /传奇|神话|禁术|旧日|深渊|远古|神器|圣遗物|邪神|外神|旧神|禁咒/,
+            high: /高阶|圣物|法器|诅咒|遗物|异界|禁忌|秘宝|神像|祭器/
+        };
+
+        function guessRelicTier(seed) {
+            const s = seed || {};
+            const hay = [s.name, s.category, s.tags].map(v => String(v == null ? '' : v)).join(' ');
+            if (RELIC_TIER_KEYWORDS.legendary.test(hay)) return 'legendary';
+            if (RELIC_TIER_KEYWORDS.high.test(hay)) return 'high';
+            if (hasSlotTag(s.slots, '传奇')) return 'legendary';
+            if (hasSlotTag(s.slots, '高阶')) return 'high';
+            return 'common';
+        }
+
+        // 基准估值：唯一真值来源（买卖、底价保护、回收价都从这里取，禁止各处重算）
+        function relicValuationOf(tier, form, E, uses) {
+            const T = RELIC_TIERS[tier];
+            const M = RELIC_FORM_M[form];
+            if (!T || M == null) return null;
+            const e = [0.8, 1.0, 1.25, 1.5].includes(Number(E)) ? Number(E) : 1.0;
+            const n = Math.max(1, parseInt(uses, 10) || 1);
+            const U = form === 'reusable' ? Math.min(2, 1 + 0.25 * (n - 1)) : 1;
+            const core = clampNum(T.B * e * U, T.lo, T.hi);
+            return {
+                tier: tier, form: form, E: e, uses: form === 'reusable' ? n : 0, U: U, M: M,
+                core: roundMoney(core),
+                price: roundMoney(M * core),
+                floor: roundMoney(M * T.lo),
+                band: [roundMoney(M * T.lo), roundMoney(M * T.hi)]
+            };
+        }
+
+        // 回收价：基准估值的四成（不设防套利上限——低买高卖是允许的玩法）
+        function sellPriceOfBase(base) {
+            return roundMoney((Number(base) || 0) * 0.4);
+        }
+
+        // ====================================================
+        // 店铺类型与售卖权限（SPEC 第九节）：普通店只卖常规奇物，奢侈品店可卖高阶，传说永不入货架；
+        // 收购资格与售卖资格分开——任何店现金足够都能收，只是收来的高阶品不再上架
+        // ====================================================
+        const SHOP_TYPES = {
+            '普通': { label: '普通商店', cashMin: 1000, cashMax: 5000, sellTiers: ['common'] },
+            '奢侈': { label: '奢侈品店', cashMin: 10000, cashMax: 50000, sellTiers: ['common', 'high'] }
+        };
+        const SHOP_TYPE_ALIAS = {
+            '普通': '普通', '普通商店': '普通', '杂货铺': '普通', '杂货店': '普通', '普通店': '普通',
+            '奢侈': '奢侈', '奢侈品店': '奢侈', '奢品': '奢侈', '奢品店': '奢侈', '奢侈店': '奢侈'
+        };
+
+        function normalizeShopType(v, portrait) {
+            const key = String(v == null ? '' : v).trim();
+            if (SHOP_TYPE_ALIAS[key]) return SHOP_TYPE_ALIAS[key];
+            return portrait === '奢品商人' ? '奢侈' : '普通';
+        }
+
+        function shopTypeSpec(type) {
+            return SHOP_TYPES[type] || SHOP_TYPES['普通'];
+        }
+
+        function rollShopCash(type) {
+            const spec = shopTypeSpec(type);
+            return Math.round(spec.cashMin + Math.random() * (spec.cashMax - spec.cashMin));
+        }
+
+        // 货架可见性：传说奇物一律不上架（只能剧情获得后卖给店主）
+        function shopCanSellTier(type, tier) {
+            if (!tier) return true;
+            return shopTypeSpec(type).sellTiers.indexOf(tier) >= 0;
+        }
+
+        function shopCanSellItem(type, item) {
+            if (!isRelicItem(item)) return true;
+            return shopCanSellTier(type, item.relic.tier);
+        }
+
+        // 奇物判定与派生取值（item.relic 由目录/鉴定写入，不在此处临时推断）
+        function isRelicItem(item) {
+            return !!(item && item.relic && RELIC_TIERS[item.relic.tier]);
+        }
+
+        function relicTierLabelOf(item) {
+            return isRelicItem(item) ? RELIC_TIERS[item.relic.tier].label : '';
+        }
+
+        // 奇物购买价底价（普通商品无底价）
+        function relicPriceFloor(item) {
+            if (!isRelicItem(item)) return null;
+            const f = Number(item.relic.floor);
+            return isFinite(f) && f > 0 ? f : null;
+        }
+
+        // 基准估值：奇物取公式价，普通商品取正文块报价
+        function baseValuation(item) {
+            if (!item) return 0;
+            if (isRelicItem(item)) {
+                const p = Number(item.relic.price);
+                if (isFinite(p) && p > 0) return p;
+            }
+            const p = Number(item.price);
+            return isFinite(p) ? p : 0;
+        }
+
+        // 回收单价：基准估值四成
+        function sellUnitPrice(item) {
+            return sellPriceOfBase(baseValuation(item));
+        }
+
+        // 生效价：砍价锁定价优先，否则为基准售价；奇物叠加折扣后不得跌破该档位该形态的底价
         function effPrice(item) {
             if (!item) return 0;
-            return item.dealPrice != null ? item.dealPrice : getBasePrice(item);
+            const raw = item.dealPrice != null ? item.dealPrice : getBasePrice(item);
+            const floor = relicPriceFloor(item);
+            return floor != null ? Math.max(roundMoney(raw), floor) : raw;
         }
 
         // 投骰判定纯函数（monkey-patch Math.random 可测）
@@ -4287,7 +5314,12 @@
             // purchases 明细（SPEC 载荷契约）
             const purchases = playerState.cart.map(e => {
                 const a = assignState.assigned.find(x => x.entryId === e.id);
-                return { owner: a.owner, name: e.item.name, count: e.quantity, category: e.item.category, toVehicle: a.kind === 'vehicle', price: effPrice(e.item) };
+                return {
+                    owner: a.owner, name: e.item.name, count: e.quantity, category: e.item.category,
+                    toVehicle: a.kind === 'vehicle', price: effPrice(e.item),
+                    // 受管战斗物品：写回时带显式数量，战斗端按数量决定是否注入（无数量会被当 0 件）
+                    managed: isRelicItem(e.item)
+                };
             });
 
             const bargained = playerState.cart.some(e => e.item.dealPrice != null);
@@ -4360,24 +5392,60 @@
                 if (!it) return;
                 if (it.isStackable && Number.isFinite(it.stock)) {
                     it.stock = Math.max(0, it.stock - p.count);
-                    if (it.stock <= 0) { it.sold = true; soldNames.push(p.name); }
+                    if (it.stock <= 0) { it.sold = true; }
                 } else {
                     it.sold = true;
-                    soldNames.push(p.name);
                 }
             });
-            // 售罄标记持久化到 $meta.soldMap：块重载后由 restockSoldItems 掷骰（50% 补货 / 50% 维持售罄）
-            if (soldNames.length && shopState) {
+            // 库存持久化（SPEC 第九节）：结算后的剩余量写入 $meta.stockMap —— 它是"刷新/重进不补货"
+            // 的唯一依据；块重载由 mergeShopIntoAll 以它为准，不重新采用正文块声明的数量。
+            // 只写 soldMap 会漏掉仍有余量的商品，重载时剩余量回退成旧值（漏记的库存凭空回来）。
+            if (shopState) {
                 try {
                     const all = await readAllShops();
                     const shop = all[shopState.shopName];
                     if (shop) {
                         const meta = (shop['$meta'] = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : {});
                         const sm = (meta.soldMap = (meta.soldMap && typeof meta.soldMap === 'object') ? meta.soldMap : {});
-                        soldNames.forEach(n => { sm[n] = true; });
+                        const stockMap = (meta.stockMap = (meta.stockMap && typeof meta.stockMap === 'object') ? meta.stockMap : {});
+                        purchases.forEach(p => {
+                            const it = activeItems().find(i => i.name === p.name);
+                            if (!it) return;
+                            const remaining = it.sold ? 0 : Math.max(0, Number.isFinite(it.stock) ? it.stock : 0);
+                            stockMap[p.name] = remaining;
+                            if (remaining <= 0) sm[p.name] = true; else delete sm[p.name];
+                            if (remaining <= 0) soldNames.push(p.name);
+                            // 货架数量同步落盘：它只是 stockMap 的镜像，不同步会让下次回收上架叠加旧值
+                            setShopGoodsQty(shop, p.name, remaining);
+                        });
                         await replaceAllShops(all);
                     }
-                } catch (e) { console.warn('[ShopBlock] 售罄标记持久化失败:', e); }
+                } catch (e) { console.warn('[ShopBlock] 库存持久化失败:', e); }
+            }
+
+            // 物品目录归属登记（SPEC 第九节）：把"谁买了哪件受管物品"写进 holds。战斗端据此在下一场
+            // 把该道具注入该角色的可用清单——没有这一步，目录只有定义没有归属，买到的道具进不了战斗。
+            if (shopState && ctx) {
+                try {
+                    const cat = await readCatalog();
+                    let dirty = false;
+                    purchases.forEach(p => {
+                        const it = activeItems().find(i => i.name === p.name);
+                        if (!it || !isRelicItem(it) || !it.relic.id) return;
+                        if (!cat.items[it.relic.id]) return;
+                        let field = '物品';
+                        if (p.toVehicle) {
+                            const v = ctx.vehicles.find(v => v.name === p.owner);
+                            const mod = v ? ((ctx.stat['状态栏'] || ctx.stat)[v.key]) : null;
+                            field = (mod && ['杂物', '弹药', '武器'].find(f => typeof mod[f] === 'string')) || '杂物';
+                        }
+                        catalogLink(cat, it.relic.id, p.owner, p.toVehicle ? 'vehicle' : 'char', field, p.name);
+                        // 买回已售过的同一件：清墓碑，否则战斗端仍按"已售出"处理
+                        catalogRevive(cat, it.relic.id);
+                        dirty = true;
+                    });
+                    if (dirty) await writeCatalog(cat);
+                } catch (e) { console.warn('[ShopBlock] 物品目录归属登记失败:', e); }
             }
 
             // 清账本入历史
@@ -4437,6 +5505,26 @@
             return false;
         }
 
+        // 往物品串里加一件：同名条目已存在则就地增量，而不是再追加一条 [名xN]。
+        // 同一字段出现两条同名条目会连锁出三个问题：出售清单出现同 id 两行（选中一行等于选中两件）、
+        // 状态栏显示重复、战斗端按名计数把同一件东西算两次。
+        // forceCount：受管战斗物品即使只 1 件也写显式数量——战斗端按数量判定持有，裸 [名] 会被读成没有。
+        function addToStatItemString(str, name, count, forceCount) {
+            const segs = String(str || '').match(/\[[^\[\]]+\]/g) || [];
+            let hit = false;
+            const out = segs.map(seg => {
+                if (hit) return seg;
+                const parsed = parseStatItemList(seg)[0];
+                if (!parsed || parsed.name !== name) return seg;
+                hit = true;
+                const total = (parsed.bare ? 1 : parsed.count) + count;
+                if (total > 1 || forceCount) return `[${name}x${total}]`;
+                return `[${name}]`;
+            });
+            if (!hit) out.push((count > 1 || forceCount) ? `[${name}x${count}]` : `[${name}]`);
+            return out.join('');
+        }
+
         // 物品写入 stat_data：角色物品清单追加 / 载具清单追加；返回是否成功
         async function applyDealToStatData(ctx, purchases, total) {
             if (typeof getVariables !== 'function' || typeof replaceVariables !== 'function') return false;
@@ -4461,19 +5549,18 @@
                 root[ctx.cashModule]['现金'] = (num - total).toFixed(2) + (suffix || '美元');
             }
 
-            // 物品归属
+            // 物品归属（同名条目就地增量，不追加重复条目）
             purchases.forEach(p => {
                 if (p.toVehicle) {
-                    // 载具模块：清单字段（杂物优先）追加 [物品×N]
+                    // 载具模块：清单字段（杂物优先）
                     const v = ctx.vehicles.find(v => v.name === p.owner);
                     const mod = v ? root[v.key] : null;
                     if (mod) {
                         const field = ['杂物', '弹药', '武器'].find(f => typeof mod[f] === 'string') || '杂物';
-                        const tag = p.count > 1 ? `[${p.name}x${p.count}]` : `[${p.name}]`;
-                        mod[field] = mod[field] ? mod[field] + tag : tag;
+                        mod[field] = addToStatItemString(mod[field], p.name, p.count, !!p.managed);
                     }
                 } else {
-                    // 角色物品清单追加
+                    // 角色物品清单
                     const chars = root['角色列表'];
                     if (Array.isArray(chars)) {
                         const c = chars.find(e => {
@@ -4482,8 +5569,7 @@
                         });
                         if (c) {
                             const ch = c['角色'] || c['用户'];
-                            const tag = p.count > 1 ? `[${p.name}x${p.count}]` : `[${p.name}]`;
-                            ch['物品'] = ch['物品'] ? ch['物品'] + tag : tag;
+                            ch['物品'] = addToStatItemString(ch['物品'], p.name, p.count, !!p.managed);
                         }
                     }
                 }
@@ -4545,42 +5631,100 @@
             logShopEvent('dialog', `${eventPrefix('dialog')} ${speaker}：「${text}」`, { speaker });
         }
 
-        // 售罄商品的跨载入生命周期：读 $meta.soldMap 应用售罄态，再对每个售罄商品掷骰——
-        // 50% 补货（stackable 数量为块原始数量的 30%~100%，单件整件回归）并清除标记，50% 维持售罄
-        async function restockSoldItems() {
+        // 库存应用（SPEC 第九节，Q22 已确认）：刷新/重进/重复渲染一律不补货。
+        // 剩余量已由 mergeShopIntoAll 写进商品「数量」，此处只做防御性对齐——$meta.stockMap 与当前
+        // 内存态不一致（旧档迁移、手动编辑）时以 stockMap 为准。原「50% 掷骰补货」已移除：
+        // 库存是持久资产，只由购买、回收、明确的剧情补货或手动调整改变。
+        async function applyPersistedStock() {
             if (!shopState) return;
-            let soldMap = null;
+            let stockMap = null;
             try {
                 const all = await readAllShops();
                 const shop = all[shopState.shopName];
                 const meta = shop && shop['$meta'];
-                soldMap = (meta && meta.soldMap && typeof meta.soldMap === 'object') ? meta.soldMap : null;
+                stockMap = (meta && meta.stockMap && typeof meta.stockMap === 'object') ? meta.stockMap : null;
             } catch (e) { return; }
-            if (!soldMap) return;
-            let removed = false;
+            if (!stockMap) return;
+            let changed = false;
             shopState.items.forEach(it => {
-                if (!soldMap[it.name]) return;
-                if (Math.random() < 0.5) {
-                    const orig = (it._raw && parseInt(it._raw['数量'], 10)) || 1;
-                    it.sold = false;
-                    if (it.isStackable) it.stock = Math.max(1, Math.round(orig * (0.3 + Math.random() * 0.7)));
-                    delete soldMap[it.name];
-                    removed = true;
-                } else {
-                    it.sold = true;
-                    if (it.isStackable) it.stock = 0;
-                }
+                if (!Object.prototype.hasOwnProperty.call(stockMap, it.name)) return;
+                const remaining = Math.max(0, parseInt(stockMap[it.name], 10) || 0);
+                // sold 归一为布尔：解析层只在售罄时置 true（其余为 undefined），
+                // 补货回升后必须显式落回 false，否则"在售"状态既非 true 也非 false
+                const wantSold = remaining <= 0;
+                if (it.stock !== remaining) { it.stock = remaining; changed = true; }
+                if (it.sold !== wantSold) { it.sold = wantSold; changed = true; }
             });
-            if (removed) {
-                try {
-                    const all = await readAllShops();
-                    const shop = all[shopState.shopName];
-                    if (shop && shop['$meta']) {
-                        shop['$meta'].soldMap = soldMap;
-                        await replaceAllShops(all);
-                    }
-                } catch (e) { console.warn('[ShopBlock] 补货写回失败:', e); }
+            if (changed) renderCabinet();
+        }
+
+        // 奇物档案落地：把目录既有记录 / 块内声明 / 正文块战斗定义解析成商品上的 item.relic（紧凑投影），
+        // 并登记进 $shop_catalog。资料不足（只有档位没有效果行且正文里找不到）时保持普通商品，交鉴定流程，
+        // 绝不静默按便宜货上架——"解析失败"不是"价格低"的理由。
+        async function hydrateShopRelics(state) {
+            if (!state || !Array.isArray(state.items)) return state;
+            let cat;
+            try { cat = await readCatalog(); } catch (e) { cat = normalizeCatalog(catalogMem); }
+            let catDirty = false;
+            const byName = {};
+            Object.keys(cat.items).forEach(id => {
+                const r = cat.items[id];
+                if (r && r.name && !byName[r.name]) byName[r.name] = id;
+            });
+            for (let i = 0; i < state.items.length; i++) {
+                const item = state.items[i];
+                if (!item || !item.name) continue;
+                if (!item.relicSeed) {
+                    const known = byName[item.name];
+                    if (known) item.relic = relicViewOf(cat.items[known], known);
+                    continue;
+                }
+                const seed = item.relicSeed;
+                let bridge = null;
+                if (!seed.line) {
+                    // 只声明了档位没给效果行：去正文块里按名找（名字一致即接通，不必让 AI 重抄定义）
+                    try { bridge = await findBattleItemByName(item.name); } catch (e) { bridge = null; }
+                }
+                const line = seed.line || (bridge ? bridge.line : '');
+                const children = seed.line ? [] : (bridge && Array.isArray(bridge.children) ? bridge.children : []);
+                if (!line) { item.relicSeed = null; continue; }
+                const reg = catalogRegister(cat, {
+                    line: line, children: children, tier: seed.tier, form: seed.form, name: item.name,
+                    emoji: item.emoji, category: item.category, tags: seed.tags, quote: item.quote, source: 'shop'
+                });
+                if (!reg) { item.relicSeed = null; continue; }
+                catDirty = true;
+                item.relic = relicViewOf(reg.record, reg.id);
+                byName[item.name] = reg.id;
             }
+            if (catDirty) {
+                try { await writeCatalog(cat); } catch (e) { console.warn('[ShopBlock] 物品目录写入失败:', e); }
+            }
+            return state;
+        }
+
+        // 货架可售性：奇物按店铺类型的售卖权限判定。传说奇物一律不可购买（"有价无市"），
+        // 但仍在货架上以「非卖品」呈现——它同时是背景价目表，玩家拿剧情所得来卖给店主才是它的流通方式。
+        function shopSellBlockReason(item) {
+            if (!item || !isRelicItem(item)) return '';
+            const type = shopState ? (shopState.shopType || '普通') : '普通';
+            if (!shopCanSellTier(type, item.relic.tier)) {
+                return item.relic.tier === 'legendary'
+                    ? '有价无市：这种级别的物件本店不摆出来卖，你手里若有，我倒是愿意收。'
+                    : '这等级的东西不在本店货架上，你若有，我可以按行情收。';
+            }
+            return '';
+        }
+
+        // demo 模式没有 $shops 记录，按普通店判定——宁可少卖，也不把传说奇物当普通货摆上架
+        function hydrateDemoRelics() {
+            if (shopState) return Promise.resolve();
+            shopInventory.forEach(it => {
+                const seed = DEMO_RELIC_SEEDS[it.name];
+                if (!seed) return;
+                it.relicSeed = { line: seed.line, tier: seed.tier, form: seed.form || '', name: it.name, category: it.category || '', tags: '' };
+            });
+            return hydrateShopRelics({ items: shopInventory });
         }
 
         // 撤销当前特惠（dealSpecial 标记的商品还原原价）：厌恶状态下不享受优惠
@@ -4633,7 +5777,8 @@
             const pool = shopState.items.filter(i => !i.sold && i.category !== '独家私藏');
             if (!pool.length) return;
             const pick = pool[Math.floor(Math.random() * pool.length)];
-            pick.dealPrice = Math.round(pick.price * 0.5 * 100) / 100;
+            // 特惠以基准售价（奇物=公式基准价）为基准：用正文原价会让奇物特惠被底价兜回原价、形同虚设
+            pick.dealPrice = Math.round(getBasePrice(pick) * 0.5 * 100) / 100;
             pick.dealBy = '今日特惠';
             pick.dealSpecial = true;
             logShopEvent('sale', `今日特惠：${pick.name} 五折（$${pick.dealPrice.toFixed(2)}）`, { item: pick.name });
@@ -4696,7 +5841,8 @@
             sessionDialogLog.length = 0;  // 新会话清空对话流水
             shopEventHistory.length = 0;  // 新会话清空购物记录事件
             stopFloorPolling();           // 块已落地 → 停楼层轮询（手动导入优先，防随后轮询覆盖）
-            await restockSoldItems();     // 售罄态跨载入掷骰（50% 补货 / 50% 维持，写回 $meta.soldMap）
+            await hydrateShopRelics(restored);   // 奇物档案：目录/声明/正文战斗定义 → 商品的 item.relic
+            await applyPersistedStock();   // 库存持久化对齐（刷新/重进不补货）
             applyShopToUI();
             await enterDiscountRoll();    // 进店特惠（楼层推进后的新进入随机一件五折）
             triggerEnterReaction();       // 进店反应（M4：LLM 失败回退内置文案）
@@ -4771,6 +5917,14 @@
             if (shopState) return shopState.items;
             return shopInventory;
         }
+
+        // demo 奇物声明：把示例商店里两件神秘类商品标成奇物，让档位定价/详情/售卖权限
+        // 在无正文块的本地演示与 harness 里也能端到端验证。
+        // 「密大特制纯银弹」是弹药 —— 永远不入奇物体系，作为反例保留。
+        const DEMO_RELIC_SEEDS = {
+            '阿卡姆星象青铜仪': { tier: '高阶', line: '【阿卡姆星象青铜仪】[单滞;power:20][看破:远程][道具][次数:2][MP:5][法术][高阶]' },
+            '浸血羊皮纸古籍残页': { tier: '传说', form: '一次性', line: '【浸血羊皮纸古籍残页】[群盲;power:30][群滞;power:20][消耗品][数量:1][MP:10][延迟:2][传奇]' }
+        };
 
         // 20件 包含单件武器与复数数量弹药的商品列表 (4x5 分布)
         const shopInventory = [
@@ -5378,6 +6532,13 @@
                     }
                 }
 
+                // 奇物档位徽章：价目表的可见面——玩家不必点开就知道这是什么档位的东西
+                const tierBadge = isRelicItem(item)
+                    ? `<span class="shelf-tier-tag tier-${item.relic.tier}">${RELIC_TIERS[item.relic.tier].label.replace('奇物', '')}</span>`
+                    : '';
+                const blockedReason = shopSellBlockReason(item);
+                if (blockedReason) cell.classList.add('blocked');
+
                 cell.innerHTML = `
                     <span class="shelf-num">#${(index + 1).toString().padStart(2, '0')}</span>
                     ${stockBadge}
@@ -5385,8 +6546,11 @@
                     <div class="item-meta">
                         <span class="item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
                         <span class="item-price${hiked ? ' hiked' : ''}">${priceHtml}</span>
+                        ${tierBadge}
                     </div>
                     ${item.sold ? '<div class="sold-stamp">SOLD</div>' : ''}
+                    ${blockedReason ? '<div class="blocked-stamp">非卖品</div>' : ''}
+                    <button class="shelf-info-btn" type="button" title="查看详情（效果 / 档位 / 估值）">ⓘ</button>
                 `;
 
                 // 点击逻辑走 woodenCabinet 上的单点委托；此处仅保留不冒泡的 hover 预览
@@ -5422,14 +6586,38 @@
                 return;
             }
             sound.playWoodClick();
+            // 本店不卖的档位（普通店的高阶 / 任何店的传说）：只给店主口吻的婉拒，不进任何购买入口
+            const blockedReason = shopSellBlockReason(item);
+            if (blockedReason) {
+                showKeeperDialogue(shopState ? shopState.keeper : '店主', '（' + blockedReason + '）', true);
+                return;
+            }
+            // 路由刻意不依赖媒体查询（hover 能力探测在降级 webview 里不稳定，会把同一次点击
+            // 分到不同分支、测试无法复现）：奇物点击先看详情——价目表的意义就是买之前能读懂它；
+            // 普通商品保留原有快速路径（弹药拉条 / 单件直入）。任何商品都能通过格内的 ⓘ 打开详情。
             if (bargainMode) {
                 openBargainModal(item);
+            } else if (isRelicItem(item)) {
+                openBuyDetail(item);
             } else if (item.isStackable) {
                 openQuantityModal(item);
             } else {
                 // 单个商品直接加入购物车！
                 addDirectToCart(item, 1);
             }
+        });
+
+        // 格内信息入口：不抢主点击（stopPropagation），手机端没有悬浮也能读到完整详情
+        woodenCabinet.addEventListener('click', (e) => {
+            const btn = e.target.closest('.shelf-info-btn');
+            if (!btn) return;
+            e.stopPropagation();
+            const cell = btn.closest('.shelf-cell');
+            if (!cell) return;
+            const item = activeItems().find(i => String(i.id) === String(cell.dataset.id));
+            if (!item) return;
+            sound.playWoodClick();
+            openBuyDetail(item);
         });
 
         // ====================================================
@@ -5449,6 +6637,7 @@
             const qtyText = quantity > 1 ? ` (${quantity}${item.unit || '件'})` : '';
             bossBubbleItemTag.textContent = `${item.emoji} ${item.name}${qtyText}`;
             bossBubbleText.textContent = `“${item.quote}”`;
+            renderBubbleDetail(item);   // 结构化行：档位/效果/估值——悬浮即可读，不必点开
             bossSpeechBubble.classList.add('show');
 
             // 5秒后自动隐退气泡
@@ -6182,6 +7371,869 @@
         // ====================================================
         const shopsListBody = document.getElementById('shopsListBody');
 
+        // ====================================================
+        // 战斗效果的人话描述（SPEC 第九节）：详情气泡与详情弹窗共用
+        // 只翻译展示，不改写定义——战斗端仍读同一条定义行
+        // ====================================================
+        const RELIC_EFFECT_LABEL = {
+            '单回': '回复生命', '群回': '群体回复生命',
+            '单回蓝': '回复魔力', '群回蓝': '群体回复魔力', '吸蓝': '汲取魔力',
+            '单体': '单体伤害', '群攻': '群体伤害', '穿透': '穿透伤害', '散射': '散射伤害', '眩晕': '眩晕打击',
+            '单盾': '单体护盾', '群盾': '群体护盾', '肃正': '肃正屏障',
+            '单防': '单体防御', '群防': '群体防御', '免伤': '减免伤害', '回避': '回避', '反击': '反击',
+            '单盲': '致盲', '群盲': '群体致盲', '自盲': '自身致盲',
+            '单滞': '迟滞', '群滞': '群体迟滞', '单弱': '弱化', '群弱': '群体弱化',
+            '单降': '削防', '群降': '群体削防',
+            '中毒': '中毒', '群中毒': '群体中毒', '燃烧': '燃烧', '群燃烧': '群体燃烧',
+            '麻痹': '麻痹', '群麻痹': '群体麻痹', '嘲讽': '嘲讽',
+            '单增': '增攻', '群增': '群体增攻', '单瞄': '瞄准', '群瞄': '群体瞄准',
+            '单速': '加速', '群速': '群体加速', '单冲': '冲锋',
+            '召唤': '召唤', '再动': '再动', '驱散': '驱散', '群驱散': '群体驱散', '看破': '看破'
+        };
+        const RELIC_COST_LABEL = { 'MP': '魔力', 'HP': '生命', 'TP': '行动点' };
+        const RELIC_PLAIN_TAGS = ['高阶', '传奇', '神术', '必中', '他人', '法术', '远程', '近战', '反应', '转火', '限3次'];
+
+        function describeBattleSlots(slots) {
+            const out = [];
+            const costs = [];
+            let turns = 0, delay = 0, aim = null;
+            (Array.isArray(slots) ? slots : []).forEach(s => {
+                const tag = String((s && s.tag) || '');
+                if (!tag) return;
+                if (RELIC_COST_LABEL[tag]) {
+                    const v = slotNum(s, 'value');
+                    if (v) costs.push(`${RELIC_COST_LABEL[tag]} ${v}`);
+                    return;
+                }
+                if (tag === '延迟') { delay = slotNum(s, 'value') || 0; return; }
+                if (tag === 'Turns' || tag === 'turns') { turns = slotNum(s, 'value') || 0; return; }
+                if (tag === 'Aim') { aim = slotNum(s, 'value'); return; }
+                if (tag === '次数' || tag === '数量' || tag === '特效' || tag === '绑定') return;
+                if (tag === '暴击') { out.push('暴击 ' + (slotParam(s, 'value') || '')); return; }
+                if (tag === '加速') { out.push('加速 ' + (slotNum(s, 'value') || 0)); return; }
+                if (/^限\d+次$/.test(tag)) { out.push('每场限 ' + tag.replace(/^限|次$/g, '') + ' 次'); return; }
+                const label = RELIC_EFFECT_LABEL[tag];
+                const power = slotNum(s, 'power');
+                if (label) {
+                    let line = power != null ? `${label}（强度 ${power}` : label;
+                    if (power != null) line += turns ? ` · 持续 ${turns} 回合）` : '）';
+                    out.push(line);
+                    return;
+                }
+                if (RELIC_PLAIN_TAGS.indexOf(tag) >= 0) out.push(tag);
+            });
+            if (aim != null) out.push(`命中基准 ${aim}`);
+            if (delay) out.push(`延迟 ${delay} 回合`);
+            if (costs.length) out.push('消耗 ' + costs.join(' / '));
+            return out;
+        }
+
+        // 效果行（含组合道具的子技能）：父行槽 + 每个子技能单独一行，让"可选用法"一眼可数
+        function battleEffectLines(battle) {
+            const out = [];
+            if (!battle) return out;
+            if (Array.isArray(battle.slots)) out.push.apply(out, describeBattleSlots(battle.slots));
+            (Array.isArray(battle.children) ? battle.children : []).forEach(cl => {
+                const p = parseBattleItemLine(cl);
+                if (!p) return;
+                const desc = describeBattleSlots(p.slots);
+                if (desc.length) out.push(`▸ ${p.name}：${desc.join(' · ')}`);
+            });
+            return out;
+        }
+
+        // ====================================================
+        // 商品详情：悬浮气泡结构化 + 点击固定为详情弹窗（手机端唯一详情入口）
+        // ====================================================
+        const itemDetailModal = document.getElementById('itemDetailModal');
+        const detailEmoji = document.getElementById('detailEmoji');
+        const detailName = document.getElementById('detailName');
+        const detailSubtitle = document.getElementById('detailSubtitle');
+        const detailChips = document.getElementById('detailChips');
+        const detailEffectSection = document.getElementById('detailEffectSection');
+        const detailEffects = document.getElementById('detailEffects');
+        const detailQuoteSection = document.getElementById('detailQuoteSection');
+        const detailQuote = document.getElementById('detailQuote');
+        const detailPriceLabel = document.getElementById('detailPriceLabel');
+        const detailPrice = document.getElementById('detailPrice');
+        const detailPriceNote = document.getElementById('detailPriceNote');
+        const detailActions = document.getElementById('detailActions');
+        let detailContext = null;   // { item, mode:'buy'|'sell', row }
+
+        function detailChipList(item) {
+            const chips = [];
+            if (isRelicItem(item)) {
+                chips.push({ text: RELIC_TIERS[item.relic.tier].label, cls: 'tier-' + item.relic.tier });
+                chips.push({ text: RELIC_FORM_LABEL[item.relic.form] || '', cls: '' });
+                if (item.relic.form === 'reusable') chips.push({ text: `每场 ${item.relic.uses} 次`, cls: '' });
+            } else {
+                chips.push({ text: '普通商品', cls: '' });
+            }
+            if (item.category) chips.push({ text: item.category, cls: '' });
+            if (item.unit) chips.push({ text: `单位：${item.unit}`, cls: '' });
+            return chips.filter(c => c.text);
+        }
+
+        function renderDetailChips(list) {
+            detailChips.innerHTML = '';
+            list.forEach(c => {
+                const el = document.createElement('span');
+                el.className = 'detail-chip' + (c.cls ? ' ' + c.cls : '');
+                el.textContent = c.text;
+                detailChips.appendChild(el);
+            });
+        }
+
+        function renderDetailEffects(lines) {
+            detailEffects.innerHTML = '';
+            if (!lines.length) {
+                if (detailEffectSection) detailEffectSection.style.display = 'none';
+                return;
+            }
+            if (detailEffectSection) detailEffectSection.style.display = '';
+            lines.forEach(t => {
+                const li = document.createElement('li');
+                li.textContent = t;
+                detailEffects.appendChild(li);
+            });
+        }
+
+        function actionBtn(label, primary, onClick) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = primary ? 'buy-btn' : 'cart-clear-btn';
+            b.textContent = label;
+            b.addEventListener('click', onClick);
+            return b;
+        }
+
+        // 购买详情：档位/效果/次数/使用限制/基准估值与当前买价
+        function openBuyDetail(item) {
+            if (!item) return;
+            detailContext = { item: item, mode: 'buy' };
+            detailEmoji.textContent = item.emoji || '📦';
+            detailName.textContent = item.name;
+            detailSubtitle.textContent = item.tierText || '';
+            renderDetailChips(detailChipList(item));
+
+            const battle = isRelicItem(item) && item.relic.line
+                ? Object.assign({}, parseBattleItemLine(item.relic.line), { children: item.relic.children || [] })
+                : null;
+            renderDetailEffects(battleEffectLines(battle));
+
+            detailQuote.textContent = '“' + (item.quote || '（店主没有多作介绍。）') + '”';
+            if (detailQuoteSection) detailQuoteSection.style.display = '';
+
+            const blocked = shopSellBlockReason(item);
+            if (blocked) {
+                detailPriceLabel.textContent = '本店不出售';
+                detailPrice.textContent = '$' + baseValuation(item).toFixed(2);
+                detailPriceNote.textContent = '非卖品 · ' + (isRelicItem(item) ? RELIC_TIERS[item.relic.tier].label : '');
+            } else {
+                const unit = item.isStackable ? `/${item.unit}` : '';
+                detailPriceLabel.textContent = isRelicItem(item) ? '基准估值 / 当前售价' : '售价';
+                detailPrice.textContent = '$' + effPrice(item).toFixed(2) + unit;
+                const parts = [];
+                if (isRelicItem(item)) parts.push('估值 $' + baseValuation(item).toFixed(2));
+                if (relicPriceFloor(item) != null) parts.push('底价 $' + relicPriceFloor(item).toFixed(2));
+                parts.push('库存 ' + (Number.isFinite(item.stock) ? item.stock : 1) + (item.unit || '件'));
+                detailPriceNote.textContent = parts.join(' · ');
+            }
+
+            detailActions.innerHTML = '';
+            if (blocked) {
+                detailActions.appendChild(actionBtn('知道了', false, closeItemDetail));
+            } else if (item.isStackable) {
+                detailActions.appendChild(actionBtn('选择数量', true, () => { closeItemDetail(); openQuantityModal(item); }));
+            } else {
+                detailActions.appendChild(actionBtn('加入购物车', true, () => { closeItemDetail(); addDirectToCart(item, 1); }));
+            }
+            detailActions.appendChild(actionBtn('关闭', false, closeItemDetail));
+            itemDetailModal.classList.add('show');
+        }
+
+        function closeItemDetail() {
+            itemDetailModal.classList.remove('show');
+            detailContext = null;
+        }
+
+        document.getElementById('detailCloseBtn').addEventListener('click', closeItemDetail);
+        itemDetailModal.addEventListener('click', e => { if (e.target === itemDetailModal) closeItemDetail(); });
+
+        // 气泡结构化：悬浮即可读到档位/效果/估值，不必点开
+        function renderBubbleDetail(item) {
+            const box = document.getElementById('bossBubbleDetail');
+            if (!box) return;
+            box.innerHTML = '';
+            const lines = [];
+            if (isRelicItem(item)) {
+                lines.push(`<span class="bd-tier">${escapeHtml(RELIC_TIERS[item.relic.tier].label)}</span> · ${escapeHtml(RELIC_FORM_LABEL[item.relic.form] || '')}${item.relic.form === 'reusable' ? ` · 每场 ${item.relic.uses} 次` : ''}`);
+                const battle = item.relic.line
+                    ? Object.assign({}, parseBattleItemLine(item.relic.line), { children: item.relic.children || [] })
+                    : null;
+                if (battle) {
+                    const desc = battleEffectLines(battle);
+                    if (desc.length) lines.push(escapeHtml(desc.slice(0, 4).join(' · ')));
+                }
+                lines.push(`基准估值 $${baseValuation(item).toFixed(2)}${item.dealPrice == null ? '' : ` · 当前 $${effPrice(item).toFixed(2)}`}`);
+            } else {
+                lines.push(`<span class="bd-tier">售价 $${effPrice(item).toFixed(2)}${item.isStackable ? '/' + escapeHtml(item.unit) : ''}</span> · 普通商品`);
+            }
+            const blocked = shopSellBlockReason(item);
+            if (blocked) lines.push('<span class="bd-hint">非卖品：本店不出售该档位，收则按行情</span>');
+            else lines.push('<span class="bd-hint">点击查看详情</span>');
+            box.innerHTML = lines.join('<br>');
+        }
+
+        // ====================================================
+        // 出售（SPEC 第九节）：店主现金只初始化一次，之后随买卖真实流动；
+        // 收购资格与售卖资格分开——现金够就能收任何档位，但只有符合本店售卖权限的回收品重新上架
+        // ====================================================
+        let tradeMode = 'buy';
+        let sellState = null;   // { owners, activeOwner, rows, picks:{rowId:qty}, keeperCash, ctx }
+
+        function parseStatItemList(str) {
+            const segs = String(str || '').match(/\[([^\[\]]+)\]/g) || [];
+            const out = [];
+            segs.forEach(seg => {
+                const content = seg.slice(1, -1).trim();
+                if (!content) return;
+                if (/^[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}💼🎒]+$/u.test(content)) return;
+                const clean = raw => {
+                    const s = String(raw || '').replace(/[(（][^)）]*[)）]/g, '').trim();
+                    return s || String(raw || '').trim();
+                };
+                let m = content.match(/^(.*?)\s*x\s*(\d+)\s*$/);
+                if (m && m[1].trim()) { out.push({ name: clean(m[1]), count: +m[2], bare: false }); return; }
+                m = content.match(/^(.+?)\s*[:：]\s*(\d+)(?:\s+\S.*)?$/);
+                if (m && m[1].trim()) { out.push({ name: clean(m[1]), count: +m[2], bare: false }); return; }
+                out.push({ name: clean(content), count: 1, bare: true });
+            });
+            return out;
+        }
+
+        // 按出售量改写物品串：命中条目按剩余量重写，归零则整条移除；未命中条目原样保留
+        function rewriteStatItemString(str, sales) {
+            const segs = String(str || '').match(/\[[^\[\]]+\]/g) || [];
+            const out = [];
+            const used = {};
+            segs.forEach(seg => {
+                const parsed = parseStatItemList(seg)[0];
+                if (!parsed) { out.push(seg); return; }
+                const idx = sales.findIndex((s, i) => !used[i] && s.name === parsed.name);
+                if (idx < 0) { out.push(seg); return; }
+                used[idx] = true;
+                if (parsed.bare || sales[idx].count >= parsed.count) return;
+                const left = parsed.count - sales[idx].count;
+                out.push(left > 1 ? `[${parsed.name}x${left}]` : `[${parsed.name}]`);
+            });
+            return out.join('');
+        }
+
+        function setTradeMode(mode) {
+            tradeMode = mode === 'sell' ? 'sell' : 'buy';
+            document.querySelectorAll('.trade-mode-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.mode === tradeMode);
+            });
+            const cabinet = document.getElementById('woodenCabinet');
+            const panel = document.getElementById('sellPanel');
+            if (cabinet) cabinet.style.display = tradeMode === 'sell' ? 'none' : '';
+            if (panel) panel.classList.toggle('show', tradeMode === 'sell');
+            if (tradeMode === 'sell') refreshSellPanel();
+            else { sellState = null; }
+        }
+
+        async function refreshSellPanel() {
+            const ctx = await loadMmsContext();
+            const cashEl = document.getElementById('sellKeeperCash');
+            const listEl = document.getElementById('sellList');
+            if (!shopState) {
+                if (cashEl) cashEl.textContent = '$0.00';
+                if (listEl) listEl.innerHTML = '<div class="shop-event-empty">当前没有已载入的商店。</div>';
+                return;
+            }
+            let keeperCash = 0;
+            try {
+                const all = await readAllShops();
+                const shop = all[shopState.shopName];
+                keeperCash = shop && Number.isFinite(Number(shop['店主现金'])) ? Number(shop['店主现金']) : 0;
+            } catch (e) { /* 读取失败按 0 处理，宁可显示买不起也不虚报 */ }
+            if (cashEl) cashEl.textContent = '$' + keeperCash.toFixed(2);
+
+            let cat;
+            try { cat = await readCatalog(); } catch (e) { cat = normalizeCatalog(catalogMem); }
+
+            const owners = [];
+            const rows = [];
+            const stat = ctx && ctx.stat;
+            const root = stat && stat['状态栏'] ? stat['状态栏'] : stat;
+            const presentKeys = (ctx && Array.isArray(ctx.present) ? ctx.present : []).map(n => speakerKey(n));
+            const chars = Array.isArray(root && root['角色列表']) ? root['角色列表'] : [];
+            chars.forEach(e => {
+                const c = (e && (e['角色'] || e['用户'])) || null;
+                if (!c || !c['名字']) return;
+                const name = String(c['名字']).trim();
+                // 只列本次进店在场角色：不在场队友的背包不能被远程卖掉
+                if (presentKeys.length && presentKeys.indexOf(speakerKey(name)) < 0) return;
+                owners.push({ name: name, kind: 'char' });
+                collectSellRows(c, name, 'char', rows);
+            });
+            (ctx && Array.isArray(ctx.vehicles) ? ctx.vehicles : []).forEach(v => {
+                owners.push({ name: v.name, kind: 'vehicle' });
+                collectSellRows(v.raw, v.name, 'vehicle', rows);
+            });
+            for (let i = 0; i < rows.length; i++) await priceSellRow(rows[i], cat);
+            try { await writeCatalog(cat); } catch (e) { /* 目录写入失败不阻塞展示 */ }
+
+            sellState = {
+                ctx: ctx, owners: owners, rows: rows, picks: {},
+                activeOwner: owners.length ? owners[0].name : null,
+                keeperCash: keeperCash
+            };
+            renderSellPanel();
+        }
+
+        const SELL_STAT_FIELDS = ['物品', '弹药', '消耗品', '道具'];
+
+        function collectSellRows(obj, owner, ownerKind, rows) {
+            if (!obj || typeof obj !== 'object') return;
+            SELL_STAT_FIELDS.forEach(field => {
+                const raw = obj[field];
+                if (typeof raw !== 'string' || !raw.trim()) return;
+                // 同一字段里允许出现多条同名条目（历史数据/玩家手改）：按出现序号区分行 id，
+                // 否则两行共用一个 id，选中一行等于把两件一起选进结算
+                const occ = {};
+                parseStatItemList(raw).forEach(entry => {
+                    if (!entry.name) return;
+                    const nth = (occ[entry.name] = (occ[entry.name] || 0) + 1);
+                    rows.push({
+                        id: catalogOwnerKey(owner, ownerKind) + '|' + field + '|' + entry.name + '#' + nth,
+                        owner: owner, ownerKind: ownerKind, field: field,
+                        name: entry.name, count: entry.count, bare: !!entry.bare,
+                        price: null, itemId: null, tier: null, form: null, line: '', note: ''
+                    });
+                });
+            });
+        }
+
+        // 估价：目录既有记录 → 正文战斗定义桥 → 待估价（绝不给 $0 充数）
+        async function priceSellRow(row, cat) {
+            const hitId = Object.keys(cat.items).find(id => cat.items[id] && cat.items[id].name === row.name && cat.items[id].val);
+            if (hitId) {
+                const rec = cat.items[hitId];
+                row.itemId = hitId;
+                row.price = sellPriceOfBase(rec.val.price);
+                row.tier = rec.tier; row.form = rec.form;
+                row.line = (rec.battle && rec.battle.line) || '';
+                return;
+            }
+            let bridge = null;
+            try { bridge = await findBattleItemByName(row.name); } catch (e) { bridge = null; }
+            if (bridge && bridge.line) {
+                const reg = catalogRegister(cat, {
+                    line: bridge.line, children: bridge.children || [], name: row.name, category: '', source: 'identify'
+                });
+                if (reg) {
+                    row.itemId = reg.id;
+                    row.price = sellPriceOfBase(reg.record.val.price);
+                    row.tier = reg.record.tier; row.form = reg.record.form;
+                    row.line = bridge.line;
+                    row.children = bridge.children || [];
+                    return;
+                }
+            }
+            row.price = null;
+            row.note = '待估价';
+        }
+
+        function sellRowPickedQty(row) {
+            if (!sellState) return 0;
+            return sellState.picks[row.id] || 0;
+        }
+
+        function renderSellPanel() {
+            const ownersEl = document.getElementById('sellOwners');
+            const listEl = document.getElementById('sellList');
+            const sumEl = document.getElementById('sellSummary');
+            const reviewBtn = document.getElementById('sellReviewBtn');
+            const hintEl = document.getElementById('sellHeadHint');
+            if (!sellState || !listEl) return;
+
+            ownersEl.innerHTML = '';
+            sellState.owners.forEach(o => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'sell-owner-chip' + (o.name === sellState.activeOwner ? ' active' : '');
+                const av = resolveMemberAvatar({ name: o.name, avatar: o.kind === 'vehicle' ? null : (partyMembers.find(p => speakerKey(p.name) === speakerKey(o.name)) || {}).avatar });
+                b.innerHTML = (o.kind === 'vehicle'
+                    ? '<span class="sell-owner-face">🚙</span>'
+                    : (av ? `<img src="${escapeHtml(av)}" alt="">` : '<span class="sell-owner-face">🧑</span>'))
+                    + `<span>${escapeHtml(o.name)}</span>`;
+                // 归属始终有文字：不只靠头像或颜色辨认
+                b.title = o.name + (o.kind === 'vehicle' ? '（载具）' : '');
+                b.addEventListener('click', () => {
+                    sound.playWoodClick();
+                    sellState.activeOwner = o.name;
+                    renderSellPanel();
+                });
+                ownersEl.appendChild(b);
+            });
+
+            const rows = sellState.rows.filter(r => r.owner === sellState.activeOwner);
+            listEl.innerHTML = '';
+            if (!rows.length) {
+                listEl.innerHTML = '<div class="shop-event-empty">该归属下没有可出售的物品。</div>';
+            }
+            rows.forEach(r => {
+                const picked = sellRowPickedQty(r);
+                const el = document.createElement('div');
+                el.className = 'sell-row' + (picked > 0 ? ' selected' : '');
+                const over = r.price != null && r.price > sellState.keeperCash;
+                const priceCls = r.price == null ? 'tbd' : (over ? 'over' : '');
+                const priceHtml = r.price == null
+                    ? `待估价<span class="sell-price-sub">${escapeHtml(r.note || '资料不足')}</span>`
+                    : `$${r.price.toFixed(2)}<span class="sell-price-sub">${over ? '店主现金不足' : '单件收购价'}</span>`;
+                const tierText = r.tier ? (RELIC_TIERS[r.tier] ? RELIC_TIERS[r.tier].label : '') + (r.form === 'reusable' ? ' · 可复用' : r.form === 'consumable' ? ' · 一次性' : '') : '普通商品';
+                el.innerHTML = `
+                    <div class="sell-row-icon">${escapeHtml(r.ownerKind === 'vehicle' ? '🚙' : '📦')}</div>
+                    <div class="sell-row-main">
+                        <div class="sell-row-name">${escapeHtml(r.name)}</div>
+                        <div class="sell-row-sub">${escapeHtml(tierText)} · 持有 ${r.count}${picked > 0 ? ` · 已选 ${picked}` : ''} · 存放于「${escapeHtml(r.field)}」</div>
+                    </div>
+                    <div class="sell-row-price ${priceCls}">${priceHtml}</div>
+                    <div class="sell-row-pick">✓</div>`;
+                el.addEventListener('click', () => {
+                    sound.playWoodClick();
+                    openSellDetail(r);
+                });
+                listEl.appendChild(el);
+            });
+
+            const picks = sellState.rows.filter(r => sellRowPickedQty(r) > 0);
+            const total = picks.reduce((s, r) => s + r.price * sellRowPickedQty(r), 0);
+            sumEl.textContent = `已选 ${picks.length} 件 · 预计收入 $${total.toFixed(2)}`;
+            reviewBtn.disabled = picks.length === 0;
+            if (hintEl) {
+                hintEl.textContent = sellState.keeperCash <= 0
+                    ? '店主手头没有现钱，先买点东西他才有钱收你的货'
+                    : (sellState.owners.length ? '选择归属，点物品查看收购价' : '本次进店名单不可用，无法出售');
+            }
+        }
+
+        function openSellDetail(row) {
+            if (!sellState) return;
+            detailContext = { item: null, mode: 'sell', row: row };
+            detailEmoji.textContent = row.ownerKind === 'vehicle' ? '🚙' : '📦';
+            detailName.textContent = row.name;
+            detailSubtitle.textContent = `${row.owner} · 持有 ${row.count} · 存放于「${row.field}」`;
+            const chips = [];
+            if (row.tier && RELIC_TIERS[row.tier]) chips.push({ text: RELIC_TIERS[row.tier].label, cls: 'tier-' + row.tier });
+            if (row.form) chips.push({ text: RELIC_FORM_LABEL[row.form] || '', cls: '' });
+            if (!row.tier) chips.push({ text: '普通商品', cls: '' });
+            renderDetailChips(chips.filter(c => c.text));
+
+            const battle = row.line
+                ? Object.assign({}, parseBattleItemLine(row.line), { children: row.children || [] })
+                : null;
+            renderDetailEffects(battleEffectLines(battle));
+
+            detailQuote.textContent = row.line ? '战斗定义：' + row.line : '';
+            if (detailQuoteSection) detailQuoteSection.style.display = row.line ? '' : 'none';
+
+            detailPriceLabel.textContent = '单件收购价';
+            detailPrice.textContent = row.price == null ? '待估价' : '$' + row.price.toFixed(2);
+            const picked = sellRowPickedQty(row);
+            const notes = [];
+            if (row.price == null) notes.push('该物品没有可用的战斗定义或档案，无法估价');
+            else {
+                notes.push('基准估值 $' + roundMoney(row.price / 0.4).toFixed(2) + ' 的四成');
+                if (row.price > sellState.keeperCash) notes.push(`店主现金不足（差额 $${(row.price - sellState.keeperCash).toFixed(2)}）`);
+            }
+            if (picked > 0) notes.push(`已选 ${picked} 件`);
+            detailPriceNote.textContent = notes.join(' · ');
+
+            detailActions.innerHTML = '';
+            if (row.price == null) {
+                detailActions.appendChild(actionBtn('去鉴定', true, () => identifySellRow(row)));
+                detailActions.appendChild(actionBtn('关闭', false, closeItemDetail));
+            } else {
+                for (const q of [1, 2, 5]) {
+                    if (q > row.count) continue;
+                    detailActions.appendChild(actionBtn(`卖 ${q} 件`, false, () => { setSellPick(row, picked + q); closeItemDetail(); }));
+                }
+                if (row.count > 1) detailActions.appendChild(actionBtn(`全部 ${row.count} 件`, true, () => { setSellPick(row, row.count); closeItemDetail(); }));
+                else detailActions.appendChild(actionBtn('加入出售清单', true, () => { setSellPick(row, 1); closeItemDetail(); }));
+                if (picked > 0) detailActions.appendChild(actionBtn('移出清单', false, () => { setSellPick(row, 0); closeItemDetail(); }));
+                detailActions.appendChild(actionBtn('关闭', false, closeItemDetail));
+            }
+            itemDetailModal.classList.add('show');
+        }
+
+        function setSellPick(row, qty) {
+            if (!sellState) return;
+            const q = Math.max(0, Math.min(row.count, Math.floor(qty)));
+            if (q <= 0) delete sellState.picks[row.id];
+            else sellState.picks[row.id] = q;
+            renderSellPanel();
+        }
+
+        // 鉴定：资料不足的奇物由模型补出档位/效果行，先展示给玩家确认一次，确认后归档复用。
+        // 无可用 LLM 时明确失败，不静默按便宜货估价。
+        async function identifySellRow(row) {
+            const ctx = detailContext;
+            if (llmUnavailableReason()) {
+                showTopToast('未配置独立 LLM，无法为该物品鉴定估价；请先在战斗定义中给出它的效果行。', 6000);
+                return;
+            }
+            showTopToast('正在鉴定该物品…', 2500);
+            let parsed = null;
+            try {
+                const sys = '你是1920年代神秘学当铺的鉴定师。只输出 JSON，不要任何解释。';
+                const user = [
+                    '为下面这件物品给出战斗定义与奇物档位。',
+                    `物品名：${row.name}`,
+                    '输出 JSON：{"line":"【名】[效果;power:N][道具或消耗品][次数:N]","tier":"常规|高阶|传说","form":"可复用|一次性"}',
+                    '效果标签只能取自：单回/群回/单回蓝/吸回蓝/群回蓝/单体/群攻/穿透/散射/眩晕/单盾/群盾/肃正/单防/群防/免伤/回避/反击/单盲/群盲/单滞/群滞/单弱/群弱/单降/群降/中毒/燃烧/麻痹/嘲讽/单增/群增/单瞄/群瞄/单速/单冲/召唤/再动/驱散/群驱散。',
+                    '不确定就保守给常规档、弱效果；不要凭空造强效果。'
+                ].join('\n');
+                const raw = await requestShopLlm(sys, user, { scene: 'identify', temperature: 0.2, maxTokens: 600 });
+                parsed = extractJsonLoose(raw);
+            } catch (e) {
+                console.warn('[ShopBlock] 鉴定请求失败:', e);
+            }
+            if (!parsed || !parsed.line) {
+                showTopToast('鉴定失败：模型未返回可用的战斗定义，该物品仍为待估价。', 6000);
+                return;
+            }
+            let cat;
+            try { cat = await readCatalog(); } catch (e) { cat = normalizeCatalog(catalogMem); }
+            const reg = catalogRegister(cat, {
+                line: String(parsed.line), tier: String(parsed.tier || ''), form: String(parsed.form || ''),
+                name: row.name, source: 'identify'
+            });
+            if (!reg) {
+                showTopToast('鉴定结果无法解析（效果标签不在收录范围内），该物品仍为待估价。', 6000);
+                return;
+            }
+            try { await writeCatalog(cat); } catch (e) { console.warn('[ShopBlock] 鉴定归档失败:', e); }
+            row.itemId = reg.id;
+            row.price = sellPriceOfBase(reg.record.val.price);
+            row.tier = reg.record.tier;
+            row.form = reg.record.form;
+            row.line = String(parsed.line);
+            row.note = '';
+            logShopEvent('add', `[鉴定] ${row.name} → ${RELIC_TIERS[row.tier].label} · 基准估值 $${reg.record.val.price.toFixed(2)}`);
+            renderSellPanel();
+            openSellDetail(row);
+            showTopToast(`鉴定完成：${row.name} · ${RELIC_TIERS[row.tier].label}，单件收购价 $${row.price.toFixed(2)}。`, 6000);
+        }
+
+        function llmUnavailableReason() {
+            if (!llmConfig || !llmConfig.apiBase) return '未配置接口地址';
+            return '';
+        }
+
+        // 出售结算：买卖分单、不做混合抵扣；整单超过店主现金即拒绝，不自动部分成交
+        let sellInFlight = false;
+
+        async function openSellReview() {
+            if (!sellState) return;
+            const picks = sellState.rows.filter(r => sellRowPickedQty(r) > 0);
+            if (!picks.length) return;
+            const total = picks.reduce((s, r) => s + r.price * sellRowPickedQty(r), 0);
+            const body = document.getElementById('sellReviewBody');
+            const groups = {};
+            picks.forEach(r => {
+                const k = r.owner + '|' + r.ownerKind;
+                if (!groups[k]) groups[k] = { owner: r.owner, kind: r.ownerKind, rows: [] };
+                groups[k].rows.push(r);
+            });
+            let html = '';
+            Object.keys(groups).forEach(k => {
+                const g = groups[k];
+                html += '<div class="sell-review-group">';
+                html += `<div class="sell-review-owner">${escapeHtml(g.owner)}${g.kind === 'vehicle' ? '（载具）' : ''}</div>`;
+                g.rows.forEach(r => {
+                    const q = sellRowPickedQty(r);
+                    html += `<div class="sell-review-line"><span>${escapeHtml(r.name)} ×${q}</span><span>$${(r.price * q).toFixed(2)}</span></div>`;
+                });
+                html += '</div>';
+            });
+            html += `<div class="sell-review-line" style="border-top:1px solid #382417;padding-top:6px;"><span>团队获得</span><span style="color:#8fb573;font-weight:700;">$${total.toFixed(2)}</span></div>`;
+            html += `<div class="sell-review-line"><span>交易后店主余额</span><span>$${(sellState.keeperCash - total).toFixed(2)}</span></div>`;
+            if (picks.some(r => r.tier === 'legendary')) {
+                html += '<div class="sell-review-note">其中包含传说奇物：成交后只留收购记录，本店不会再把它摆上货架，也不提供回购。</div>';
+            }
+            body.innerHTML = html;
+            document.getElementById('sellReviewTotal').textContent = '$' + total.toFixed(2);
+            document.getElementById('sellReviewModal').classList.add('show');
+        }
+
+        function closeSellReview() {
+            document.getElementById('sellReviewModal').classList.remove('show');
+        }
+
+        async function performSellOut() {
+            if (sellInFlight || !sellState) return false;
+            sellInFlight = true;
+            const btn = document.getElementById('sellReviewConfirmBtn');
+            btn.disabled = true;
+            btn.textContent = '结算处理中…';
+            try {
+                const picks = sellState.rows.filter(r => sellRowPickedQty(r) > 0);
+                if (!picks.length) return false;
+                const total = roundMoney(picks.reduce((s, r) => s + r.price * sellRowPickedQty(r), 0));
+
+                // 提交前重读：归属、数量、店主现金与目录版本都以最新为准，过期清单不按旧快照成交
+                let ctx;
+                try { ctx = await loadMmsContext(); } catch (e) { ctx = null; }
+                if (!ctx) { showTopToast('无法读取状态栏数据，出售未执行。', 6000); return false; }
+
+                const all = await readAllShops();
+                const shop = shopState ? all[shopState.shopName] : null;
+                if (!shop) { showTopToast('店铺记录缺失，出售未执行。', 6000); return false; }
+                const keeperCash = Number.isFinite(Number(shop['店主现金'])) ? Number(shop['店主现金']) : 0;
+                if (total > keeperCash) {
+                    showTopToast(`店主现金不足：$ ${keeperCash.toFixed(2)} < 应收 $${total.toFixed(2)}。他摊手说了句「好东西，但我买不起」。`, 8000);
+                    return false;
+                }
+
+                // 数量复核：以最新状态栏为准，任何一件超卖即整单中止（不做部分成交）
+                const latestRows = [];
+                const root = ctx.stat && ctx.stat['状态栏'] ? ctx.stat['状态栏'] : ctx.stat;
+                const chars = Array.isArray(root && root['角色列表']) ? root['角色列表'] : [];
+                chars.forEach(e => {
+                    const c = (e && (e['角色'] || e['用户'])) || null;
+                    if (c && c['名字']) collectSellRows(c, String(c['名字']).trim(), 'char', latestRows);
+                });
+                (Array.isArray(ctx.vehicles) ? ctx.vehicles : []).forEach(v => collectSellRows(v.raw, v.name, 'vehicle', latestRows));
+                for (const p of picks) {
+                    const latest = latestRows.find(r => r.owner === p.owner && r.ownerKind === p.ownerKind && r.field === p.field && r.name === p.name);
+                    const have = latest ? latest.count : 0;
+                    if (sellRowPickedQty(p) > have) {
+                        showTopToast(`${p.owner} 的「${p.name}」数量已变化（现有 ${have}，清单里是 ${sellRowPickedQty(p)}），出售未执行。请返回调整。`, 8000);
+                        return false;
+                    }
+                }
+
+                const dealId = 'sell-' + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+                const chatVars = (typeof getVariables === 'function') ? await getVariables({ type: 'chat' }) : (window.__mockVars || {});
+                const sync = chatVars['$shop_sync'];
+                if (sync && sync.lastId === dealId) return false;
+
+                closeSellReview();
+
+                // 1) 状态栏：扣除物品 + 团队现金入账
+                let written = false;
+                try { written = await applySellToStatData(ctx, picks, total); }
+                catch (e) { console.warn('[ShopBlock] 出售写盘失败:', e); }
+
+                // 2) 店主现金减少；回收品按售卖权限重新上架（传说只留记录）
+                try {
+                    shop['店主现金'] = roundMoney(keeperCash - total);
+                    const meta = shop['$meta'] = (shop['$meta'] && typeof shop['$meta'] === 'object') ? shop['$meta'] : { version: 1 };
+                    const stockMap = (meta.stockMap = (meta.stockMap && typeof meta.stockMap === 'object') ? meta.stockMap : {});
+                    const declared = (meta.declaredStock = (meta.declaredStock && typeof meta.declaredStock === 'object') ? meta.declaredStock : {});
+                    const soldMap = (meta.soldMap = (meta.soldMap && typeof meta.soldMap === 'object') ? meta.soldMap : {});
+                    const buybacks = (meta.buybacks = Array.isArray(meta.buybacks) ? meta.buybacks : []);
+                    picks.forEach(p => {
+                        const q = sellRowPickedQty(p);
+                        buybacks.push({ name: p.name, owner: p.owner, count: q, price: p.price, tier: p.tier || null, ts: Date.now() });
+                        // 传说奇物：只记录收购，绝不进入货架
+                        if (p.tier === 'legendary') return;
+                        if (!shopCanSellTier(shop['店铺类型'] || '普通', p.tier)) return;
+                        const restocked = shopCanSellTier(shop['店铺类型'] || '普通', p.tier);
+                        if (restocked) {
+                            const cur = Math.max(0, parseInt(stockMap[p.name], 10) || 0) + q;
+                            stockMap[p.name] = cur;
+                            declared[p.name] = Math.max(parseInt(declared[p.name], 10) || 0, cur);
+                            if (cur > 0) delete soldMap[p.name];
+                            if (!setShopGoodsQty(shop, p.name, cur)) addBoughtGoodsEntry(shop, p, cur);
+                        }
+                    });
+                    if (buybacks.length > 200) meta.buybacks = buybacks.slice(-200);
+                    await replaceAllShops(all);
+                } catch (e) { console.warn('[ShopBlock] 店主现金/回收上架写入失败:', e); }
+
+                // 3) 物品目录：归属转移 + 售出墓碑（防旧战斗 YAML/持久化档把已售物品带回来）
+                try {
+                    const cat = await readCatalog();
+                    picks.forEach(p => {
+                        if (!p.itemId || !cat.items[p.itemId]) return;
+                        const q = sellRowPickedQty(p);
+                        catalogUnlink(cat, p.itemId, p.owner, p.ownerKind);
+                        if (q >= p.count) catalogMarkSold(cat, p.itemId, p.owner, p.ownerKind);
+                    });
+                    await writeCatalog(cat);
+                } catch (e) { console.warn('[ShopBlock] 目录墓碑写入失败:', e); }
+
+                // 4) 载荷与幂等台账（买卖共用一个 $shop_sync，lastId 互不冲突：dealId 前缀不同）
+                const sales = picks.map(p => ({
+                    owner: p.owner, ownerKind: p.ownerKind, field: p.field,
+                    name: p.name, count: sellRowPickedQty(p), price: p.price,
+                    tier: p.tier || null, itemId: p.itemId || null
+                }));
+                const payload = {
+                    v: 2, id: dealId, ts: Date.now(),
+                    floorId: ctx.floorId, '店名': shopState ? shopState.shopName : '',
+                    cashDelta: total, direction: 'sell', sales,
+                    keeperCashAfter: roundMoney(keeperCash - total),
+                    lock: { cash: written, chars: [], vehicles: [] }
+                };
+                sales.forEach(s => {
+                    const bucket = s.ownerKind === 'vehicle' ? payload.lock.vehicles : payload.lock.chars;
+                    let slot = bucket.find(b => b.name === s.owner);
+                    if (!slot) { slot = { name: s.owner, items: [] }; bucket.push(slot); }
+                    slot.items.push(s.name);
+                });
+                if (typeof insertOrAssignVariables === 'function') {
+                    await insertOrAssignVariables({ '$shop_deal_result': payload, '$shop_sync': { lastId: dealId, appliedFloor: payload.floorId, ts: payload.ts } }, { type: 'chat' });
+                } else if (window.__mockVars) {
+                    Object.assign(window.__mockVars, { '$shop_deal_result': payload, '$shop_sync': { lastId: dealId, appliedFloor: payload.floorId, ts: payload.ts } });
+                }
+
+                // 5) 记录与回显
+                const timeText = new Date(payload.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                sales.forEach((s, i) => {
+                    playerState.purchaseHistory.push({
+                        id: `${payload.id}-S${i + 1}`, name: s.name, qty: s.count,
+                        price: s.price * s.count, buyer: s.owner, time: timeText, direction: 'sell'
+                    });
+                });
+                logShopEvent('buy', `[出售] 收入 $${total.toFixed(2)}：${sales.map(s => `${s.name}×${s.count}←${s.owner}`).join('、')}`);
+                if (written && ctx.cash != null) playerState.cash = ctx.cash + total;
+                sellState.picks = {};
+                updateUI();
+                renderSellPanel();
+                await refreshSellPanel();
+                const record = buildSellRecord(payload);
+                if (await injectTextToTavernInput(record)) setTempNotice('Shop_Record（出售）已填入酒馆输入框，检查/修改后发送。', 5000);
+                else setTempNotice('未检测到酒馆输入框：出售记录已复制到剪贴板（或控制台），请手动粘贴发送。', 6000);
+                return true;
+            } finally {
+                sellInFlight = false;
+                btn.disabled = false;
+                btn.textContent = '确认出售 (SELL)';
+            }
+        }
+
+        // 货架数量镜像：`$meta.stockMap` 是剩余量的权威，商品条目的「数量」只是它的落盘镜像。
+        // 只写 stockMap 会让「数量」停在旧值，下次回收上架再叠加就多算一次（同一件库存凭空多出来）。
+        function setShopGoodsQty(shop, name, qty) {
+            const lists = [];
+            const cats = shop && shop['分类商品'];
+            if (cats && typeof cats === 'object') Object.keys(cats).forEach(c => { if (Array.isArray(cats[c])) lists.push(cats[c]); });
+            if (shop && Array.isArray(shop['独家私藏'])) lists.push(shop['独家私藏']);
+            for (const entries of lists) {
+                for (const entry of entries) {
+                    const g = (entry && entry['商品'] && typeof entry['商品'] === 'object') ? entry['商品'] : entry;
+                    if (!g || typeof g !== 'object') continue;
+                    if (getCleanNameAndEmoji(g['名字']).name !== name) continue;
+                    g['数量'] = Math.max(0, qty);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // 回收上架（货架上原本没有这件）：按实际数量新增一条，用回收物的既有定义，不重新生成
+        function addBoughtGoodsEntry(shop, p, qty) {
+            const cats = shop['分类商品'];
+            if (!cats || typeof cats !== 'object') return false;
+            const targetCat = Object.keys(cats)[0];
+            if (!targetCat || !Array.isArray(cats[targetCat])) return false;
+            const g = { '名字': p.name, '价格': `${baseValuationFromRow(p).toFixed(2)}美元`, '数量': qty, '单位': '件', '介绍': '（柜台里多了一件来路不明的旧货。）' };
+            if (p.line) g['效果'] = p.line;
+            if (p.tier) g['奇物'] = RELIC_TIERS[p.tier].label;
+            if (p.form) g['形态'] = RELIC_FORM_LABEL[p.form];
+            cats[targetCat].push({ '商品': g });
+            return true;
+        }
+
+        function baseValuationFromRow(p) {
+            return roundMoney((Number(p.price) || 0) / 0.4);
+        }
+
+        function buildSellRecord(payload) {
+            const lines = [];
+            lines.push('<Shop_Record>');
+            lines.push(`商店: ${payload['店名']} (店主: ${shopState ? shopState.keeper : '店主'} · 交易方向: 玩家出售)`);
+            lines.push('出售清单:');
+            payload.sales.forEach(s => {
+                const tierNote = s.tier ? `（${RELIC_TIERS[s.tier] ? RELIC_TIERS[s.tier].label : s.tier}）` : '';
+                lines.push(`  - ${s.name}${tierNote} ×${s.count} = $${(s.price * s.count).toFixed(2)} ← 出自: ${s.ownerKind === 'vehicle' ? '载具（' + s.owner + '）' : s.owner}`);
+            });
+            lines.push(`实收总额: $${Number(payload.cashDelta).toFixed(2)}，团队现金余额: $${(playerState.cash || 0).toFixed(2)}`);
+            lines.push(`店主现金余额: $${Number(payload.keeperCashAfter).toFixed(2)}`);
+            lines.push('</Shop_Record>');
+            return lines.join('\n');
+        }
+
+        // 出售写盘：物品串按量扣除 + 团队现金入账（与购买写盘共用同一套归属解析）
+        async function applySellToStatData(ctx, picks, total) {
+            if (typeof getVariables !== 'function' || typeof replaceVariables !== 'function') return false;
+            const vars = await getVariables({ type: 'message', message_id: ctx.floorId });
+            if (!vars || !vars.stat_data) return false;
+            const stat = JSON.parse(JSON.stringify(vars.stat_data));
+            const root = stat['状态栏'] || stat;
+
+            if (ctx.cashModule && root[ctx.cashModule] && root[ctx.cashModule]['现金'] != null) {
+                const orig = String(root[ctx.cashModule]['现金']);
+                const num = parseFloat(orig.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)) || ctx.cash || 0;
+                const suffix = orig.replace(/-?[\d,.]+/, '');
+                root[ctx.cashModule]['现金'] = (num + total).toFixed(2) + (suffix || '美元');
+            }
+
+            // 按 归属+字段 合并同名数量：同一字段若有多条同名条目（历史数据），
+            // 逐行各写一次会重复扣第一条，合并后一次写完
+            const groups = {};
+            picks.forEach(p => {
+                const k = (p.ownerKind === 'vehicle' ? 'V|' : 'C|') + p.owner + '|' + p.field;
+                if (!groups[k]) groups[k] = { owner: p.owner, ownerKind: p.ownerKind, field: p.field, sales: {} };
+                groups[k].sales[p.name] = (groups[k].sales[p.name] || 0) + sellRowPickedQty(p);
+            });
+            Object.keys(groups).forEach(k => {
+                const g = groups[k];
+                const sales = Object.keys(g.sales).map(n => ({ name: n, count: g.sales[n] }));
+                if (g.ownerKind === 'vehicle') {
+                    const v = ctx.vehicles.find(v => v.name === g.owner);
+                    const mod = v ? root[v.key] : null;
+                    if (mod && typeof mod[g.field] === 'string') mod[g.field] = rewriteStatItemString(mod[g.field], sales);
+                } else {
+                    const chars = root['角色列表'];
+                    if (!Array.isArray(chars)) return;
+                    const c = chars.find(e => {
+                        const ch = e && (e['角色'] || e['用户']);
+                        return ch && ch['名字'] && String(ch['名字']).includes(g.owner);
+                    });
+                    if (!c) return;
+                    const ch = c['角色'] || c['用户'];
+                    if (typeof ch[g.field] === 'string') ch[g.field] = rewriteStatItemString(ch[g.field], sales);
+                }
+            });
+
+            await replaceVariables(Object.assign({}, vars, { stat_data: stat }), { type: 'message', message_id: ctx.floorId });
+            if (typeof eventEmit === 'function') { try { eventEmit('mms:status-updated', { message_id: ctx.floorId }); } catch (e) {} }
+            return true;
+        }
+
+        // 交易方向切换与出售面板按钮
+        document.querySelectorAll('.trade-mode-btn').forEach(b => {
+            b.addEventListener('click', () => { sound.playWoodClick(); setTradeMode(b.dataset.mode); });
+        });
+        document.getElementById('sellClearBtn').addEventListener('click', () => {
+            if (!sellState) return;
+            sellState.picks = {};
+            renderSellPanel();
+        });
+        document.getElementById('sellReviewBtn').addEventListener('click', openSellReview);
+        document.getElementById('sellReviewCloseBtn').addEventListener('click', closeSellReview);
+        document.getElementById('sellReviewBackBtn').addEventListener('click', closeSellReview);
+        document.getElementById('sellReviewConfirmBtn').addEventListener('click', performSellOut);
+        document.getElementById('sellReviewModal').addEventListener('click', e => {
+            if (e.target === document.getElementById('sellReviewModal')) closeSellReview();
+        });
+
         function escapeHtml(s) {
             // 实体用 \u0026 拼写（源码无裸 &），防实体解码/构建管线歧义
             return String(s == null ? '' : s)
@@ -6265,7 +8317,7 @@
                     <summary>
                         <span>🏪 ${escapeHtml(name)} · ${escapeHtml(shop['店主'] || '店主')}（${escapeHtml(shop['立绘'] || '占卜商妇')}）</span>
                         <span style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-                            <span class="shop-acc-label">好感 ${escapeHtml(aff)} · ${goodsCount} 件${soldCount ? ` · ${soldCount} 件售罄` : ''}${meta.personaOverride ? ' · 人设已锁定' : ''}</span>
+                            <span class="shop-acc-label">好感 ${escapeHtml(aff)} · ${goodsCount} 件${soldCount ? ` · ${soldCount} 件售罄` : ''} · ${escapeHtml(shop['店铺类型'] || '普通')}店 · 现金 $${Number(shop['店主现金'] || 0).toFixed(2)}${meta.personaOverride ? ' · 人设已锁定' : ''}</span>
                             <span class="shop-acc-arrow">▾</span>
                         </span>
                     </summary>
@@ -6277,6 +8329,15 @@
                                     <div class="shop-acc-label">店主：${escapeHtml(shop['店主'] || '店主')} · 立绘：${escapeHtml(shop['立绘'] || '占卜商妇')}（由正文块维护）</div>
                                     <label class="shop-acc-label shop-acc-aff-inline">好感度（-100~100）
                                         <input type="number" min="-100" max="100" data-role="affection" value="${shop['好感度'] != null ? shop['好感度'] : SHOP_AFFECTION_INIT}">
+                                    </label>
+                                    <label class="shop-acc-label shop-acc-aff-inline">店铺类型
+                                        <select data-role="shoptype">
+                                            <option value="普通"${(shop['店铺类型'] || '普通') === '普通' ? ' selected' : ''}>普通（只卖常规奇物）</option>
+                                            <option value="奢侈"${shop['店铺类型'] === '奢侈' ? ' selected' : ''}>奢侈（可卖高阶奇物）</option>
+                                        </select>
+                                    </label>
+                                    <label class="shop-acc-label shop-acc-aff-inline">店主现金（买增卖减，不自动补）
+                                        <input type="number" min="0" step="1" data-role="keepercash" value="${shop['店主现金'] != null ? shop['店主现金'] : rollShopCash(normalizeShopType(shop['店铺类型'], shop['立绘']))}">
                                     </label>
                                 </div>
                                 <div class="shop-acc-persona-wrap">
@@ -6310,7 +8371,7 @@
         }
 
         // 一览保存：人设（手动优先，$meta.personaOverride 锁定 + blockPersona 快照）+ 好感钳制 -100~100；当前店同步运行态
-        async function saveShopEdits(shopName, persona, affection) {
+        async function saveShopEdits(shopName, persona, affection, shopType, keeperCash) {
             const all = await readAllShops();
             const shop = all[shopName];
             if (!shop) throw new Error(`「${shopName}」不在 $shops 中`);
@@ -6321,19 +8382,28 @@
                 meta.personaOverride = true;
             }
             if (affection != null) shop['好感度'] = Math.max(-100, Math.min(100, affection));
+            // 店铺类型与店主现金：手动调整是"剧情补货/补钱"之外唯一的显式入口（刷新不自动恢复）
+            if (shopType) shop['店铺类型'] = normalizeShopType(shopType, shop['立绘']);
+            if (keeperCash != null && isFinite(keeperCash) && keeperCash >= 0) shop['店主现金'] = roundMoney(keeperCash);
             await writeAllShops(all);
             if (shopState && shopState.shopName === shopName) {
                 if (persona) shopState.keeperPersona = persona;
+                if (shopType) shopState.shopType = shop['店铺类型'];
+                if (keeperCash != null) shopState.keeperCash = shop['店主现金'];
                 if (affection != null) {
                     const before = Number.isFinite(Number(window.__shopAffection)) ? Number(window.__shopAffection) : SHOP_AFFECTION_INIT;
                     applyAffectionUi(shop['好感度'] - before, shop['好感度'], { previous: before });
                     buildCategoryTabs();
                     renderCabinet();
                 }
+                if (shopType) renderCabinet();   // 类型变化会改变货架可售档位
+                if (tradeMode === 'sell') refreshSellPanel();
             }
             const parts = [`已保存「${shopName}」`];
             if (persona) parts.push('人设已锁定（新块导入不再覆盖）');
             if (affection != null) parts.push(`好感 ${shop['好感度']}`);
+            if (shopType) parts.push(`类型 ${shop['店铺类型']}`);
+            if (keeperCash != null) parts.push(`店主现金 $${Number(shop['店主现金']).toFixed(2)}`);
             return parts.join('，') + '。';
         }
 
@@ -6449,9 +8519,17 @@
                 } else if (act === 'save') {
                     const personaEl = acc.querySelector('[data-role="persona"]');
                     const affEl = acc.querySelector('[data-role="affection"]');
+                    const typeEl = acc.querySelector('[data-role="shoptype"]');
+                    const cashEl = acc.querySelector('[data-role="keepercash"]');
                     const persona = personaEl ? personaEl.value.trim() : '';
                     const affRaw = affEl ? parseInt(affEl.value, 10) : NaN;
-                    importBlockMsg.textContent = '✓ ' + await saveShopEdits(name, persona, Number.isFinite(affRaw) ? affRaw : null);
+                    const cashRaw = cashEl ? parseFloat(cashEl.value) : NaN;
+                    importBlockMsg.textContent = '✓ ' + await saveShopEdits(
+                        name, persona,
+                        Number.isFinite(affRaw) ? affRaw : null,
+                        typeEl ? String(typeEl.value).trim() : '',
+                        Number.isFinite(cashRaw) ? cashRaw : null
+                    );
                     importBlockMsg.style.color = '#7a9a5a';
                     await renderShopsList();
                 } else if (act === 'restore') {
@@ -6626,6 +8704,8 @@
         renderCabinet();
         updateUI();
         updateCartUI();
+        // demo 奇物档案异步落地（有正文块时由 onShopDataReceived 走正式路径，此处只服务示例商店）
+        hydrateDemoRelics().then(() => { if (!shopState) renderCabinet(); }).catch(() => {});
         startFloorPolling();   // 楼层 <Shop_block> 自动捕获（无酒馆 API 时内部直接返回，零副作用）
     </script>
 </body>

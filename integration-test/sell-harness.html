@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ShopBlock 奇物定价 / 双向交易 / 库存持久化回归</title>
+<style>
+    body { background: #14100c; color: #d8c7b5; font-family: Consolas, monospace; margin: 0; padding: 12px; }
+    h3 { color: #dfb06c; margin: 10px 0 6px; }
+    #phone { width: 375px; height: 740px; border: 4px solid #382417; border-radius: 10px; overflow: hidden; background: #0b0908; }
+    #phone iframe { width: 100%; height: 100%; border: none; display: block; }
+    #log { background: #0b0908; border: 1px solid #382417; padding: 8px; margin-top: 12px; max-height: 360px; overflow-y: auto; font-size: 12px; white-space: pre-wrap; }
+    .pass { color: #7a9a5a; } .fail { color: #c0605a; } .info { color: #8c7360; }
+    button { background: #20150e; color: #dfb06c; border: 1px solid #5a3822; padding: 4px 12px; cursor: pointer; margin-right: 6px; }
+    #send_textarea { width: 100%; height: 60px; background: #1a120c; color: #e5d7c3; border: 1px solid #382417; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<h3>奇物档位定价 / 商品详情 / 买卖双向结算 / 店主现金与库存持久化（mock 酒馆 API + mock stat_data）</h3>
+<div style="margin-bottom: 8px;">
+    <button id="btnRun">▶ 跑全部断言</button>
+    <span id="summary"></span>
+</div>
+<div style="margin-bottom: 8px;">
+    <div style="font-size: 11px; color: #8c7360; margin-bottom: 3px;">模拟酒馆输入框 #send_textarea（组件 parent 页面）：</div>
+    <textarea id="send_textarea"></textarea>
+</div>
+<div id="phone"><iframe id="shopFrame"></iframe></div>
+<div id="log"></div>
+
+<script>
+const logBox = document.getElementById('log');
+function log(msg, cls) {
+    const line = document.createElement('div');
+    line.className = cls || 'info';
+    line.textContent = msg;
+    logBox.appendChild(line);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+let passCount = 0, failCount = 0;
+function assert(cond, label) {
+    if (cond) { passCount++; log('  ✓ ' + label, 'pass'); }
+    else { failCount++; log('  ✗ ' + label, 'fail'); }
+}
+const shopWin = () => document.getElementById('shopFrame').contentWindow;
+function shopEval(code) { return shopWin().eval(code); }
+async function waitUntil(fn, timeout = 8000) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeout) {
+        let ok = false;
+        try { ok = fn(); } catch (e) {}
+        if (ok) return true;
+        await new Promise(r => setTimeout(r, 120));
+    }
+    return false;
+}
+
+// 夹具商店：奢侈品店，货架上有高阶奇物（正文报价故意写 $1.00 —— 公式价必须覆盖它）
+// 与一件传说奇物（不可购买，只能玩家卖出）。
+const SHOP_YAML = [
+    '商店数据:',
+    '  店名: "银匙典当行"',
+    '  店主: "薇拉"',
+    '  立绘: "奢品商人"',
+    '  店主性格: "只认出手阔绰的主顾"',
+    '  店铺类型: "奢侈"',
+    '  店主现金: 30000',
+    '  在场成员: ["玛德琳", "索恩"]',
+    '  分类商品:',
+    '    古董:',
+    '      - 商品:',
+    '          名字: "芭斯特的猫眼石"',
+    '          价格: "1.00美元"',
+    '          数量: 2',
+    '          奇物: "高阶"',
+    '          形态: "可复用"',
+    '          效果: "【芭斯特的猫眼石】[单回蓝;power:5][单回;power:50][道具][次数:2][他人]"',
+    '          介绍: "柜台底下摸出来的旧物。"',
+    '      - 商品:',
+    '          名字: "银质圣物匣"',
+    '          价格: "7.50美元"',
+    '          数量: 1',
+    '          奇物: "高阶"',
+    '          形态: "可复用"',
+    '          效果: "【银质圣物匣】[单防;power:50][道具][次数:1][他人]"',
+    '          介绍: "封着一小块看不出材质的骨片。"',
+    '  独家私藏:',
+    '    - 商品:',
+    '        名字: "浸血羊皮纸残页"',
+    '        价格: "9999.00美元"',
+    '        数量: 1',
+    '        奇物: "传说"',
+    '        形态: "一次性"',
+    '        效果: "【浸血羊皮纸残页】[群盲;power:30][群滞;power:20][消耗品][数量:1][MP:10][延迟:2]"',
+    '        介绍: "别碰。"',
+    ''
+].join('\n');
+
+const STAT = {
+    状态栏: {
+        日期和时间: '1926年10月3日',
+        角色列表: [
+            { 角色: { 名字: '玛德琳', 属性: '[HP:140/140][MP:14/14]', 物品: '[芭斯特的猫眼石x2][银质打火机]', 道具: '[芭斯特的猫眼石]' } },
+            { 角色: { 名字: '索恩', 属性: '[HP:140/140]', 物品: '[银质圣物匣x1][战斗兴奋剂x2]' } }
+        ],
+        据点: { 现金: '20000.00美元' }
+    }
+};
+
+let running = false;
+async function runFlow() {
+    // 运行锁：双击按钮 / load 与点击同时触发时只跑一次。无锁会并发跑两遍全流程，
+    // 表现为同一单被结算两次（现金/店主余额/库存 全部偏移），是夹具自身的假失败。
+    if (running) return;
+    running = true;
+    try {
+    logBox.innerHTML = '';
+    passCount = failCount = 0;
+    document.getElementById('summary').textContent = '';
+    document.getElementById('send_textarea').value = '';
+
+    log('== 0. mock boot ==');
+    const mockScript = '<' + 'script>' + `
+window.getCurrentMessageId = function () { return 7; };
+window.getLastMessageId = function () { return 7; };
+window.getChatMessages = function () { return []; };
+window.__mockVars = {};
+window.getVariables = function (opts) {
+    if (opts && opts.type === 'message') {
+        return Promise.resolve({ stat_data: JSON.parse(JSON.stringify(window.__mockStat)), '$mms_meta': { mesId: 7, ts: 1000 } });
+    }
+    return Promise.resolve(window.__mockVars);
+};
+window.insertOrAssignVariables = function (obj) { Object.assign(window.__mockVars, JSON.parse(JSON.stringify(obj))); return Promise.resolve(true); };
+window.replaceVariables = function (obj, opts) {
+    if (opts && opts.type === 'message') { window.__mockStat = JSON.parse(JSON.stringify(obj.stat_data)); return Promise.resolve(true); }
+    window.__mockVars = JSON.parse(JSON.stringify(obj)); return Promise.resolve(true);
+};
+window.eventOn = function () {};
+window.eventEmit = function () {};
+window.alert = function () {}; window.confirm = function () { return true; };
+` + '<' + '/script>';
+    const src = await fetch('../index.html', { cache: 'no-store' }).then(r => r.text());
+    const frame = document.getElementById('shopFrame');
+    frame.srcdoc = src.replace('<head>', '<head>' + mockScript);
+    const t0 = Date.now();
+    let ready = false;
+    while (Date.now() - t0 < 20000) {
+        await new Promise(r => setTimeout(r, 400));
+        try { ready = shopEval('document.readyState === "complete" && typeof onShopDataReceived === "function" && typeof performSellOut === "function"'); } catch (e) {}
+        if (ready) break;
+    }
+    assert(ready, '组件 boot（onShopDataReceived / performSellOut 就绪）');
+    if (!ready) { finish(); return; }
+    shopWin().__mockStat = JSON.parse(JSON.stringify(STAT));
+
+    log('== 1. 奇物定价：公式价覆盖正文报价 ==');
+    shopWin().__hYaml = SHOP_YAML;
+    await shopEval('onShopDataReceived(window.__hYaml)');
+    assert(await waitUntil(() => shopEval('!!(shopState && shopState.shopName === "银匙典行" ) || !!(shopState && shopState.shopName)')), '块导入并载入店铺');
+    // 清掉随机的进店特惠，让价格断言确定化（特惠本身在下面单独断言）
+    shopEval('clearShopSale()');
+    const shopInfo = shopEval('(function(){var it=shopState.items.find(i=>i.name==="芭斯特的猫眼石");return {type:shopState.shopType, cash:shopState.keeperCash, tier:it&&it.relic?it.relic.tier:null, listed:effPrice(it), base:getBasePrice(it), floor:relicPriceFloor(it)};})()');
+    assert(shopInfo.type === '奢侈', '店铺类型取块的显式声明（奢侈，实际 ' + shopInfo.type + '）');
+    assert(shopInfo.cash === 30000, '店主现金取块的显式声明（30000，实际 ' + shopInfo.cash + '）');
+    assert(shopInfo.tier === 'high', '猫眼石被登记为高阶奇物（实际 ' + shopInfo.tier + '）');
+    assert(shopInfo.base === 5000, '基准售价 = 高阶基价 ×1.0 效果 ×1.25 次数 = $5,000（实际 ' + shopInfo.base + '）');
+    assert(shopInfo.listed === 5000, '售价被公式价覆盖（正文写 $1.00，实际 ' + shopInfo.listed + '）');
+    assert(shopInfo.floor === 2000, '购买底价 = $2,000（实际 ' + shopInfo.floor + '）');
+    // 特惠/砍价叠加后不得跌破底价：把折扣压到一折也只能停在 $2,000
+    const floored = shopEval('(function(){var it=shopState.items.find(i=>i.name==="芭斯特的猫眼石");it.dealPrice=Math.round(getBasePrice(it)*0.1*100)/100;var v=effPrice(it);delete it.dealPrice;return v;})()');
+    assert(floored === 2000, '极低折扣仍被底价托住（一折 → $2,000，实际 ' + floored + '）');
+
+    const legendary = shopEval('(function(){var it=shopState.items.find(i=>i.name==="浸血羊皮纸残页");return {tier:it&&it.relic?it.relic.tier:null, blocked:shopSellBlockReason(it), base:it?baseValuation(it):null};})()');
+    assert(legendary.tier === 'legendary', '残页被登记为传说奇物（实际 ' + legendary.tier + '）');
+    assert(!!legendary.blocked, '传说奇物在本店为「非卖品」（不可购买）');
+    // 一次性形态的价格带也要先乘形态系数 M=0.25：传说带 $10,000~$50,000 → 一次性 $2,500~$12,500
+    assert(legendary.base >= 2500 && legendary.base <= 12500, '传说一次性基价落在该形态的价格带内（实际 ' + legendary.base + '）');
+
+    log('== 2. 购买：目录归属登记 + 库存持久化 ==');
+    const buy = await shopEval(`(async function () {
+        const it = shopState.items.find(i => i.name === '芭斯特的猫眼石');
+        const out = { before: it.stock };
+        addDirectToCart(it, 1);
+        await openAssignPanel();
+        await new Promise(r => setTimeout(r, 250));
+        if (!assignState) return { err: 'no-assign' };
+        assignState.activeTarget = { name: '玛德琳', kind: 'char' };
+        assignState.assigned = [{ entryId: it.id, owner: '玛德琳', kind: 'char' }];
+        out.ok = await performCheckoutCart();
+        await new Promise(r => setTimeout(r, 400));
+        out.after = it.stock;
+        return out;
+    })()`);
+    assert(buy.ok === true, '构造归属后购买结算成功');
+    assert(buy.before - buy.after === 1, '货架库存扣 1（' + buy.before + '→' + buy.after + '）');
+    const afterBuy = shopEval('(function(){var c=window.__mockVars["$shop_catalog"]||{};var it=Object.keys(c.items||{}).find(k=>c.items[k].name==="芭斯特的猫眼石");var holds=Object.keys(c.holds||{}).filter(k=>k.indexOf("玛德琳")>=0);return {holds:holds.length, status: it?c.items[it].status:null, stock: (window.__mockVars["$shops"]["银匙典当行"].$meta.stockMap||{})["芭斯特的猫眼石"]};})()');
+    assert(afterBuy.holds === 1, '购买写入目录归属（holds 命中玛德琳，实际 ' + afterBuy.holds + '）');
+    assert(afterBuy.status === 'owned', '目录状态为在持（owned，实际 ' + afterBuy.status + '）');
+    assert(afterBuy.stock === 1, '剩余库存写入 $meta.stockMap（实际 ' + afterBuy.stock + '）');
+
+    log('== 3. 出售面板：归属筛选 + 待估价不给 $0 ==');
+    await shopEval('setTradeMode("sell")');
+    assert(await waitUntil(() => shopEval('!!(sellState && sellState.rows.length)')), '出售面板装配完成');
+    const rows = shopEval('sellState.rows.map(r=>({owner:r.owner, name:r.name, price:r.price, field:r.field}))');
+    const eyeRow = rows.find(r => r.name === '芭斯特的猫眼石');
+    const lighterRow = rows.find(r => r.name === '银质打火机');
+    assert(!!eyeRow && eyeRow.owner === '玛德琳', '玛德琳的奇物出现在可售清单');
+    assert(!!eyeRow && eyeRow.price === 2000, '收购单价 = 基准估值四成（$5,000→$2,000，实际 ' + (eyeRow && eyeRow.price) + '）');
+    assert(!!lighterRow && lighterRow.price === null, '无战斗定义的普通物品显示待估价而非 $0（实际 ' + (lighterRow && lighterRow.price) + '）');
+    assert(!rows.find(r => r.name === '战斗兴奋剂' && r.price !== null), '未获定义的物品不编造价格');
+    const owners = shopEval('sellState.owners.map(o=>o.name).join(",")');
+    assert(owners === '玛德琳,索恩', '归属筛选只列块内在场成员（实际 ' + owners + '）');
+
+    log('== 4. 出售结算：扣物 + 团队入账 + 店主现金 + 回收上架 ==');
+    const sell = await shopEval(`(async function () {
+        const row = sellState.rows.find(r => r.name === '芭斯特的猫眼石');
+        setSellPick(row, row.count);
+        const out = { picked: sellRowPickedQty(row), rowCount: row.count };
+        out.pickedRows = sellState.rows.filter(r => sellRowPickedQty(r) > 0)
+            .map(r => ({ id: r.id, field: r.field, qty: sellRowPickedQty(r), price: r.price }));
+        out.total = out.pickedRows.reduce((s, r) => s + r.price * r.qty, 0);
+        out.keeperBefore = window.__mockVars['$shops']['银匙典当行']['店主现金'];
+        out.cashBefore = window.__mockStat['状态栏']['据点']['现金'];
+        await openSellReview();
+        out.reviewShown = document.getElementById('sellReviewModal').classList.contains('show');
+        out.reviewText = document.getElementById('sellReviewBody').textContent;
+        out.ok = await performSellOut();
+        await new Promise(r => setTimeout(r, 400));
+        out.keeperAfter = window.__mockVars['$shops']['银匙典当行']['店主现金'];
+        out.cashAfter = window.__mockStat['状态栏']['据点']['现金'];
+        out.persistedQty = window.__mockVars['$shops']['银匙典当行']['分类商品']['古董'][0]['商品']['数量'];
+        out.catalogStatus = (function () {
+            var c = window.__mockVars['$shop_catalog'] || {};
+            var id = Object.keys(c.items || {}).find(k => c.items[k].name === '芭斯特的猫眼石');
+            return id ? c.items[id].status : null;
+        })();
+        return out;
+    })()`);
+    log('    [诊断] 已选 ' + JSON.stringify(sell.pickedRows) + ' 合计 $' + sell.total
+        + ' · 店主现金 ' + sell.keeperBefore + '→' + sell.keeperAfter
+        + ' · 团队现金 ' + sell.cashBefore + '→' + sell.cashAfter
+        + ' · 持久数量 ' + sell.persistedQty + ' · 目录 ' + sell.catalogStatus);
+    assert(sell.picked === 3, '选入出售清单 3 件（已购 1 件后的全部持有量）');
+    assert(sell.reviewShown === true, '出售清单确认页打开');
+    assert(sell.reviewText.indexOf('玛德琳') >= 0 && sell.reviewText.indexOf('团队获得') >= 0, '确认页按物主分组并列出团队收入');
+    assert(sell.ok === true, '出售结算成功');
+    const st = shopEval('window.__mockStat["状态栏"]');
+    const madeleine = st.角色列表.find(e => e.角色 && e.角色.名字 === '玛德琳').角色;
+    assert(madeleine.物品.indexOf('芭斯特的猫眼石') < 0, '整栈售出后背包条目移除（实际「' + madeleine.物品 + '」）');
+    assert(st.据点.现金.indexOf('21000') === 0, '团队现金：购入 −$5,000 后卖出 +$6,000 = $21,000（实际「' + st.据点.现金 + '」）');
+    assert(sell.keeperAfter === 24000, '店主现金 $30,000 → $24,000（实际 ' + sell.keeperAfter + '）');
+    assert(sell.persistedQty === 4, '回收按实际数量重新上架（购入后 1 件 + 售出 3 件 = 4，实际 ' + sell.persistedQty + '）');
+    assert(sell.catalogStatus === 'sold', '目录写入售出墓碑（防旧战斗定义复活，实际 ' + sell.catalogStatus + '）');
+    assert(shopEval('(function(){var c=window.__mockVars["$shop_catalog"]||{};var id=Object.keys(c.items||{}).find(k=>c.items[k].name==="芭斯特的猫眼石");return !!(c.sold&&c.sold[id]);})()') === true, '墓碑条目落到 $shop_catalog.sold');
+
+    log('== 5. 店主现金不足：整单拒绝，不部分成交 ==');
+    const poor = await shopEval(`(async function () {
+        var s = window.__mockVars["$shops"]["银匙典当行"];
+        s["店主现金"] = 500;
+        await refreshSellPanel();
+        const row = sellState.rows.find(r => r.name === '银质圣物匣');
+        if (!row) return { err: 'row missing' };
+        setSellPick(row, 1);
+        const cashBefore = window.__mockStat["状态栏"]["据点"]["现金"];
+        const ok = await performSellOut();
+        await new Promise(r => setTimeout(r, 300));
+        return { ok: ok, price: row.price, cashBefore: cashBefore, cashAfter: window.__mockStat["状态栏"]["据点"]["现金"],
+                 keeperAfter: window.__mockVars["$shops"]["银匙典当行"]["店主现金"] };
+    })()`);
+    assert(poor.price != null && poor.price > 500, '索恩的高阶奇物已定价且高于店主现金（$' + poor.price + '）');
+    assert(poor.ok === false, '店主现金不足时出售被拒绝（返回 false）');
+    assert(poor.cashBefore === poor.cashAfter, '被拒绝时不改动团队现金（无部分成交）');
+    assert(poor.keeperAfter === 500, '被拒绝时不改动店主现金');
+
+    log('== 6. 未获定义物品不可选入出售清单 ==');
+    const tbd = await shopEval(`(function () {
+        const row = sellState.rows.find(r => r.name === '银质打火机');
+        if (!row) return { err: 'row missing' };
+        const before = Object.keys(sellState.picks).length;
+        if (row.price == null) { /* 界面层：打开详情只给"去鉴定/关闭" */ }
+        openSellDetail(row);
+        const labels = [...document.querySelectorAll('#detailActions button')].map(b => b.textContent);
+        closeItemDetail();
+        return { labels: labels, before: before };
+    })()`);
+    assert(tbd.labels && tbd.labels.indexOf('去鉴定') >= 0, '待估价物品的详情只提供「去鉴定」入口');
+    assert(tbd.labels && tbd.labels.indexOf('加入出售清单') < 0, '待估价物品不能被直接加入出售清单');
+
+    log('== 7. 库存持久化：重载不补货 ==');
+    const reload = await shopEval(`(async function () {
+        var s = window.__mockVars["$shops"]["银匙典当行"];
+        s["店主现金"] = 30000;
+        var before = (s.$meta.stockMap || {})["芭斯特的猫眼石"];
+        await onShopDataReceived(window.__hYaml);
+        await new Promise(r => setTimeout(r, 300));
+        var it = shopState.items.find(i => i.name === '芭斯特的猫眼石');
+        return { before: before, after: it.stock, declared: it._raw['数量'] };
+    })()`);
+    assert(reload.before === reload.after, '同块重载不恢复库存（' + reload.before + '→' + reload.after + '）');
+    assert(shopEval('shopState.keeperCash') === 30000, '重载不重置店主现金');
+
+    finish();
+    } finally {
+        if (running) running = false;
+    }
+}
+
+function finish() {
+    const total = passCount + failCount;
+    document.getElementById('summary').textContent = failCount === 0
+        ? '✅ ' + passCount + '/' + total + ' 全绿'
+        : '❌ ' + failCount + ' 失败 / ' + total;
+    log('== 完成：' + passCount + ' 通过, ' + failCount + ' 失败 ==', failCount ? 'fail' : 'pass');
+}
+
+document.getElementById('btnRun').addEventListener('click', () => {
+    runFlow().catch(e => { log('异常：' + (e && e.message), 'fail'); finish(); });
+});
+window.addEventListener('load', () => { runFlow().catch(e => { log('异常：' + (e && e.message), 'fail'); finish(); }); });
+</script>
+</body>
+</html>
