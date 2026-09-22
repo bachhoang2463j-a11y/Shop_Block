@@ -1,0 +1,33 @@
+# 商店立绘资源对照表
+
+| 序号 | 源代码键值名 (PORTRAIT_ENUM) | 本地文件名 | Catbox 远程链接 |
+|---|---|---|---|
+| 1 | 铁匠机械师 | Blacksmith_Machinist.png | https://files.catbox.moe/xzbv5a.png |
+| 2 | 黑市贩子 | black_market.png | https://files.catbox.moe/pwrfv1.png |
+| 3 | 古籍书商 | book.png | https://files.catbox.moe/dhiol0.png |
+| 4 | 酒馆老板 | food.png | https://files.catbox.moe/pwudsw.png |
+| 5 | 荒野猎人 | hunter.png | https://files.catbox.moe/z7tbgs.png |
+| 6 | 奢品商人 | luxury.png | https://files.catbox.moe/ss3xp8.png |
+| 7 | 秘石商人 | magic.png | https://files.catbox.moe/djbqw7.png |
+| 8 | 药剂修女 | medical.png | https://files.catbox.moe/g5viae.png |
+| 9 | 布道神父 | religion.png | https://files.catbox.moe/j7wgq7.png |
+| 10 | 占卜商妇 | shop.png | https://files.catbox.moe/fjcjau.png |
+
+---
+
+### 源代码映射字典（供直接引用/替换参考）
+
+```javascript
+const PORTRAIT_REMOTE_MAP = {
+    '铁匠机械师': 'https://files.catbox.moe/xzbv5a.png',
+    '黑市贩子': 'https://files.catbox.moe/pwrfv1.png',
+    '古籍书商': 'https://files.catbox.moe/dhiol0.png',
+    '酒馆老板': 'https://files.catbox.moe/pwudsw.png',
+    '荒野猎人': 'https://files.catbox.moe/z7tbgs.png',
+    '奢品商人': 'https://files.catbox.moe/ss3xp8.png',
+    '秘石商人': 'https://files.catbox.moe/djbqw7.png',
+    '药剂修女': 'https://files.catbox.moe/g5viae.png',
+    '布道神父': 'https://files.catbox.moe/j7wgq7.png',
+    '占卜商妇': 'https://files.catbox.moe/fjcjau.png'
+};
+```
