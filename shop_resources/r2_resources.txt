@@ -1,16 +1,16 @@
 ========================================
 云端资源列表（共 10 张）
-父路径: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/
+父路径: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/
 ========================================
 
 【商店NPC立绘】
-Blacksmith_Machinist.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/Blacksmith_Machinist.png
-black_market.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/black_market.png
-book.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/book.png
-food.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/food.png
-hunter.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/hunter.png
-luxury.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/luxury.png
-magic.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/magic.png
-medical.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/medical.png
-religion.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/religion.png
-shop.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/shop.png
+Blacksmith_Machinist.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/Blacksmith_Machinist.png
+black_market.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/black_market.png
+book.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/book.png
+food.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/food.png
+hunter.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/hunter.png
+luxury.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/luxury.png
+magic.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/magic.png
+medical.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/medical.png
+religion.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/religion.png
+shop.png: https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/shopblock/shop.png
