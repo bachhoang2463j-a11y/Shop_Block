@@ -1,24 +1,47 @@
 # 商店立绘资源对照表
 
-| 序号 | 源代码键值名 (PORTRAIT_ENUM) | 本地文件名 | Catbox 远程链接 |
-|---|---|---|---|
-| 1 | 铁匠机械师 | Blacksmith_Machinist.png | https://files.catbox.moe/xzbv5a.png |
-| 2 | 黑市贩子 | black_market.png | https://files.catbox.moe/pwrfv1.png |
-| 3 | 古籍书商 | book.png | https://files.catbox.moe/dhiol0.png |
-| 4 | 酒馆老板 | food.png | https://files.catbox.moe/pwudsw.png |
-| 5 | 荒野猎人 | hunter.png | https://files.catbox.moe/z7tbgs.png |
-| 6 | 奢品商人 | luxury.png | https://files.catbox.moe/ss3xp8.png |
-| 7 | 秘石商人 | magic.png | https://files.catbox.moe/djbqw7.png |
-| 8 | 药剂修女 | medical.png | https://files.catbox.moe/g5viae.png |
-| 9 | 布道神父 | religion.png | https://files.catbox.moe/j7wgq7.png |
-| 10 | 占卜商妇 | shop.png | https://files.catbox.moe/fjcjau.png |
+| 序号 | 源代码键值名 (PORTRAIT_ENUM) | 本地文件名 | Catbox 远程链接 | Cloudflare R2 远程链接 |
+|---|---|---|---|---|
+| 1 | 铁匠机械师 | Blacksmith_Machinist.png | https://files.catbox.moe/xzbv5a.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/Blacksmith_Machinist.png |
+| 2 | 黑市贩子 | black_market.png | https://files.catbox.moe/pwrfv1.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/black_market.png |
+| 3 | 古籍书商 | book.png | https://files.catbox.moe/dhiol0.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/book.png |
+| 4 | 酒馆老板 | food.png | https://files.catbox.moe/pwudsw.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/food.png |
+| 5 | 荒野猎人 | hunter.png | https://files.catbox.moe/z7tbgs.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/hunter.png |
+| 6 | 奢品商人 | luxury.png | https://files.catbox.moe/ss3xp8.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/luxury.png |
+| 7 | 秘石商人 | magic.png | https://files.catbox.moe/djbqw7.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/magic.png |
+| 8 | 药剂修女 | medical.png | https://files.catbox.moe/g5viae.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/medical.png |
+| 9 | 布道神父 | religion.png | https://files.catbox.moe/j7wgq7.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/religion.png |
+| 10 | 占卜商妇 | shop.png | https://files.catbox.moe/fjcjau.png | https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/shop.png |
+
+---
+
+### R2 根路径配置说明（用于界面 `llmPortraitBase`）
+
+若在插件面板设置中配置立绘 Base URL，直接填写：
+```text
+https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock
+```
+插件内部 `portraitUrl(enumName)` 将自动拼接为 `${base}/${file}`。
 
 ---
 
 ### 源代码映射字典（供直接引用/替换参考）
 
 ```javascript
-const PORTRAIT_REMOTE_MAP = {
+const PORTRAIT_R2_MAP = {
+    '铁匠机械师': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/Blacksmith_Machinist.png',
+    '黑市贩子': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/black_market.png',
+    '古籍书商': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/book.png',
+    '酒馆老板': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/food.png',
+    '荒野猎人': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/hunter.png',
+    '奢品商人': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/luxury.png',
+    '秘石商人': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/magic.png',
+    '药剂修女': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/medical.png',
+    '布道神父': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/religion.png',
+    '占卜商妇': 'https://pub-28508adcb2484e98a7a7965b78878723.r2.dev/sillytarvenassets/shopblock/shop.png'
+};
+
+const PORTRAIT_CATBOX_MAP = {
     '铁匠机械师': 'https://files.catbox.moe/xzbv5a.png',
     '黑市贩子': 'https://files.catbox.moe/pwrfv1.png',
     '古籍书商': 'https://files.catbox.moe/dhiol0.png',
