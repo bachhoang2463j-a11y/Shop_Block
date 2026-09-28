@@ -2978,20 +2978,6 @@
                     </div>
                 </details>
 
-                <details class="settings-section">
-                    <summary>资源地址</summary>
-                    <div class="settings-section-body settings-grid">
-                        <div class="form-group">
-                            <label class="form-label">立绘服务器根 URL:</label>
-                            <input type="text" class="form-input" id="llmPortraitBase" placeholder="http://127.0.0.1:8766/shop_resources">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">头像服务器根 URL:</label>
-                            <input type="text" class="form-input" id="llmAvatarBase" placeholder="http://127.0.0.1:8766/头像">
-                        </div>
-                    </div>
-                </details>
-
                 <details class="settings-section" open>
                     <summary>叙事与角色</summary>
                     <div class="settings-section-body">
@@ -3045,16 +3031,16 @@
         // 解析归一化为内部 shopState，驱动整个商品柜渲染。
         // ====================================================
         const PORTRAIT_ENUM = {
-            '铁匠机械师': 'Blacksmith_Machinist.png',
-            '黑市贩子': 'black_market.png',
-            '古籍书商': 'book.png',
-            '酒馆老板': 'food.png',
-            '荒野猎人': 'hunter.png',
-            '奢品商人': 'luxury.png',
-            '秘石商人': 'magic.png',
-            '药剂修女': 'medical.png',
-            '布道神父': 'religion.png',
-            '占卜商妇': 'shop.png'
+            '铁匠机械师': 'https://imgur.la/images/2026/09/29/Blacksmith_Machinist.png',
+            '黑市贩子': 'https://imgur.la/images/2026/09/29/black_market.png',
+            '古籍书商': 'https://imgur.la/images/2026/09/29/book.png',
+            '酒馆老板': 'https://imgur.la/images/2026/09/29/food.png',
+            '荒野猎人': 'https://imgur.la/images/2026/09/29/hunter.png',
+            '奢品商人': 'https://imgur.la/images/2026/09/29/luxury.png',
+            '秘石商人': 'https://imgur.la/images/2026/09/29/magic.png',
+            '药剂修女': 'https://imgur.la/images/2026/09/29/medical.png',
+            '布道神父': 'https://imgur.la/images/2026/09/29/religion.png',
+            '占卜商妇': 'https://imgur.la/images/2026/09/29/shop.png'
         };
 
         // 立绘语气锚：换立绘即换说话风格（随块内「立绘」字段变动，拼入 system prompt）
@@ -6224,7 +6210,6 @@
             apiBase: "https://api.openai.com/v1",
             apiKey: "",
             model: "gpt-4o-mini",
-            portraitBase: "",
             avatarBase: "",
             systemPrompt: DEFAULT_WORLDVIEW,
             partyPersonas: [],
@@ -6355,8 +6340,6 @@
         const llmDebugToggle = document.getElementById('llmDebugToggle');
         const llmSaveBtn = document.getElementById('llmSaveBtn');
         const llmResetBtn = document.getElementById('llmResetBtn');
-        const llmPortraitBase = document.getElementById('llmPortraitBase');
-        const llmAvatarBase = document.getElementById('llmAvatarBase');
 
         // 出场角色人设独立窗口（照搬 RpgCombat 单配置版）：每角色一行，可换行描述
         function collectPartyPersonasFromDOM() {
@@ -6448,11 +6431,9 @@
             }, 2400);
         }
 
-        // 立绘 URL：根URL可配置（SPEC 第二节），拼枚举文件名；失败回退占卜商妇
+        // 立绘 URL：直接取外链；失败回退占卜商妇
         function portraitUrl(enumName) {
-            const base = (llmConfig.portraitBase || '').trim().replace(/\/+$/, '');
-            const file = PORTRAIT_ENUM[enumName] || PORTRAIT_ENUM['占卜商妇'];
-            return base ? `${base}/${file}` : `shop_resources/${file}`;
+            return PORTRAIT_ENUM[enumName] || PORTRAIT_ENUM['占卜商妇'];
         }
 
         // 立绘加载：枚举名 → img src；new Image() 预探测成功才上屏，
@@ -7140,8 +7121,6 @@
             llmApiBase.value = llmConfig.apiBase;
             llmApiKey.value = llmConfig.apiKey;
             llmModel.value = llmConfig.model;
-            llmPortraitBase.value = llmConfig.portraitBase;
-            llmAvatarBase.value = llmConfig.avatarBase;
             llmSystemPrompt.value = llmConfig.systemPrompt;
             renderPartyPersonas();
             llmGreetToggle.checked = llmConfig.greetEnabled !== false;
@@ -7155,8 +7134,6 @@
             llmConfig.apiBase = llmApiBase.value.trim() || "https://api.openai.com/v1";
             llmConfig.apiKey = llmApiKey.value.trim();
             llmConfig.model = llmModel.value.trim() || "gpt-4o-mini";
-            llmConfig.portraitBase = llmPortraitBase.value.trim();
-            llmConfig.avatarBase = llmAvatarBase.value.trim();
             llmConfig.systemPrompt = llmSystemPrompt.value.trim();
             llmConfig.partyPersonas = collectPartyPersonasFromDOM().filter(p => p.name || p.prompt);
             llmConfig.greetEnabled = llmGreetToggle.checked;
@@ -7164,8 +7141,6 @@
             localStorage.setItem('shopblock_llm_debug', llmDebugToggle.checked ? '1' : '0');
             sound.playWoodClick();
             llmModal.classList.remove('show');
-            // 根 URL 变更后按当前商店刷新立绘与头像
-            loadKeeperPortrait(shopState ? shopState.portrait : '铁匠机械师');
             refreshPartyAvatars();
         });
 
@@ -7173,9 +7148,8 @@
             llmApiBase.value = "https://api.openai.com/v1";
             llmApiKey.value = "";
             llmModel.value = "gpt-4o-mini";
-            llmPortraitBase.value = "";
-            llmAvatarBase.value = "";
             llmSystemPrompt.value = DEFAULT_WORLDVIEW;
+            llmConfig.avatarBase = "";
             llmConfig.partyPersonas = [];
             renderPartyPersonas();
         });

@@ -1,0 +1,50 @@
+========================================
+ShopBlock 店主立绘外链列表（10 张）
+图床服务商: imgur.la
+========================================
+
+【店主立绘外链清单】
+1. 铁匠机械师 (Blacksmith_Machinist.png)
+   https://imgur.la/images/2026/09/29/Blacksmith_Machinist.png
+
+2. 黑市贩子 (black_market.png)
+   https://imgur.la/images/2026/09/29/black_market.png
+
+3. 古籍书商 (book.png)
+   https://imgur.la/images/2026/09/29/book.png
+
+4. 酒馆老板 (food.png)
+   https://imgur.la/images/2026/09/29/food.png
+
+5. 荒野猎人 (hunter.png)
+   https://imgur.la/images/2026/09/29/hunter.png
+
+6. 奢品商人 (luxury.png)
+   https://imgur.la/images/2026/09/29/luxury.png
+
+7. 秘石商人 (magic.png)
+   https://imgur.la/images/2026/09/29/magic.png
+
+8. 药剂修女 (medical.png)
+   https://imgur.la/images/2026/09/29/medical.png
+
+9. 布道神父 (religion.png)
+   https://imgur.la/images/2026/09/29/religion.png
+
+10. 占卜商妇 (shop.png)
+    https://imgur.la/images/2026/09/29/shop.png
+
+========================================
+【代码映射常量 PORTRAIT_IMGUR_MAP】
+const PORTRAIT_IMGUR_MAP = {
+    '铁匠机械师': 'https://imgur.la/images/2026/09/29/Blacksmith_Machinist.png',
+    '黑市贩子': 'https://imgur.la/images/2026/09/29/black_market.png',
+    '古籍书商': 'https://imgur.la/images/2026/09/29/book.png',
+    '酒馆老板': 'https://imgur.la/images/2026/09/29/food.png',
+    '荒野猎人': 'https://imgur.la/images/2026/09/29/hunter.png',
+    '奢品商人': 'https://imgur.la/images/2026/09/29/luxury.png',
+    '秘石商人': 'https://imgur.la/images/2026/09/29/magic.png',
+    '药剂修女': 'https://imgur.la/images/2026/09/29/medical.png',
+    '布道神父': 'https://imgur.la/images/2026/09/29/religion.png',
+    '占卜商妇': 'https://imgur.la/images/2026/09/29/shop.png'
+};
