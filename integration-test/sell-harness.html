@@ -476,14 +476,14 @@ window.alert = function () {}; window.confirm = function () { return true; };
     log('== 13. 内置弹药行情表：固定回收 + 上架底价 + 砍价基准 ==');
     const ammoTests = await shopEval(`(async function () {
         var out = {};
-        // A. 匹配：规范化去空白 + 全关键词子串
+        // A. 匹配：规范化去空白 + 全关键词子串（军管品只有黑市档，需以黑市贩子身份匹配）
         out.m32 = !!matchAmmoFloor('.32子弹');
         out.m577 = !!matchAmmoFloor('.577号子弹');
         out.m38 = !!matchAmmoFloor('.38 S&W:80子弹');
         out.mSlug = !!matchAmmoFloor('12号独头弹');
-        out.mTank = !!matchAmmoFloor('反坦克子弹');
+        out.mTank = !!matchAmmoFloor('反坦克子弹', '黑市贩子');
         out.mMiss = matchAmmoFloor('.32口径手枪');
-        // B. 回收：命中表 → 固定 buy 价，绕过目录与估价
+        // B. 回收：命中表 → 固定 buy 价，绕过目录与估价（当前店立绘奢品商人 → 官方档）
         var cat = normalizeCatalog(catalogMem);
         var row = { name: '.32子弹', owner: '测试', ownerKind: 'char', count: 1 };
         await priceSellRow(row, cat);
@@ -493,15 +493,17 @@ window.alert = function () {}; window.confirm = function () { return true; };
         var rowTank = { name: '反坦克子弹', owner: '测试', ownerKind: 'char', count: 1 };
         await priceSellRow(rowTank, cat);
         out.buyTank = rowTank.price;
+        var tankBlack = matchAmmoFloor('反坦克子弹', '黑市贩子');
+        out.tankBlackBuy = tankBlack ? tankBlack.tier.buy : null;
         // C. 上架：AI 开价低于 floor → 程序抬到 floor
         var before = shopState.items.length;
         var r1 = applyAddCommand({ cmd: 'add', category: '弹药', name: '.32子弹', price: '0.05美元', count: 10, unit: '发', desc: '测试' });
         out.clampedPrice = r1.ok ? r1.item.price : null;
         out.clampedText = r1.ok ? r1.item.priceText : null;
-        // D. 砍价基准：listBase 优先（ref=0.5 → ask 0.25 落 r=0.5 必成）
+        // D. 砍价基准：listBase 优先（ref=0.15 → ask 0.075 落 r=0.5 必成）
         var realRandom = Math.random;
         Math.random = function () { return 0.99; };
-        try { out.dealRef = resolveSellBargain({ name: '.32子弹', price: 0.2, listBase: 0.5, sellDealCount: 0 }, 0.25).branch; }
+        try { out.dealRef = resolveSellBargain({ name: '.32子弹', price: 0.06, listBase: 0.15, sellDealCount: 0 }, 0.075).branch; }
         finally { Math.random = realRandom; }
         // 清理测试数据
         if (shopState.items.length > before) {
@@ -514,13 +516,59 @@ window.alert = function () {}; window.confirm = function () { return true; };
     })()`);
     assert(ammoTests.m32 && ammoTests.m577 && ammoTests.m38 && ammoTests.mSlug && ammoTests.mTank, '行情表命中：.32/.577号/.38S&W/12号独头弹/反坦克子弹全命中');
     assert(!ammoTests.mMiss, '非弹药名不命中（实际 ' + ammoTests.mMiss + '）');
-    assert(ammoTests.buy32 === 0.2, '.32子弹固定回收价 $0.20（实际 ' + ammoTests.buy32 + '）');
-    assert(ammoTests.floor32 === 0.5, '.32子弹行情底价 $0.50（实际 ' + ammoTests.floor32 + '）');
+    assert(ammoTests.buy32 === 0.06, '.32子弹官方档固定回收价 $0.06（实际 ' + ammoTests.buy32 + '）');
+    assert(ammoTests.floor32 === 0.15, '.32子弹官方档行情底价 $0.15（实际 ' + ammoTests.floor32 + '）');
     assert(ammoTests.note32 === '按行情表固定价回收', '回收口径注明行情表（实际 ' + ammoTests.note32 + '）');
-    assert(ammoTests.buyTank === 10, '反坦克子弹固定回收价 $10（实际 ' + ammoTests.buyTank + '）');
-    assert(ammoTests.clampedPrice === 0.5, 'AI 上架 $0.05 → 抬到行情底价 $0.50（实际 ' + ammoTests.clampedPrice + '）');
-    assert(ammoTests.clampedText === '0.50美元', '抬价后价格文本同步（实际 ' + ammoTests.clampedText + '）');
-    assert(ammoTests.dealRef === 'accept', '砍价基准用行情底价（ref=0.5，ask 0.25 必成）（实际 ' + ammoTests.dealRef + '）');
+    assert(ammoTests.buyTank === null, '官方店遇军管品（反坦克子弹）不命中行情表（实际 ' + ammoTests.buyTank + '）');
+    assert(ammoTests.clampedPrice === 0.15, 'AI 上架 $0.05 → 抬到官方档底价 $0.15（实际 ' + ammoTests.clampedPrice + '）');
+    assert(ammoTests.clampedText === '0.15美元', '抬价后价格文本同步（实际 ' + ammoTests.clampedText + '）');
+    assert(ammoTests.dealRef === 'accept', '砍价基准用行情底价（ref=0.15，ask 0.075 必成）（实际 ' + ammoTests.dealRef + '）');
+    assert(ammoTests.tankBlackBuy === 10, '黑市档反坦克子弹固定回收 $10（实际 ' + ammoTests.tankBlackBuy + '）');
+
+    log('== 14. 内置基供货：随机抽货 + 首次落店合并 ==');
+    const stockTests = await shopEval(`(function () {
+        var out = {};
+        // A. 按立绘抽货：数量、类目合法性、价格库存合法
+        var gw = rollBuiltinStock('占卜商妇');
+        out.gwCount = gw.length;
+        var anchors = ['杂货', '日用品', '香料', '首饰', '占卜', '补给', '食物'];
+        out.gwCatsOk = gw.every(b => anchors.some(a => b.category.includes(a) || a.includes(b.category)));
+        out.gwPricesOk = gw.every(b => b.price > 0 && b.stock > 0);
+        // B. 黑市贩子：全表候选 5 件，且全部有黑市价档
+        var bm = rollBuiltinStock('黑市贩子');
+        out.bmCount = bm.length;
+        out.bmAllBlackable = bm.every(b => {
+            var e = BUILTIN_STOCK_TABLE.find(t => t.name === b.name);
+            return e && e.black;
+        });
+        // C. 奢品商人：锚点与行情表无交集 → 0 件（特色货全靠 LLM）
+        out.luxCount = rollBuiltinStock('奢品商人').length;
+        // D. 最长命中：煤油灯不被煤油条目吃掉
+        var lamp = matchAmmoFloor('煤油灯', '占卜商妇');
+        out.lampName = lamp ? lamp.entry.name : null;
+        // E. 首次落店合并：内置货进分类商品；重进店（prev 存在）不重抽
+        var all = {};
+        var parsed = { shopName: '测试杂货铺', keeper: '测试店主', keeperPersona: '精明', portrait: '占卜商妇',
+            shopType: '普通', keeperCash: null, items: [], presentMembers: ['测试店主'] };
+        var payload = mergeShopIntoAll(all, parsed);
+        var countGoods = () => Object.keys(payload['分类商品']).reduce((s, c) => s + payload['分类商品'][c].length, 0);
+        var firstCount = countGoods();
+        out.mergedCount = firstCount;
+        var parsed2 = Object.assign({}, parsed, { items: [] });
+        var payload2 = mergeShopIntoAll(all, parsed2);
+        out.reloadCount = Object.keys(payload2['分类商品']).reduce((s, c) => s + payload2['分类商品'][c].length, 0);
+        out.reloadSame = out.reloadCount === firstCount;
+        return out;
+    })()`);
+    assert(stockTests.gwCount === 6, '占卜商妇首次抽货 6 件（实际 ' + stockTests.gwCount + '）');
+    assert(stockTests.gwCatsOk, '抽货类目全部落在立绘锚点内（实际 ' + stockTests.gwCatsOk + '）');
+    assert(stockTests.gwPricesOk, '抽货价格与库存合法（实际 ' + stockTests.gwPricesOk + '）');
+    assert(stockTests.bmCount === 5, '黑市贩子抽货 5 件（实际 ' + stockTests.bmCount + '）');
+    assert(stockTests.bmAllBlackable, '黑市抽货全部有黑市价档（实际 ' + stockTests.bmAllBlackable + '）');
+    assert(stockTests.luxCount === 0, '奢品商人锚点无交集抽 0 件（实际 ' + stockTests.luxCount + '）');
+    assert(stockTests.lampName === '煤油灯', '最长命中：煤油灯不被煤油条目吃掉（实际 ' + stockTests.lampName + '）');
+    assert(stockTests.mergedCount >= 6, '首次落店内置货并入分类商品（实际 ' + stockTests.mergedCount + ' 件）');
+    assert(stockTests.reloadSame, '重进店不重抽、旧货保留（实际 ' + stockTests.reloadCount + ' 件）');
 
     finish();
     } finally {

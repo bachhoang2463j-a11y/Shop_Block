@@ -3587,6 +3587,27 @@
                 merged[it.category].push({ '商品': it._raw });
             });
 
+            // 首次落店：按立绘从内置行情表随机抽基础物资固定上架，与正文商品合并。
+            // 正文已有的物资以正文为准；抽中的货随 merged 走 $shops 持久化与库存合并，
+            // 重进店不再重抽（prev 存在即跳过）。
+            if (!prev) {
+                rollBuiltinStock(parsed.portrait).forEach(b => {
+                    if (newNames.has(b.name)) return;
+                    newNames.add(b.name);
+                    if (!Array.isArray(merged[b.category])) merged[b.category] = [];
+                    merged[b.category].push({
+                        '商品': {
+                            '名字': (b.emoji && b.emoji !== '📦' ? b.emoji + ' ' : '') + b.name,
+                            '价格': b.price.toFixed(2) + '美元',
+                            '数量': b.stock,
+                            '单位': b.unit,
+                            '标签': '',
+                            '介绍': b.desc
+                        }
+                    });
+                });
+            }
+
             // 独家私藏：新块有输出则新块为准，未输出保留旧值
             const newExcl = parsed.items
                 .filter(it => it.category === '独家私藏')
@@ -4610,10 +4631,11 @@
             if (!name || !category) return { ok: false, reason: '商品名或类目为空' };
             const price = parsePriceString(cmd.price);
             if (!isFinite(price) || price <= 0) return { ok: false, reason: '价格必须为正数' };
-            // 内置行情底价：AI 给这些弹药定的售价不得低于行情 floor，低于则程序抬到 floor
-            const ammoSpec = matchAmmoFloor(name);
-            const effPrice = (ammoSpec && price < ammoSpec.floor) ? ammoSpec.floor : price;
-            const priceClamped = ammoSpec && price < ammoSpec.floor;
+            // 内置行情底价：AI 给这些物资定的售价不得低于行情 floor，低于则程序抬到 floor
+            const ammoSpec = matchAmmoFloor(name, shopState ? shopState.portrait : null);
+            const ammoFloor = ammoSpec ? ammoSpec.tier.floor : null;
+            const effPrice = (ammoFloor != null && price < ammoFloor) ? ammoFloor : price;
+            const priceClamped = ammoFloor != null && price < ammoFloor;
 
             if (!ADD_PERMISSIVE) {
                 const anchors = PORTRAIT_ANCHOR[shopState.portrait] || PORTRAIT_ANCHOR['占卜商妇'];
@@ -4921,27 +4943,139 @@
         }
 
         // ====================================================
-        // 内置弹药行情表（1926 年代偏远离岸小镇口径）：历史上手枪弹零售仅 3-5 美分/发、
-        // 霰弹 2-3 美分、.303 澳洲俱乐部价约 5.4 美分/发（£2 5s/100）、.577 Nitro 大猎弹
-        // 约 25-50 美分/发；禁酒令年代偏远小镇供货紧张，零售取数倍溢价。
-        //   floor = 货架出售底价：AI 上架这些弹药时价格不得低于 floor（程序强制抬到 floor）
-        //   buy   = 固定回收价：命中表的物品不走 LLM 估价/四成折算，直接按 buy 回收
-        // 匹配：名称去空白后子串包含全部关键词；新增弹药直接加行。
+        // 内置行情/基供货表（1926 悉尼口径）：两类用途——
+        //   1) 首次落店（mergeShopIntoAll prev==null）按立绘锚点随机抽几件固定上架，
+        //      与正文 LLM 商品合并后随 $shops 持久化，重进店不重抽；
+        //   2) 回收/上架价格底线：命中表的物品按档位 buy 固定回收（绕过 LLM 估价与四成折算），
+        //      AI 上架价低于 floor 时程序抬到 floor。
+        // 两档价格：黑市贩子立绘的店用 black 档，其余店用 official 档；black 为 null 的
+        // 条目官方黑市同价，official 为 null 的条目（军管品）官方店不匹配、不收不卖。
+        // 史实锚点：手枪弹零售 3-5¢/发、.303 澳洲俱乐部价约 5.4¢/发、霰弹 2-3¢、
+        // .577 Nitro 25-50¢、香烟 10¢/包、煤油 10-15¢/加仑、医用威士忌 $3-6/夸脱；
+        // 悉尼零售取含税含铺租口径，黑市档为管制品的地下溢价。
+        // 匹配：名称去空白后子串包含全部 keys；多候选时取命中关键词最长者（防"煤油"吃掉"煤油灯"）。
         // ====================================================
-        const AMMO_PRICE_FLOOR = [
-            { keys: ['.32', '子弹'], floor: 0.50, buy: 0.20 },
-            { keys: ['.38', '子弹'], floor: 0.50, buy: 0.20 },
-            { keys: ['.45', '子弹'], floor: 0.60, buy: 0.25 },
-            { keys: ['12号', '独头弹'], floor: 0.90, buy: 0.40 },
-            { keys: ['12号', '鹿弹'], floor: 0.80, buy: 0.35 },
-            { keys: ['.577', '子弹'], floor: 2.50, buy: 1.20 },
-            { keys: ['反坦克', '子弹'], floor: 18.00, buy: 10.00 }
+        const BUILTIN_STOCK_TABLE = [
+            // —— 弹药 ——
+            { keys: ['.32', '子弹'], name: '.32子弹', emoji: '🧰', category: '弹药', unit: '发', stock: [20, 120],
+              official: { floor: 0.15, buy: 0.06 }, black: { floor: 0.45, buy: 0.18 }, desc: '小口径自卫手枪弹，柜台常备。' },
+            { keys: ['.38', '子弹'], name: '.38子弹', emoji: '🧰', category: '弹药', unit: '发', stock: [15, 80],
+              official: { floor: 0.15, buy: 0.06 }, black: { floor: 0.45, buy: 0.18 }, desc: '左轮常用口径，警探们的最爱。' },
+            { keys: ['.45', '子弹'], name: '.45子弹', emoji: '🧰', category: '弹药', unit: '发', stock: [20, 100],
+              official: { floor: 0.18, buy: 0.07 }, black: { floor: 0.50, buy: 0.20 }, desc: '大口径手枪弹，军方过剩流入市面。' },
+            { keys: ['.22', '子弹'], name: '.22子弹', emoji: '🧰', category: '弹药', unit: '发', stock: [50, 300],
+              official: { floor: 0.05, buy: 0.02 }, black: { floor: 0.12, buy: 0.05 }, desc: '小口径训练弹，乡下打兔子的消耗品。' },
+            { keys: ['.303', '子弹'], name: '.303子弹', emoji: '🧰', category: '弹药', unit: '发', stock: [30, 200],
+              official: { floor: 0.10, buy: 0.04 }, black: { floor: 0.30, buy: 0.12 }, desc: '李-恩菲尔德制式弹，俱乐部与猎场通用。' },
+            { keys: ['12号', '鸟弹'], name: '12号鸟弹', emoji: '🧰', category: '弹药', unit: '发', stock: [20, 100],
+              official: { floor: 0.10, buy: 0.04 }, black: { floor: 0.25, buy: 0.10 }, desc: '猎鸟霰弹，周末猎场的固定开销。' },
+            { keys: ['12号', '鹿弹'], name: '12号鹿弹', emoji: '🧰', category: '弹药', unit: '发', stock: [10, 60],
+              official: { floor: 0.30, buy: 0.12 }, black: { floor: 0.80, buy: 0.32 }, desc: '每发九颗大铅丸，近战没人想挨第二发。' },
+            { keys: ['12号', '独头弹'], name: '12号独头弹', emoji: '🧰', category: '弹药', unit: '发', stock: [10, 60],
+              official: { floor: 0.30, buy: 0.12 }, black: { floor: 0.80, buy: 0.32 }, desc: '整颗铅弹，打野猪也打得穿车门。' },
+            { keys: ['.577', '子弹'], name: '.577子弹', emoji: '🧰', category: '弹药', unit: '发', stock: [5, 30],
+              official: { floor: 1.50, buy: 0.60 }, black: { floor: 3.50, buy: 1.40 }, desc: '猎象枪专用大口径弹，英国进口。' },
+            { keys: ['反坦克', '子弹'], name: '反坦克子弹', emoji: '🧰', category: '弹药', unit: '发', stock: [4, 20],
+              official: null, black: { floor: 18.00, buy: 10.00 }, desc: '克虏伯1918年型穿甲弹，军队管制流出。' },
+            // —— 食品杂货 ——
+            { keys: ['面包'], name: '面包', emoji: '🍞', category: '食物', unit: '个', stock: [4, 20],
+              official: { floor: 0.15, buy: 0.06 }, black: null, desc: '当日现烤，四个便士的良心。' },
+            { keys: ['茶叶'], name: '茶叶', emoji: '🍵', category: '杂货', unit: '磅', stock: [3, 15],
+              official: { floor: 0.75, buy: 0.30 }, black: null, desc: '锡兰红茶，澳洲人的命根子。' },
+            { keys: ['咖啡'], name: '咖啡', emoji: '☕', category: '杂货', unit: '磅', stock: [2, 10],
+              official: { floor: 0.55, buy: 0.22 }, black: null, desc: '烘焙咖啡豆，巴西来的船货。' },
+            { keys: ['白糖'], name: '白糖', emoji: '🧂', category: '杂货', unit: '磅', stock: [5, 25],
+              official: { floor: 0.12, buy: 0.05 }, black: null, desc: '精制白糖，甜党与茶客的硬通货。' },
+            { keys: ['面粉'], name: '面粉', emoji: '🌾', category: '杂货', unit: '磅', stock: [5, 30],
+              official: { floor: 0.10, buy: 0.04 }, black: null, desc: '磨好的白面粉，烤面包熬浓汤都行。' },
+            { keys: ['黄油'], name: '黄油', emoji: '🧈', category: '食物', unit: '磅', stock: [2, 12],
+              official: { floor: 0.45, buy: 0.18 }, black: null, desc: '本地乳场出品，冰块镇着卖。' },
+            { keys: ['咸牛肉', '罐头'], name: '咸牛肉罐头', emoji: '🥫', category: '食物', unit: '罐', stock: [5, 30],
+              official: { floor: 0.30, buy: 0.12 }, black: null, desc: 'Fray Bentos 出品，背包客的标配。' },
+            { keys: ['炼乳'], name: '炼乳罐头', emoji: '🥫', category: '食物', unit: '罐', stock: [4, 20],
+              official: { floor: 0.12, buy: 0.05 }, black: null, desc: '加在茶里，日子立刻体面起来。' },
+            { keys: ['饼干'], name: '饼干', emoji: '🍪', category: '食物', unit: '盒', stock: [3, 15],
+              official: { floor: 0.20, buy: 0.08 }, black: null, desc: 'Arnotts 出品，配茶一绝。' },
+            // —— 烟酒 ——
+            { keys: ['香烟'], name: '香烟', emoji: '🚬', category: '杂货', unit: '包', stock: [5, 40],
+              official: { floor: 0.12, buy: 0.05 }, black: null, desc: '本地烟厂出品，一包二十支。' },
+            { keys: ['威士忌'], name: '威士忌', emoji: '🥃', category: '酒水', unit: '瓶', stock: [2, 12],
+              official: { floor: 6.00, buy: 2.40 }, black: { floor: 18.00, buy: 7.20 }, desc: '苏格兰原装，比私酒干净得多。' },
+            { keys: ['朗姆'], name: '朗姆酒', emoji: '🥃', category: '酒水', unit: '瓶', stock: [2, 12],
+              official: { floor: 4.50, buy: 1.80 }, black: { floor: 14.00, buy: 5.60 }, desc: '甘蔗地的烈货，水手的最爱。' },
+            { keys: ['啤酒'], name: '啤酒', emoji: '🍺', category: '酒水', unit: '瓶', stock: [6, 36],
+              official: { floor: 0.15, buy: 0.06 }, black: { floor: 0.40, buy: 0.16 }, desc: '六点关门前赶紧喝。' },
+            // —— 日用五金 ——
+            { keys: ['煤油'], name: '煤油', emoji: '🪔', category: '日用品', unit: '加仑', stock: [3, 15],
+              official: { floor: 0.18, buy: 0.07 }, black: null, desc: '灯油兼炉油，家家户户的刚需。' },
+            { keys: ['蜡烛'], name: '蜡烛', emoji: '🕯️', category: '日用品', unit: '盒', stock: [3, 15],
+              official: { floor: 0.18, buy: 0.07 }, black: null, desc: '一盒十二支，停电夜的救星。' },
+            { keys: ['火柴'], name: '火柴', emoji: '🔥', category: '日用品', unit: '盒', stock: [6, 30],
+              official: { floor: 0.12, buy: 0.05 }, black: null, desc: '安全火柴十盒装。' },
+            { keys: ['肥皂'], name: '肥皂', emoji: '🧼', category: '日用品', unit: '条', stock: [4, 20],
+              official: { floor: 0.10, buy: 0.04 }, black: null, desc: '洗衣洗手两用，便宜大碗。' },
+            { keys: ['麻绳'], name: '麻绳', emoji: '🪢', category: '补给', unit: '卷', stock: [2, 10],
+              official: { floor: 0.45, buy: 0.18 }, black: null, desc: '一百英尺，农场与码头必备。' },
+            { keys: ['毛毯'], name: '毛毯', emoji: '🛏️', category: '补给', unit: '条', stock: [2, 8],
+              official: { floor: 4.00, buy: 1.60 }, black: null, desc: '军规羊毛毯，冬夜保命。' },
+            { keys: ['帆布'], name: '帆布', emoji: '⛺', category: '补给', unit: '码', stock: [3, 12],
+              official: { floor: 0.30, buy: 0.12 }, black: null, desc: '防水帆布，搭棚遮货都能用。' },
+            { keys: ['干电池'], name: '干电池', emoji: '🔋', category: '日用品', unit: '盒', stock: [2, 10],
+              official: { floor: 0.30, buy: 0.12 }, black: null, desc: '手电筒用，一号电池两节装。' },
+            { keys: ['煤油灯'], name: '煤油灯', emoji: '🪔', category: '五金', unit: '盏', stock: [1, 6],
+              official: { floor: 1.50, buy: 0.60 }, black: null, desc: '防风灯罩，比蜡烛体面。' },
+            // —— 药品 ——
+            { keys: ['阿司匹林'], name: '阿司匹林', emoji: '💊', category: '药品', unit: '瓶', stock: [2, 10],
+              official: { floor: 0.80, buy: 0.32 }, black: null, desc: 'Aspro 牌，头疼脑热万能药。' },
+            { keys: ['碘酒'], name: '碘酒', emoji: '🧪', category: '药品', unit: '瓶', stock: [2, 10],
+              official: { floor: 0.30, buy: 0.12 }, black: null, desc: '消毒圣品，伤口处理第一步。' },
+            { keys: ['绷带'], name: '绷带', emoji: '🩹', category: '医疗', unit: '卷', stock: [4, 20],
+              official: { floor: 0.12, buy: 0.05 }, black: null, desc: '医用纱布绷带，一卷五码。' },
+            { keys: ['吗啡'], name: '吗啡酊', emoji: '💉', category: '违禁', unit: '瓶', stock: [1, 6],
+              official: { floor: 2.00, buy: 0.80 }, black: { floor: 25.00, buy: 10.00 }, desc: '处方管制，柜台底下才有的货。' }
         ];
 
-        function matchAmmoFloor(name) {
+        // 命中行情表条目：name 去空白后需包含全部 keys；多候选取命中关键词总长最长者
+        // （防"煤油灯"被"煤油"条目吃掉）。portrait 决定价格档：黑市贩子用 black，其余用
+        // official；对应档位缺失（如官方店遇军管品）则视为不命中。
+        function matchAmmoFloor(name, portrait) {
             const n = String(name || '').replace(/\s+/g, '');
             if (!n) return null;
-            return AMMO_PRICE_FLOOR.find(e => e.keys.every(k => n.includes(k))) || null;
+            const tierKey = portrait === '黑市贩子' ? 'black' : 'official';
+            const hits = BUILTIN_STOCK_TABLE.filter(e => {
+                if (!e[tierKey]) return false;
+                return e.keys.every(k => n.includes(k));
+            });
+            if (!hits.length) return null;
+            hits.sort((a, b) => {
+                const len = e => e.keys.reduce((s, k) => s + (n.includes(k) ? k.length : 0), 0);
+                return len(b) - len(a);
+            });
+            return { entry: hits[0], tier: hits[0][tierKey] };
+        }
+
+        // 首次落店随机抽货：黑市贩子全表候选，其余店按立绘锚点过滤类目；
+        // 抽取数量黑市 5 件、其他 6 件，价格按对应档 floor，库存按条目区间随机
+        function rollBuiltinStock(portrait) {
+            const anchors = PORTRAIT_ANCHOR[portrait] || PORTRAIT_ANCHOR['占卜商妇'];
+            const isBlack = portrait === '黑市贩子';
+            const tierKey = isBlack ? 'black' : 'official';
+            const pool = BUILTIN_STOCK_TABLE.filter(e => e[tierKey]
+                && (isBlack || anchors.some(a => e.category.includes(a) || a.includes(e.category))));
+            const shuffled = pool.slice();
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const t = shuffled[i]; shuffled[i] = shuffled[j]; shuffled[j] = t;
+            }
+            return shuffled.slice(0, Math.min(isBlack ? 5 : 6, shuffled.length)).map(e => {
+                const tier = e[tierKey];
+                return {
+                    name: e.name, emoji: e.emoji, category: e.category,
+                    price: tier.floor, unit: e.unit,
+                    stock: e.stock[0] + Math.floor(Math.random() * (e.stock[1] - e.stock[0] + 1)),
+                    desc: e.desc
+                };
+            });
         }
 
         // ====================================================
@@ -7855,12 +7989,12 @@
 
         // 估价：目录既有记录 → 正文战斗定义桥 → 本店同名价 → 待估价（绝不给 $0 充数）
         async function priceSellRow(row, cat) {
-            // 内置行情表最权威：命中弹药行情的物品直接固定回收价，绕过目录旧估价与 LLM
-            const ammo = matchAmmoFloor(row.name);
+            // 内置行情表最权威：命中行情的物品直接固定回收价，绕过目录旧估价与 LLM
+            const ammo = matchAmmoFloor(row.name, shopState ? shopState.portrait : null);
             if (ammo) {
                 row.itemId = null;
-                row.price = ammo.buy;
-                row.listBase = ammo.floor;
+                row.price = ammo.tier.buy;
+                row.listBase = ammo.tier.floor;
                 row.tier = null; row.form = null; row.line = '';
                 row.note = '按行情表固定价回收';
                 return;
