@@ -8096,7 +8096,7 @@
                     renderSellPanel();
                     openSellDetail(row);
                     const relaid = res.results[0] || { name: row.name, note: '这玩意我不收' };
-                    showKeeperDialogue(keeper, `（拿起${row.name}看了看，又放回柜台）${relaid.note}——这个我不收。`, true);
+                    showKeeperDialogue(keeper, `${relaid.note}——这个我不收。`, true);
                     return;
                 }
                 if (!res.ok) { showTopToast('估价失败：模型没有给出可用的估值，物品仍为待估价。', 6000); return; }
@@ -8105,7 +8105,7 @@
                 renderSellPanel();
                 openSellDetail(row);
                 const relaid = res.results[0] || { name: row.name, price: row.price, note: '东西还行' };
-                showKeeperDialogue(keeper, `（拿起${row.name}端详片刻）${relaid.note || '东西还行'}——$${relaid.price.toFixed(2)}，我收这个价。`, true);
+                showKeeperDialogue(keeper, `${relaid.note || '东西还行'}——$${relaid.price.toFixed(2)}，我收这个价。`, true);
             } catch (e) {
                 console.warn('[ShopBlock] 估价请求失败:', e);
                 showTopToast('估价失败：模型未返回可用结果，该物品仍为待估价。', 6000);
@@ -8333,12 +8333,17 @@
                 renderSellPanel();
             }
             const keeper = shopState ? shopState.keeper : '店主';
-            if (res && res.ok) {
-                // 店主口吻转述估价依据与拒收结论，替代干巴巴的系统 toast
-                const kept = res.results.filter(r => !r.rejected).map(r => `「${r.name}」${r.note || '东西还行'}——$${r.price.toFixed(2)}。`).join('');
-                const denied = res.results.filter(r => r.rejected).map(r => `「${r.name}」${r.note}——这个我不收。`).join('');
-                if (kept || denied) {
-                    showKeeperDialogue(keeper, `（把物件一件件摆上柜台，逐件端详）${kept}${denied}还有别的要出手吗？`, true);
+            if (res && (res.ok || res.rejected)) {
+                // 店主口吻逐件转述：一物一泡各 3 秒，多件不挤屏；换店则中断播放
+                const token = shopGenerationToken;
+                const lines = res.results.map(r => r.rejected
+                    ? `「${r.name}」${r.note}——这个我不收。`
+                    : `「${r.name}」${r.note || '东西还行'}——$${r.price.toFixed(2)}，我收这个价。`);
+                lines.push('还有别的要出手吗？');
+                for (const text of lines) {
+                    if (token !== shopGenerationToken) break;
+                    logSessionDialog(keeper, text);
+                    await showAvatarChatBubble(keeper, text, 3000);
                 }
             }
             if (res && (res.fail || res.rejected)) showTopToast(`估价完成：收下 ${res.ok} 件${res.rejected ? `，不收 ${res.rejected} 件` : ''}${res.fail ? `，失败 ${res.fail} 件` : ''}。`, 6000);
