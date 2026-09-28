@@ -3907,14 +3907,14 @@
             const hardRules = narratorOff
                 ? `## 一、输出契约
 1. 只输出 JSON 本体，不要解释或 markdown。
-2. 顶层只允许 dialogue、affection、commands；commands 必须存在。
+2. 顶层只允许 dialogue、affection、commands、deal；commands 必须存在；deal 仅当【本轮任务】明确要求【开价判定】时输出，其余场景禁止输出。
 3. dialogue 1~3 条，第一条必须是店主；玩家未点名队友时全部由店主说。
 4. 玩家点名某队友时，除店主外必须输出一条该队友的插话，speaker 用名单原名。
 5. 有玩家台词才返回 affection，整数 -5~+1；负值台词要不悦，正值台词要缓和。
 6. 无上架时 commands 必须是 []。每条 text ≤60字；同一话术本轮只用一次。`
                 : `## 一、输出契约
 1. 只输出 JSON 本体，不要解释或 markdown。
-2. 顶层只允许 dialogue、affection、commands；commands 必须存在。
+2. 顶层只允许 dialogue、affection、commands、deal；commands 必须存在；deal 仅当【本轮任务】明确要求【开价判定】时输出，其余场景禁止输出。
 3. dialogue 1~4 条，第一条必须是店主；speaker 只能用第五节名单原名。
 4. 每轮除店主外还应输出1~2条队友插话（在场队友不足时有多少说多少）；玩家点名某队友时，插话队友必须包含点名对象。
 5. 有玩家台词才返回 affection，整数 -5~+1；负值台词要不悦，正值台词要缓和。
@@ -3934,7 +3934,7 @@
             else parts.push('## 六、出场角色人设\n无额外人设。');
             parts.push(
                 `## 七、commands 指令规范\n仅在玩家明确询问店内没有的常规补给品时添加；否则 commands=[]。每项必须是扁平对象：{"cmd":"add","category":"类目","name":"🧰 商品名","price":"1.00美元","count":1,"unit":"件","desc":"简述"}。name 可带 emoji，price 必须是“数字+美元”，价格不能写进 name。`,
-                `## 八、输出示例与最终检查\n输出形状：{"dialogue":[{"speaker":"名单原名","text":"台词"}],"affection":0,"commands":[]}。输出前检查：JSON合法；第一条是店主；点名队友已回应；speaker未越权。`
+                `## 八、输出示例与最终检查\n输出形状：{"dialogue":[{"speaker":"名单原名","text":"台词"}],"affection":0,"commands":[]}；任务含【开价判定】时额外输出 deal 形状：{"decision":"accept"|"counter"|"reject","counter":数字}。输出前检查：JSON合法；第一条是店主；点名队友已回应；speaker未越权；deal 的 decision 与你的台词一致。`
             );
             return parts.join('\n');
         }
@@ -7906,9 +7906,13 @@
                 const over = r.price != null && unit > sellState.keeperCash;
                 const priceCls = r.price == null ? 'tbd' : (over ? 'over' : '');
                 const priceSub = r.price == null
-                    ? '可估价或向店主开价'
+                    ? (r.rejectNote ? `店主不收：${r.rejectNote}` : '可估价或向店主开价')
                     : (r.dealPrice != null ? '谈定成交价' : (r.note || (over ? '店主现金不足' : '单件收购价')));
-                const priceHtml = r.price == null ? '待估价' : `$${unit.toFixed(2)}<span class="sell-price-sub">${priceSub}</span>`;
+                const priceHtml = r.price == null
+                    ? (r.rejectNote
+                        ? `不收<span class="sell-price-sub">${escapeHtml(priceSub)}</span>`
+                        : '待估价')
+                    : `$${unit.toFixed(2)}<span class="sell-price-sub">${priceSub}</span>`;
                 const tierText = r.tier ? (RELIC_TIERS[r.tier] ? RELIC_TIERS[r.tier].label : '') + (r.form === 'reusable' ? ' · 可复用' : r.form === 'consumable' ? ' · 一次性' : '') : '普通商品';
                 const el = document.createElement('div');
                 el.className = 'shelf-cell sell-card' + (picked > 0 ? ' picked' : '') + (marked ? ' marked' : '') + (r.price == null ? ' tbd' : '');
@@ -7976,10 +7980,13 @@
             if (detailQuoteSection) detailQuoteSection.style.display = row.line ? '' : 'none';
 
             detailPriceLabel.textContent = row.dealPrice != null ? '谈定成交价' : '单件收购价';
-            detailPrice.textContent = row.price == null ? '待估价' : '$' + sellRowUnitPrice(row).toFixed(2);
+            detailPrice.textContent = row.price == null ? (row.rejectNote ? '店主不收' : '待估价') : '$' + sellRowUnitPrice(row).toFixed(2);
             const picked = sellRowPickedQty(row);
             const notes = [];
-            if (row.price == null) notes.push('暂无判定价：可估价，或直接向店主开价');
+            if (row.price == null) {
+                if (row.rejectNote) notes.push(`店主不收：${row.rejectNote}`);
+                notes.push('可再次估价，或直接向店主开价');
+            }
             else {
                 notes.push('基准估值 $' + roundMoney(row.price / 0.4).toFixed(2) + ' 的四成');
                 if (row.price > sellState.keeperCash) notes.push(`店主现金不足（差额 $${(row.price - sellState.keeperCash).toFixed(2)}）`);
@@ -8026,13 +8033,17 @@
         // 战斗定义不归它管——只来自预置奇物库/正文战斗块。
         async function appraiseRows(targets, cat) {
             const list = targets.map((r, i) => `${i + 1}. ${r.name}`).join('\n');
-            const sys = '你是1920年代小镇当铺的估价师。只输出 JSON，不要任何解释。';
+            const keeper = shopState ? shopState.keeper : '店主';
+            const persona = (shopState && shopState.keeperPersona) ? shopState.keeperPersona : '精明的生意人';
+            const shopType = (shopState && shopState.shopType) || '普通';
+            const sys = `你是1920年代小镇的杂货铺老板「${keeper}」（店铺类型：${shopType}；人设：${persona}）。你亲自为上门出售的杂物逐件判定收不收、值多少。只输出 JSON，不要任何解释。`;
             const user = [
-                '为下面这些普通物品分别给出回收基准估值（美元）。',
+                '为下面这些普通物品逐件判定：收下（accept=true）并给出回收基准估值（美元），或拒收（accept=false）并说明理由。',
                 '物品清单：',
                 list,
-                '输出 JSON：{"items":[{"name":"物品名（与清单逐字一致）","base":数字,"note":"一句话依据"}]}，清单里每件物品恰好一条，不要遗漏也不要编造清单外的物品。',
-                'base 为单件基准估值：常见日用品给1到20，做工考究或稀有的旧物给20到100，超过100必须有充分理由；来历不明或毫无用处的物件给0.5到2。宁可低估，不许高估。'
+                '判定标准：结合你的店铺类型与生意人设——与本店业务或品味相去甚远、来路可疑到不敢碰、或你根本不识货的，accept 给 false，note 用一句话以你的口吻说明为什么不收。',
+                '收下的物品按分档给 base：常见日用品给1到20，做工考究或稀有的旧物给20到100，超过100必须有充分理由；来历不明或毫无用处的物件给0.5到2。宁可低估，不许高估。',
+                '输出 JSON：{"items":[{"name":"物品名（与清单逐字一致）","accept":true或false,"base":数字,"note":"一句话依据；accept=false 时是不收的理由"}]}，清单里每件物品恰好一条，不要遗漏也不要编造清单外的物品。accept=false 时 base 给 0。'
             ].join('\n');
             const raw = await requestShopLlm(sys, user, { scene: 'identify', temperature: 0.2, maxTokens: 1500 });
             // requestShopLlm 返回 {data,text,finishReason}，解析必须取 text——传整个对象会被判定非字符串而静默失败
@@ -8041,10 +8052,18 @@
             if (parsed && Array.isArray(parsed.items)) {
                 parsed.items.forEach(it => { if (it && it.name != null) byName[String(it.name).replace(/\s+/g, '')] = it; });
             }
-            let ok = 0, fail = 0;
+            let ok = 0, fail = 0, rejected = 0;
             const results = [];
             targets.forEach(row => {
                 const hit = byName[String(row.name).replace(/\s+/g, '')];
+                if (hit && hit.accept === false) {
+                    // 店主不收：不落目录，行上挂拒收理由（可重新估价或硬开价）
+                    rejected++;
+                    row.rejectNote = (hit.note ? String(hit.note) : '这玩意我不收');
+                    row.itemId = null;
+                    results.push({ name: row.name, rejected: true, note: row.rejectNote });
+                    return;
+                }
                 const base = hit ? Number(hit.base) : NaN;
                 if (!Number.isFinite(base) || base <= 0) { fail++; return; }
                 const reg = catalogRegisterMundane(cat, { name: row.name, base: base, note: (hit && hit.note) || '' });
@@ -8053,10 +8072,11 @@
                 row.price = sellPriceOfBase(reg.record.val.price);
                 row.tier = null; row.form = null; row.line = '';
                 row.note = '';
+                delete row.rejectNote;
                 ok++;
                 results.push({ name: row.name, price: row.price, note: (hit && hit.note) || '' });
             });
-            return { ok: ok, fail: fail, results: results };
+            return { ok: ok, fail: fail, rejected: rejected, results: results };
         }
 
         async function identifySellRow(row) {
@@ -8069,12 +8089,21 @@
             try { cat = await readCatalog(); } catch (e) { cat = normalizeCatalog(catalogMem); }
             try {
                 const res = await appraiseRows([row], cat);
+                const keeper = shopState ? shopState.keeper : '店主';
+                if (res.rejected) {
+                    // 店主看不上/不收：转述拒收理由，物品保持待估价
+                    await writeCatalog(cat);
+                    renderSellPanel();
+                    openSellDetail(row);
+                    const relaid = res.results[0] || { name: row.name, note: '这玩意我不收' };
+                    showKeeperDialogue(keeper, `（拿起${row.name}看了看，又放回柜台）${relaid.note}——这个我不收。`, true);
+                    return;
+                }
                 if (!res.ok) { showTopToast('估价失败：模型没有给出可用的估值，物品仍为待估价。', 6000); return; }
                 await writeCatalog(cat);
                 logShopEvent('add', `[估价] ${row.name} → 单件收购价 $${row.price.toFixed(2)}`);
                 renderSellPanel();
                 openSellDetail(row);
-                const keeper = shopState ? shopState.keeper : '店主';
                 const relaid = res.results[0] || { name: row.name, price: row.price, note: '东西还行' };
                 showKeeperDialogue(keeper, `（拿起${row.name}端详片刻）${relaid.note || '东西还行'}——$${relaid.price.toFixed(2)}，我收这个价。`, true);
             } catch (e) {
@@ -8089,8 +8118,9 @@
         }
 
         // ====================================================
-        // 自定义售价出售：玩家开价 → 斜体宣言 → 程序严格投骰判定 → 店主按分支演绎。
-        // 阈值集中成常量表便于调参；无判定价的物品大概率被【不识货】拒绝。
+        // 自定义售价出售：玩家开价 → 斜体宣言 → 店主 LLM 依人设/店铺类型/现金压力自主裁定。
+        // 程序只保留两条硬规则：谈价超 2 次直接拒、开价超过店主当前现金直接拒；
+        // 其余一律走 LLM（三档提示词按开价占现金比例收紧），LLM 失败时回退掷骰兜底。
         // ====================================================
         const SELL_DEAL_RULES = {
             safeRatio: 0.5,   // ≤基准50%：必成
@@ -8103,6 +8133,7 @@
             counterHigh: 0.5  // 高段还价 = 基准50%
         };
 
+        // 程序掷骰兜底：仅在 LLM 不可用/未返回可用 deal 时启用
         function resolveSellBargain(row, ask) {
             if ((row.sellDealCount || 0) >= 2) return { branch: 'exhausted' };
             if (sellState && ask > sellState.keeperCash) return { branch: 'nocash' };
@@ -8131,10 +8162,32 @@
             return { branch: 'clueless' };
         }
 
+        // 开价判定提示词：按开价占店主现金的比例分三档收紧，理由缺失时明示店主
+        function sellDealJudgeInstruction(row, ask, extra) {
+            const cash = sellState ? Math.max(0, sellState.keeperCash) : 0;
+            const speaker = activeSpeaker ? activeSpeaker.name : '调查员';
+            const cashLine = cash > 0 ? `（你现有 $${cash.toFixed(2)}）` : '（你手头几乎没有现钱）';
+            const said = (extra && extra.trim())
+                ? `${speaker}的开价理由：「${extra.trim()}」`
+                : `${speaker}什么都没说，只是沉默地把「${row.name}」摆上柜台，用手指点出了价格。`;
+            const ratio = cash > 0 ? ask / cash : Infinity;
+            let tier;
+            if (cash > 0 && ratio >= 0.5) {
+                tier = `${speaker}对「${row.name}」开出 $${ask.toFixed(2)} 的售价，这占用了你半数以上的流动资金${cashLine}，严格依据人设和店铺类型，以及${speaker}的描述，如果其没给你相当有说服力的理由，严禁成交。如你经过慎重考虑后确认物有所值，你有还价的权利。`;
+            } else if (cash > 0 && ratio >= 0.1) {
+                tier = `${speaker}对「${row.name}」开出 $${ask.toFixed(2)} 的售价，这占用了你一成以上的流动资金${cashLine}，严格依据人设和店铺类型，以及${speaker}的描述，判断这玩意值不值这价，你有还价的权利。`;
+            } else {
+                tier = `${speaker}对「${row.name}」开出 $${ask.toFixed(2)} 的售价，这在你流动资金的一成以下${cashLine}，你依然需要扮演一个精明的商人，先确认值不值。${speaker}的理由充分的话，你可以不考虑店铺类型买来玩玩，你有还价的权利。`;
+            }
+            return `【开价判定】${tier}\n${said}\n` +
+                `店铺类型：${(shopState && shopState.shopType) || '普通'}。结合世界观、你的店主人设、店铺类型、与${speaker}的好感档位综合裁定，并以你的口吻回应（1~2条dialogue，队友可插话），affection按对方言辞整体判定。\n` +
+                `额外输出 deal 字段：{"decision":"accept"|"counter"|"reject","counter":数字}。accept=按 $${ask.toFixed(2)} 收下；counter=你还一个价（counter 必填，单位美元）；reject=不收。decision 必须与你的台词一致。`;
+        }
+
         function sellDealBranchInstruction(branch, keeper, row, ask, counter) {
             const cash = sellState ? sellState.keeperCash.toFixed(2) : '0.00';
             const map = {
-                accept: `对方想把「${row.name}」以 $${ask.toFixed(2)} 卖给你——投骰成功，你（按人设爽快或肉疼地）收下这桩买卖。`,
+                accept: `对方想把「${row.name}」以 $${ask.toFixed(2)} 卖给你——你收下这桩买卖。`,
                 counter: `对方想把「${row.name}」以 $${ask.toFixed(2)} 卖给你——你压价到 $${counter.toFixed(2)}，按人设还价。`,
                 clueless: `对方想把「${row.name}」以 $${ask.toFixed(2)} 卖给你——你根本不识货，直接拒绝收购，按人设打发对方。`,
                 nocash: `「${row.name}」你收不动：本店现钱只剩 $${cash}，按人设坦白买不起。`,
@@ -8159,35 +8212,67 @@
                 showKeeperDialogue(keeper, SELL_BARGAIN_FALLBACK.clueless(keeper), true);
                 return;
             }
-            const res = resolveSellBargain(row, ask);
-            row.sellDealCount = (row.sellDealCount || 0) + 1;
-            renderSellPanel();
 
-            // 店主回收人设回应（按程序分支演绎），失败回退内置文案
+            // 两条程序硬规则：谈价超限、开价超过店主现金——直接定性，LLM 只做台词演绎
+            const hardBranch = ((row.sellDealCount || 0) >= 2) ? 'exhausted'
+                : (!sellState || ask > sellState.keeperCash) ? 'nocash'
+                : null;
+            row.sellDealCount = (row.sellDealCount || 0) + 1;
+
             let result = null;
+            let decision = null;
             const token = shopGenerationToken; // 请求期间换店则废弃本轮回复
             if (llmConfig.apiKey) {
                 for (let attempt = 0; attempt < 2 && !result; attempt++) {
-                    try { result = await callShopLLM('bargain', sellDealBranchInstruction(res.branch, keeper, row, ask, res.counter)); }
-                    catch (e) { console.warn(`[ShopBlock] 卖出谈判 LLM 第${attempt + 1}次失败:`, e.message); }
+                    try {
+                        result = await callShopLLM('bargain', hardBranch
+                            ? sellDealBranchInstruction(hardBranch, keeper, row, ask, 0)
+                            : sellDealJudgeInstruction(row, ask, extra));
+                    } catch (e) { console.warn(`[ShopBlock] 卖出谈判 LLM 第${attempt + 1}次失败:`, e.message); }
                 }
             }
             if (token !== shopGenerationToken) return;
+
+            // 裁定来源：非硬分支以 LLM 的 deal 字段为准；LLM 不可用/未给出时回退程序掷骰
+            if (!hardBranch) {
+                const deal = result && result.deal;
+                if (deal && (deal.decision === 'accept' || deal.decision === 'counter' || deal.decision === 'reject')) {
+                    decision = { decision: deal.decision, counter: Number(deal.counter) };
+                } else {
+                    // 兜底掷骰：branch → decision（clueless 等价为拒收）
+                    const rolled = resolveSellBargain(row, ask);
+                    decision = rolled.branch === 'accept' || rolled.branch === 'counter'
+                        ? { decision: rolled.branch, counter: rolled.counter }
+                        : { decision: 'reject' };
+                }
+            }
+
             if (hasLlmPayload(result)) {
                 await applyLLMResult(result, { scene: 'bargain' });
             } else {
-                showKeeperDialogue(keeper, SELL_BARGAIN_FALLBACK[res.branch](keeper, res.counter || ask), true);
+                const branch = hardBranch || (decision ? decision.decision : 'clueless');
+                const fallback = SELL_BARGAIN_FALLBACK[branch] || SELL_BARGAIN_FALLBACK.clueless;
+                showKeeperDialogue(keeper, fallback(keeper, decision && decision.counter || ask), true);
             }
 
             // 分支落地：接受/还价都把成交价挂到行上并入清单（可调整、可清空）
-            if (res.branch === 'accept') {
+            if (hardBranch === 'nocash' || hardBranch === 'exhausted') {
+                renderSellPanel();
+                return;
+            }
+            if (decision && decision.decision === 'accept') {
                 row.dealPrice = ask;
                 setSellPick(row, row.count);
                 showTopToast(`成交：${row.name} ×${row.count} @ $${ask.toFixed(2)}（已入出售清单，可调整）。`, 6000);
-            } else if (res.branch === 'counter') {
-                row.sellCounter = res.counter;
-                showTopToast(`店主还价：${row.name} @ $${res.counter.toFixed(2)}。点开物品可按还价入清单。`, 6000);
+            } else if (decision && decision.decision === 'counter') {
+                // LLM 还价缺数值时按回收价兜底（无判定价折半）
+                const counter = (Number.isFinite(decision.counter) && decision.counter > 0)
+                    ? roundMoney(decision.counter)
+                    : roundMoney(Math.min(ask, row.price != null ? row.price : ask * 0.5));
+                row.sellCounter = counter;
+                showTopToast(`店主还价：${row.name} @ $${counter.toFixed(2)}。点开物品可按还价入清单。`, 6000);
             }
+            renderSellPanel();
         }
 
         // 自定义售价：详情弹窗填价 → 斜体宣言进输入框 → 发送后走 handleSellDealSend
@@ -8197,7 +8282,7 @@
             closeItemDetail();
             chatInput.value = `*${activeSpeaker ? activeSpeaker.name : '调查员'}想以 $${ask.toFixed(2)} 出售「${row.name}」。*`;
             chatInput.focus();
-            setTempNotice('已代写开价宣言（每件限谈 2 次）：直接发送，或补写台词后发送。', 5000);
+            setTempNotice('已代写开价宣言（每件限谈 2 次）：强烈建议在宣言后补上你要说的话——理由、口气、故事都行。沉默干开价，店主很难松口。直接发送或补写后发送。', 8000);
         }
 
         function openSellDealInput(row) {
@@ -8209,6 +8294,11 @@
             input.className = 'sell-deal-input';
             input.placeholder = '期望单价（美元）';
             detailActions.appendChild(input);
+            const hint = document.createElement('div');
+            hint.className = 'detail-note';
+            hint.style.cssText = 'font-size:11px;color:#8c7360;line-height:1.5;max-width:100%;';
+            hint.textContent = '提示：开价后建议在聊天框宣言后补一句你要说的话——店主会按开价占他现金的比例从严判断，沉默干开价成功率大幅降低。';
+            detailActions.appendChild(hint);
             detailActions.appendChild(actionBtn('开出这个价', true, () => {
                 const v = Number(input.value);
                 if (!Number.isFinite(v) || v <= 0) { showTopToast('先填一个大于 0 的单价。', 4000); return; }
@@ -8244,11 +8334,14 @@
             }
             const keeper = shopState ? shopState.keeper : '店主';
             if (res && res.ok) {
-                // 店主口吻转述模型给出的估价依据，替代干巴巴的系统 toast
-                const lines = res.results.map(r => `「${r.name}」${r.note || '东西还行'}——$${r.price.toFixed(2)}。`).join('');
-                showKeeperDialogue(keeper, `（把物件一件件摆上柜台，逐件端详）${lines}还有别的要出手吗？`, true);
+                // 店主口吻转述估价依据与拒收结论，替代干巴巴的系统 toast
+                const kept = res.results.filter(r => !r.rejected).map(r => `「${r.name}」${r.note || '东西还行'}——$${r.price.toFixed(2)}。`).join('');
+                const denied = res.results.filter(r => r.rejected).map(r => `「${r.name}」${r.note}——这个我不收。`).join('');
+                if (kept || denied) {
+                    showKeeperDialogue(keeper, `（把物件一件件摆上柜台，逐件端详）${kept}${denied}还有别的要出手吗？`, true);
+                }
             }
-            if (res && res.fail) showTopToast(`估价完成：成功 ${res.ok} 件${res.fail ? `，失败 ${res.fail} 件` : ''}。`, 6000);
+            if (res && (res.fail || res.rejected)) showTopToast(`估价完成：收下 ${res.ok} 件${res.rejected ? `，不收 ${res.rejected} 件` : ''}${res.fail ? `，失败 ${res.fail} 件` : ''}。`, 6000);
         }
 
         // 出售结算：买卖分单、不做混合抵扣；整单超过店主现金即拒绝，不自动部分成交

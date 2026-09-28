@@ -410,6 +410,69 @@ window.alert = function () {}; window.confirm = function () { return true; };
     assert(deals.noRefCounter === 'counter:199.8', '无判定价 20% 还价开价×0.2（实际 ' + deals.noRefCounter + '）');
     assert(deals.nocash === 'nocash', '开价超店主现金直接拒绝（实际 ' + deals.nocash + '）');
 
+    log('== 12. 自定义售价：LLM deal 判定主路径（mock callShopLLM） ==');
+    const dealTests = await shopEval(`(async function () {
+        var out = { calls: [] };
+        var row = sellState.rows.find(r => r.name === '洗罪盐'); // 收购价 $50
+        var keeper = shopState.keeper;
+        var origCall = window.callShopLLM;
+        var origKey = llmConfig.apiKey;
+        llmConfig.apiKey = 'test-key'; // 主路径有 apiKey 门，mock 环境补上
+        var script = [];
+        window.callShopLLM = function (scene, extra) {
+            out.calls.push(String(extra || ''));
+            var deal = script.length ? script.shift() : { decision: 'reject' };
+            return Promise.resolve({ dialogue: [{ speaker: keeper, text: '……' }], affection: 0, commands: [], deal: deal });
+        };
+        async function runDeal(ask, extra) {
+            row.dealPrice = null; row.sellCounter = null; row.sellDealCount = 0;
+            pendingSellDeal = { rowId: row.id };
+            await handleSellDealSend(ask, row.name, extra);
+        }
+        try {
+            // A. accept：宽松档（ask 远低于现金一成），理由传入提示词
+            script = [{ decision: 'accept' }];
+            await runDeal(50, '这是我奶奶的遗物，求你了');
+            out.acceptDealPrice = row.dealPrice;
+            out.acceptTier = out.calls[out.calls.length - 1].includes('一成以下') ? 'loose' : 'other';
+            out.hasReason = out.calls[out.calls.length - 1].includes('奶奶的遗物');
+            // B. counter：中档（ask≈现金 12.5%），无理由 → 明示沉默
+            script = [{ decision: 'counter', counter: 1800 }];
+            await runDeal(3000, '');
+            out.counterVal = row.sellCounter;
+            out.counterTier = out.calls[out.calls.length - 1].includes('一成以上') ? 'mid' : 'other';
+            out.silentLine = out.calls[out.calls.length - 1].includes('沉默');
+            // C. reject：极严档（ask≈现金 62.5%）
+            script = [{ decision: 'reject' }];
+            await runDeal(15000, '急用钱');
+            out.rejectNoDeal = row.dealPrice == null && row.sellCounter == null;
+            out.strictTier = out.calls[out.calls.length - 1].includes('半数以上') ? 'strict' : 'other';
+            // D. nocash：开价超现金 → 程序直拒，LLM 只做台词（提示词含现金不足事实）
+            await runDeal(30001, '');
+            out.nocashNoDeal = row.dealPrice == null;
+            out.nocashMention = out.calls[out.calls.length - 1].includes('现钱只剩');
+            // E. LLM 未返回 deal → 回退程序掷骰，不崩溃且落地类型合法
+            window.callShopLLM = function (scene, extra) {
+                out.calls.push('fallback');
+                return Promise.resolve({ dialogue: [{ speaker: keeper, text: '……' }], affection: 0, commands: [] });
+            };
+            await runDeal(50, '');
+            out.fallbackClean = row.dealPrice === 50 || row.sellCounter != null;
+        } finally { window.callShopLLM = origCall; llmConfig.apiKey = origKey; row.dealPrice = null; row.sellCounter = null; row.sellDealCount = 0; }
+        return out;
+    })()`);
+    assert(dealTests.acceptDealPrice === 50, 'LLM deal=accept → 成交价落地（实际 ' + dealTests.acceptDealPrice + '）');
+    assert(dealTests.acceptTier === 'loose', 'ask<现金10% → 宽松档提示词（实际 ' + dealTests.acceptTier + '）');
+    assert(dealTests.hasReason, '玩家理由注入提示词（实际 ' + dealTests.hasReason + '）');
+    assert(dealTests.counterVal === 1800, 'LLM deal=counter → 还价落地（实际 ' + dealTests.counterVal + '）');
+    assert(dealTests.counterTier === 'mid', 'ask≥现金10% → 严格档提示词（实际 ' + dealTests.counterTier + '）');
+    assert(dealTests.silentLine, '无理由时明示沉默摆上柜台（实际 ' + dealTests.silentLine + '）');
+    assert(dealTests.rejectNoDeal, 'LLM deal=reject → 不落地成交/还价（实际 ' + dealTests.rejectNoDeal + '）');
+    assert(dealTests.strictTier === 'strict', 'ask≥现金50% → 极严档提示词（实际 ' + dealTests.strictTier + '）');
+    assert(dealTests.nocashNoDeal, '开价超现金 → 程序直拒不落地（实际 ' + dealTests.nocashNoDeal + '）');
+    assert(dealTests.nocashMention, 'nocash 台词提示词含现金不足事实（实际 ' + dealTests.nocashMention + '）');
+    assert(dealTests.fallbackClean, 'LLM 无 deal 字段 → 回退掷骰不崩溃且落地合法（实际 ' + dealTests.fallbackClean + '）');
+
     finish();
     } finally {
         if (running) running = false;
