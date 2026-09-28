@@ -2145,8 +2145,10 @@
                 align-items: stretch;
             }
             /* 展台拉伸对齐货柜：货柜 4 列下内容更高，展台跟随拉高。
-               立绘 80% 填充（cover 裁黑边、贴底居中），顶部留白对齐气泡。 */
-            .blacksmith-stage { min-height: 300px; height: 100%; }
+               立绘 80% 填充（cover 裁黑边、贴底居中），顶部留白对齐气泡。
+               max-height 兜底：出售网格列高大于旧列表，不钳住的话立绘随右栏
+               无限拉高再被 cover 裁切，表现为「出售时立绘异常放大」。 */
+            .blacksmith-stage { min-height: 300px; height: 100%; max-height: 480px; }
             .blacksmith-img { max-height: none; height: 80%; width: 80%; object-fit: cover; object-position: center top; }
 
             /* 顶栏：宽度紧张时换行，防胶囊按钮被横向裁掉 */
@@ -7673,7 +7675,7 @@
             segs.forEach(seg => {
                 const content = seg.slice(1, -1).trim();
                 if (!content) return;
-                if (/^[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}💼🎒]+$/u.test(content)) return;
+                if (/^[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B50}💼🎒\uFE0F]+$/u.test(content)) return;
                 const clean = raw => {
                     const s = String(raw || '').replace(/[(（][^)）]*[)）]/g, '').trim();
                     return s || String(raw || '').trim();
@@ -8013,7 +8015,8 @@
                 'base 为单件基准估值：常见日用品给1到20，做工考究或稀有的旧物给20到100，超过100必须有充分理由；来历不明或毫无用处的物件给0.5到2。宁可低估，不许高估。'
             ].join('\n');
             const raw = await requestShopLlm(sys, user, { scene: 'identify', temperature: 0.2, maxTokens: 1500 });
-            const parsed = extractJsonLoose(raw);
+            // requestShopLlm 返回 {data,text,finishReason}，解析必须取 text——传整个对象会被判定非字符串而静默失败
+            const parsed = extractJsonLoose(raw.text);
             const byName = {};
             if (parsed && Array.isArray(parsed.items)) {
                 parsed.items.forEach(it => { if (it && it.name != null) byName[String(it.name).replace(/\s+/g, '')] = it; });

@@ -351,7 +351,7 @@ window.alert = function () {}; window.confirm = function () { return true; };
         sellState.appraisePicks[stim.id] = 1;
         var called = 0, seenUser = '';
         var orig = window.requestShopLlm;
-        window.requestShopLlm = function (sys, user) { called++; seenUser = user; return Promise.resolve('{"items":[{"name":"银质打火机","base":8,"note":"黄铜机身，市面常见"},{"name":"战斗兴奋剂","base":3,"note":"军版货，流动性差"}]}'); };
+        window.requestShopLlm = function (sys, user) { called++; seenUser = user; return Promise.resolve({ text: '{"items":[{"name":"银质打火机","base":8,"note":"黄铜机身，市面常见"},{"name":"战斗兴奋剂","base":3,"note":"军版货，流动性差"}]}', finishReason: 'stop' }); };
         try { await appraiseCheckedRows(); } catch (e) { window.requestShopLlm = orig; return { err: String(e) }; }
         window.requestShopLlm = orig;
         var c = window.__mockVars['$shop_catalog'] || {};
