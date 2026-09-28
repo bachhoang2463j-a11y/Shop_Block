@@ -5150,9 +5150,27 @@
                 if (k === '角色列表' || k === '人物' || typeof root[k] !== 'object' || Array.isArray(root[k])) continue;
                 const m = root[k];
                 if (m['现金'] != null) continue; // 据点：现金持有方，不是载具
-                if (m['名称'] && (m['武器'] || m['弹药'] || m['杂物'] || m['载具'])) vehicles.push({ name: String(m['名称']), key: k, raw: m });
+                if (m['名称'] && (m['武器'] || m['弹药'] || m['杂物'] || m['载具'])) {
+                    const parsed = splitVehicleName(m['名称']);
+                    vehicles.push({ name: parsed.name, icon: parsed.icon, key: k, raw: m });
+                }
             }
             return { members, cash, cashModule, vehicles };
+        }
+
+        // 载具名称可能带 [emoji] 前缀标记（如 "[🚙][特制凯迪拉克防弹轿车]"）：
+        // 拆出图标与显示名（标记后若整体还裹着一层方括号壳则一并剥掉），
+        // UI 展示与归属匹配统一用显示名，避免标记原样漏出
+        function splitVehicleName(rawName) {
+            const s = String(rawName || '').trim();
+            const m = s.match(/^\[([^\[\]]{1,8})\]\s*/);
+            if (m && s.slice(m[0].length).trim()) {
+                let name = s.slice(m[0].length).trim();
+                const shell = name.match(/^\[(.+)\]$/);
+                if (shell) name = shell[1].trim();
+                return { icon: m[1].trim(), name };
+            }
+            return { icon: '', name: s };
         }
 
         // ====================================================
@@ -5231,9 +5249,9 @@
                     targets.push({ name, kind: 'char', avatar: pm ? pm.avatar : null });
                 });
                 ctx.vehicles.forEach(v => {
-                    // 载具头像：读 MMS 模块的头像/立绘字段，读不到回退 🚙 emoji
+                    // 载具头像：读 MMS 模块的头像/立绘字段，读不到回退名称标记 emoji，再回退 🚙
                     const va = v.raw ? (v.raw['头像'] || v.raw['avatar'] || v.raw['立绘']) : null;
-                    targets.push({ name: v.name, kind: 'vehicle', avatar: typeof va === 'string' ? va : null });
+                    targets.push({ name: v.name, kind: 'vehicle', icon: v.icon, avatar: typeof va === 'string' ? va : null });
                 });
             }
             if (!targets.length) {
@@ -5261,7 +5279,7 @@
                 card.title = t.name;
                 const visual = tAvatar
                     ? `<img src="${escapeHtml(tAvatar)}" alt="">`
-                    : `<span class="cart-target-fallback">${t.kind === 'vehicle' ? '🚙' : '🧑'}</span>`;
+                    : `<span class="cart-target-fallback">${t.kind === 'vehicle' ? (t.icon || '🚙') : '🧑'}</span>`;
                 card.innerHTML = visual;
                 card.addEventListener('click', () => {
                     sound.playWoodClick();
@@ -7759,7 +7777,7 @@
                 collectSellRows(c, name, 'char', rows);
             });
             (ctx && Array.isArray(ctx.vehicles) ? ctx.vehicles : []).forEach(v => {
-                owners.push({ name: v.name, kind: 'vehicle' });
+                owners.push({ name: v.name, icon: v.icon, kind: 'vehicle' });
                 collectSellRows(v.raw, v.name, 'vehicle', rows);
             });
             for (let i = 0; i < rows.length; i++) await priceSellRow(rows[i], cat);
@@ -7863,7 +7881,7 @@
                 b.className = 'sell-owner-chip' + (o.name === sellState.activeOwner ? ' active' : '');
                 const av = resolveMemberAvatar({ name: o.name, avatar: o.kind === 'vehicle' ? null : (partyMembers.find(p => speakerKey(p.name) === speakerKey(o.name)) || {}).avatar });
                 b.innerHTML = (o.kind === 'vehicle'
-                    ? '<span class="sell-owner-face">🚙</span>'
+                    ? `<span class="sell-owner-face">${escapeHtml(o.icon || '🚙')}</span>`
                     : (av ? `<img src="${escapeHtml(av)}" alt="">` : '<span class="sell-owner-face">🧑</span>'))
                     + `<span>${escapeHtml(o.name)}</span>`;
                 // 归属始终有文字：不只靠头像或颜色辨认
