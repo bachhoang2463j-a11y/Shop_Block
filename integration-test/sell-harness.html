@@ -83,6 +83,11 @@ const SHOP_YAML = [
     '          形态: "可复用"',
     '          效果: "【银质圣物匣】[单防;power:50][道具][次数:1][他人]"',
     '          介绍: "封着一小块看不出材质的骨片。"',
+    '      - 商品:',
+    '          名字: "维多利亚银质烛台"',
+    '          价格: "15.00美元"',
+    '          数量: 4',
+    '          介绍: "上流社会客厅里的体面。蜡烛得另买，朋友。"',
     '  独家私藏:',
     '    - 商品:',
     '        名字: "浸血羊皮纸残页"',
@@ -100,7 +105,7 @@ const STAT = {
         日期和时间: '1926年10月3日',
         角色列表: [
             { 角色: { 名字: '玛德琳', 属性: '[HP:140/140][MP:14/14]', 物品: '[芭斯特的猫眼石x2][银质打火机]', 道具: '[芭斯特的猫眼石]' } },
-            { 角色: { 名字: '索恩', 属性: '[HP:140/140]', 物品: '[银质圣物匣x1][战斗兴奋剂x2]' } }
+            { 角色: { 名字: '索恩', 属性: '[HP:140/140]', 物品: '[银质圣物匣x1][战斗兴奋剂x2][维多利亚银质烛台x1]' } }
         ],
         据点: { 现金: '20000.00美元' }
     }
@@ -298,6 +303,106 @@ window.alert = function () {}; window.confirm = function () { return true; };
     })()`);
     assert(reload.before === reload.after, '同块重载不恢复库存（' + reload.before + '→' + reload.after + '）');
     assert(shopEval('shopState.keeperCash') === 30000, '重载不重置店主现金');
+
+    log('== 8. 预置奇物库：表价权威 + 幂等 ==');
+    const preset1 = await shopEval(`(async function () {
+        await ensurePresetRelics();
+        var c = window.__mockVars['$shop_catalog'] || {};
+        var recs = Object.keys(c.items || {}).map(function (k) { return c.items[k]; }).filter(function (r) { return r.source === 'preset'; });
+        var salt = recs.find(function (r) { return r.name === '洗罪盐'; });
+        var ring = recs.find(function (r) { return r.name === '黑法老青金石印戒'; });
+        return {
+            count: recs.length,
+            saltChildren: salt && salt.battle ? salt.battle.children.length : 0,
+            saltPrice: salt ? salt.val.price : null,
+            ringPrice: ring ? ring.val.price : null,
+            ringFloor: ring ? ring.val.floor : null
+        };
+    })()`);
+    assert(preset1.count === 20, '20 件预置奇物全部建档（实际 ' + preset1.count + '）');
+    assert(preset1.saltChildren === 2, '洗罪盐嵌套组带两个子技能行（实际 ' + preset1.saltChildren + '）');
+    assert(preset1.saltPrice === 125, '洗罪盐表价 $125 覆盖内核价（实际 ' + preset1.saltPrice + '）');
+    assert(preset1.ringPrice === 3500 && preset1.ringFloor === 3500, '印戒表价 $3,500 = 基准 = 底价（实际 ' + preset1.ringPrice + '/' + preset1.ringFloor + '）');
+    const preset2 = await shopEval(`(async function () {
+        var ts1 = (window.__mockVars['$shop_catalog'] || {}).ts;
+        await ensurePresetRelics();
+        return { ts1: ts1, ts2: (window.__mockVars['$shop_catalog'] || {}).ts };
+    })()`);
+    assert(preset2.ts1 === preset2.ts2, 'ensurePresetRelics 幂等：第二次调用零写入');
+
+    log('== 9. 出售定价：预置奇物按表价 40% + 本店同名价回退 ==');
+    shopEval('(function(){window.__mockStat["状态栏"]["角色列表"][1].角色.物品 += "[洗罪盐x1]";})()');
+    await shopEval('refreshSellPanel()');
+    assert(await waitUntil(() => shopEval('!!(sellState && sellState.rows.some(r => r.name === "洗罪盐"))')), '出售面板重装配（含新塞入的预置奇物）');
+    const priced = shopEval('sellState.rows.map(r=>({name:r.name,price:r.price,note:r.note}))');
+    const saltRow = priced.find(r => r.name === '洗罪盐');
+    const candleRow = priced.find(r => r.name === '维多利亚银质烛台');
+    assert(!!saltRow && saltRow.price === 50, '预置奇物按表价 40% 回收（$125→$50，实际 ' + (saltRow && saltRow.price) + '）');
+    assert(!!candleRow && candleRow.price === 6, '本店同名价回退：$15.00→$6.00（实际 ' + (candleRow && candleRow.price) + '）');
+    assert(!!candleRow && candleRow.note === '按本店售价四成回收', '回退通道注明口径（实际 ' + (candleRow && candleRow.note) + '）');
+
+    log('== 10. 杂物估价：勾选批量 + mundane 落目录 ==');
+    const appraised = await shopEval(`(async function () {
+        var lighter = sellState.rows.find(r => r.name === '银质打火机');
+        if (!lighter || lighter.price != null) return { err: 'fixture: 打火机应待估价' };
+        llmConfig.apiBase = 'http://mock.local';
+        sellState.appraisePicks[lighter.id] = 1;
+        var called = 0;
+        var orig = window.requestShopLlm;
+        window.requestShopLlm = function () { called++; return Promise.resolve('{"base":8,"note":"黄铜机身，市面常见"}'); };
+        try { await appraiseCheckedRows(); } catch (e) { window.requestShopLlm = orig; return { err: String(e) }; }
+        window.requestShopLlm = orig;
+        var c = window.__mockVars['$shop_catalog'] || {};
+        var id = Object.keys(c.items || {}).find(k => c.items[k].name === '银质打火机');
+        var rec = id ? c.items[id] : null;
+        var row = sellState.rows.find(r => r.name === '银质打火机');
+        return { called: called, kind: rec ? rec.kind : null, base: rec ? rec.val.price : null,
+                 price: row ? row.price : null, markedLeft: Object.keys(sellState.appraisePicks).length };
+    })()`);
+    assert(!appraised.err, '批量估价流程无异常' + (appraised.err ? '（' + appraised.err + '）' : ''));
+    assert(appraised.called === 1, '勾选 1 件 → 恰好 1 次小模型调用（实际 ' + appraised.called + '）');
+    assert(appraised.kind === 'mundane', '估价结果落 kind:mundane 目录记录');
+    assert(appraised.base === 8 && appraised.price === 3.2, '收购价 = 基准 $8 × 40% = $3.20（实际 ' + appraised.price + '）');
+    assert(appraised.markedLeft === 0, '估价成功后自动移出勾选');
+
+    log('== 11. 自定义售价：分段判定全分支（monkey-patch 随机数） ==');
+    const deals = await shopEval(`(function () {
+        var out = {};
+        var row = sellState.rows.find(r => r.name === '洗罪盐'); // 收购价 $50 → 判定价 ref=$125
+        var realRandom = Math.random;
+        function withRolls(seq, fn) {
+            var i = 0;
+            Math.random = function () { return seq[Math.min(i++, seq.length - 1)]; };
+            try { return fn(); } finally { Math.random = realRandom; }
+        }
+        out.safe = withRolls([0.99], function () { return resolveSellBargain(row, 50).branch; });
+        out.midHit = withRolls([0.535], function () { return resolveSellBargain(row, 100).branch; });
+        var midFail = withRolls([0.545, 0.1], function () { return resolveSellBargain(row, 100); });
+        out.midFailBranch = midFail.branch; out.midCounter = midFail.counter;
+        out.highHit = withRolls([0.145], function () { return resolveSellBargain(row, 200).branch; });
+        var highCounter = withRolls([0.155, 0.49], function () { return resolveSellBargain(row, 200); });
+        out.highCounterBranch = highCounter.branch; out.highCounter = highCounter.counter;
+        var clue = withRolls([0.155, 0.51], function () { return resolveSellBargain(row, 200); });
+        out.cluelessBranch = clue.branch;
+        out.overTwo = withRolls([0.01], function () { return resolveSellBargain(row, 400).branch; });
+        out.exhausted = (function () { row.sellDealCount = 2; var b = resolveSellBargain(row, 50).branch; delete row.sellDealCount; return b; })();
+        var noRefRow = { price: null, sellDealCount: 0 };
+        out.noRefClueless = withRolls([0.79], function () { return resolveSellBargain(noRefRow, 999).branch; });
+        out.noRefCounter = withRolls([0.81], function () { var r2 = resolveSellBargain(noRefRow, 999); return r2.branch + ':' + r2.counter; });
+        out.nocash = resolveSellBargain(row, 30001).branch;
+        return out;
+    })()`);
+    assert(deals.safe === 'accept', 'r≤0.5 必成（实际 ' + deals.safe + '）');
+    assert(deals.midHit === 'accept', 'r=0.8 阈值54：骰54 成（实际 ' + deals.midHit + '）');
+    assert(deals.midFailBranch === 'counter' && deals.midCounter === 50, 'r=0.8 骰55 败 → 还价 ref×0.4=$50（实际 ' + deals.midFailBranch + '/' + deals.midCounter + '）');
+    assert(deals.highHit === 'accept', 'r=1.6 阈值15：骰15 成（实际 ' + deals.highHit + '）');
+    assert(deals.highCounterBranch === 'counter' && deals.highCounter === 62.5, 'r=1.6 骰16+二骰0.49 → 还价 ref×0.5=$62.50（实际 ' + deals.highCounter + '）');
+    assert(deals.cluelessBranch === 'clueless', 'r=1.6 骰16+二骰0.51 → 不识货（实际 ' + deals.cluelessBranch + '）');
+    assert(deals.overTwo === 'clueless', 'r>2 必不识货（实际 ' + deals.overTwo + '）');
+    assert(deals.exhausted === 'exhausted', '每件限谈 2 次（实际 ' + deals.exhausted + '）');
+    assert(deals.noRefClueless === 'clueless', '无判定价 80% 不识货（实际 ' + deals.noRefClueless + '）');
+    assert(deals.noRefCounter === 'counter:199.8', '无判定价 20% 还价开价×0.2（实际 ' + deals.noRefCounter + '）');
+    assert(deals.nocash === 'nocash', '开价超店主现金直接拒绝（实际 ' + deals.nocash + '）');
 
     finish();
     } finally {
