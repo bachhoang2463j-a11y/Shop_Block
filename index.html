@@ -2387,8 +2387,8 @@
                 gap: 14px;
                 padding: 12px 16px;
             }
-            :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 300px; height: 100%; }
-            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: none; height: 80%; width: 80%; object-fit: cover; object-position: center top; }
+            :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 300px; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 380px; width: auto; object-fit: contain; }
             :root:fullscreen .wooden-cabinet, :fullscreen .wooden-cabinet {
                 grid-template-columns: repeat(4, 1fr);
                 grid-auto-rows: 108px;
@@ -2397,16 +2397,15 @@
             }
             :root:fullscreen .shelf-cell, :fullscreen .shelf-cell { height: 108px; }
         }
-        /* 全屏+矮视高：只压矮展台最小高度，立绘沿用填充式 cover（与上方
-           1280 档一致）——不能再钳 img 固定高，否则底对齐下立绘缩在底部、
-           上方大片空洞（150% 全屏实测根因）。 */
+        /* 全屏+矮视高：只压矮展台最小高度，立绘钳高 contain——与右侧货架
+           内容解耦，商品行列变化不影响立绘大小（与非全屏 1280 档一致）。 */
         @media (max-height: 720px) {
             :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 300px; }
-            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: none; height: 80%; width: 80%; object-fit: cover; object-position: center top; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 300px; width: auto; object-fit: contain; }
         }
         @media (max-height: 560px) {
             :root:fullscreen .blacksmith-stage, :fullscreen .blacksmith-stage { min-height: 230px; }
-            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: none; height: 80%; width: 80%; object-fit: cover; object-position: center top; }
+            :root:fullscreen .blacksmith-img, :fullscreen .blacksmith-img { max-height: 220px; width: auto; object-fit: contain; }
         }
     </style>
 </head>

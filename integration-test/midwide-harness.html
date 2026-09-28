@@ -148,6 +148,9 @@ async function loadFrame(w, h) {
     }
     // 渲染稳定余量（首帧布局 + demo 商品铺满）
     await new Promise(r => setTimeout(r, 800));
+    // mock 环境没有真实立绘：注入占位图（500×760），让 contain 钳高断言可测
+    frameEval(w, `document.getElementById('blacksmithImg').src =
+        "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='500' height='760'></svg>";`);
 }
 
 // ---------- 断言工具 ----------
@@ -250,9 +253,10 @@ async function runFlow() {
             assert(g.mainLeftW >= 280 && g.mainLeftW <= 361, '[' + f.w + '] 高缩放左栏收窄 280–360px（实际 ' + g.mainLeftW + 'px）');
             assert(g.cabCols === 4, '[' + f.w + '] 高缩放货柜 4 列（实际 ' + g.cabCols + '，基线 5 列）');
             assert(g.cabMaxH === '464px', '[' + f.w + '] 高缩放货柜可视高 464px（实际 ' + g.cabMaxH + '）');
-            // 展台拉伸对齐货柜：不再是固定 420，而是与货柜区等高、立绘顶满
-            assert(Math.abs(g.stageH - g.cabSectionH) <= 4, '[' + f.w + '] 高缩放展台与货柜区等高（展台 ' + g.stageH + 'px / 货柜区 ' + g.cabSectionH + 'px）');
-            assert(g.imgH >= g.stageH * 0.8 - 8 && g.imgH <= g.stageH * 0.8 + 8, '[' + f.w + '] 高缩放立绘 80% 填充（立绘 ' + g.imgH + 'px / 展台 ' + g.stageH + 'px）');
+            // 立绘与货架内容解耦：展台只保底 min-height，立绘钳高 contain（≤380px），
+            // 不随货柜行数/买卖切换放大缩小（与 index.html 全屏 1280 档解耦一致）。
+            assert(g.stageH >= 300, '[' + f.w + '] 高缩放展台保底 ≥300px（实际 ' + g.stageH + 'px）');
+            assert(g.imgH > 0 && g.imgH <= 380, '[' + f.w + '] 高缩放立绘钳高 ≤380px 不随货柜放大（立绘 ' + g.imgH + 'px / 货柜区 ' + g.cabSectionH + 'px）');
             assert(g.consoleCols === 2, '[' + f.w + '] 高缩放底栏仍左右横排（track 数 ' + g.consoleCols + '）');
             assert(g.tipHidden, '[' + f.w + '] 高缩放分类头操作提示已隐藏（只留重排按钮）');
         } else {
