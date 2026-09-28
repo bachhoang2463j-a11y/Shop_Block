@@ -341,28 +341,34 @@ window.alert = function () {}; window.confirm = function () { return true; };
     assert(!!candleRow && candleRow.price === 6, '本店同名价回退：$15.00→$6.00（实际 ' + (candleRow && candleRow.price) + '）');
     assert(!!candleRow && candleRow.note === '按本店售价四成回收', '回退通道注明口径（实际 ' + (candleRow && candleRow.note) + '）');
 
-    log('== 10. 杂物估价：勾选批量 + mundane 落目录 ==');
+    log('== 10. 杂物估价：勾选批量单次请求 + mundane 落目录 ==');
     const appraised = await shopEval(`(async function () {
         var lighter = sellState.rows.find(r => r.name === '银质打火机');
-        if (!lighter || lighter.price != null) return { err: 'fixture: 打火机应待估价' };
+        var stim = sellState.rows.find(r => r.name === '战斗兴奋剂');
+        if (!lighter || !stim || lighter.price != null || stim.price != null) return { err: 'fixture: 两件都应待估价' };
         llmConfig.apiBase = 'http://mock.local';
         sellState.appraisePicks[lighter.id] = 1;
-        var called = 0;
+        sellState.appraisePicks[stim.id] = 1;
+        var called = 0, seenUser = '';
         var orig = window.requestShopLlm;
-        window.requestShopLlm = function () { called++; return Promise.resolve('{"base":8,"note":"黄铜机身，市面常见"}'); };
+        window.requestShopLlm = function (sys, user) { called++; seenUser = user; return Promise.resolve('{"items":[{"name":"银质打火机","base":8,"note":"黄铜机身，市面常见"},{"name":"战斗兴奋剂","base":3,"note":"军版货，流动性差"}]}'); };
         try { await appraiseCheckedRows(); } catch (e) { window.requestShopLlm = orig; return { err: String(e) }; }
         window.requestShopLlm = orig;
         var c = window.__mockVars['$shop_catalog'] || {};
-        var id = Object.keys(c.items || {}).find(k => c.items[k].name === '银质打火机');
-        var rec = id ? c.items[id] : null;
-        var row = sellState.rows.find(r => r.name === '银质打火机');
-        return { called: called, kind: rec ? rec.kind : null, base: rec ? rec.val.price : null,
-                 price: row ? row.price : null, markedLeft: Object.keys(sellState.appraisePicks).length };
+        function recOf(n) { var id = Object.keys(c.items || {}).find(k => c.items[k].name === n); return id ? c.items[id] : null; }
+        var rLight = recOf('银质打火机'), rStim = recOf('战斗兴奋剂');
+        return { called: called, userHasList: seenUser.indexOf('银质打火机') >= 0 && seenUser.indexOf('战斗兴奋剂') >= 0,
+                 kind: rLight ? rLight.kind : null, baseLight: rLight ? rLight.val.price : null, baseStim: rStim ? rStim.val.price : null,
+                 priceLight: (sellState.rows.find(r => r.name === '银质打火机') || {}).price,
+                 priceStim: (sellState.rows.find(r => r.name === '战斗兴奋剂') || {}).price,
+                 markedLeft: Object.keys(sellState.appraisePicks).length };
     })()`);
     assert(!appraised.err, '批量估价流程无异常' + (appraised.err ? '（' + appraised.err + '）' : ''));
-    assert(appraised.called === 1, '勾选 1 件 → 恰好 1 次小模型调用（实际 ' + appraised.called + '）');
+    assert(appraised.called === 1, '勾选 2 件 → 恰好 1 次 LLM 请求（实际 ' + appraised.called + '）');
+    assert(appraised.userHasList, '单次请求携带完整勾选清单');
     assert(appraised.kind === 'mundane', '估价结果落 kind:mundane 目录记录');
-    assert(appraised.base === 8 && appraised.price === 3.2, '收购价 = 基准 $8 × 40% = $3.20（实际 ' + appraised.price + '）');
+    assert(appraised.baseLight === 8 && appraised.priceLight === 3.2, '打火机收购价 = 基准 $8 × 40% = $3.20（实际 ' + appraised.priceLight + '）');
+    assert(appraised.baseStim === 3 && appraised.priceStim === 1.2, '兴奋剂收购价 = 基准 $3 × 40% = $1.20（实际 ' + appraised.priceStim + '）');
     assert(appraised.markedLeft === 0, '估价成功后自动移出勾选');
 
     log('== 11. 自定义售价：分段判定全分支（monkey-patch 随机数） ==');

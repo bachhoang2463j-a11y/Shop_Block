@@ -7999,26 +7999,39 @@
             return row.dealPrice != null ? row.dealPrice : row.price;
         }
 
-        // 估价（杂物专用）：没有定价通道的普通物品由小模型按 1920 年代市价给保守基准估值，
-        // 结果落目录复用。战斗定义不归它管——只来自预置奇物库/正文战斗块。
-        async function appraiseRow(row, cat) {
+        // 估价（杂物专用，单次请求批量返回）：没有定价通道的普通物品由小模型按 1920 年代
+        // 市价给出保守基准估值，一次请求处理整批勾选，结果落目录复用。
+        // 战斗定义不归它管——只来自预置奇物库/正文战斗块。
+        async function appraiseRows(targets, cat) {
+            const list = targets.map((r, i) => `${i + 1}. ${r.name}`).join('\n');
             const sys = '你是1920年代小镇当铺的估价师。只输出 JSON，不要任何解释。';
             const user = [
-                '为下面这件普通物品给出回收基准估值（美元）。',
-                `物品名：${row.name}`,
-                '输出 JSON：{"base":数字,"note":"一句话依据"}',
-                'base 是这件物品在你眼里的基准估值：常见日用品给1到20，做工考究或稀有的旧物给20到100，超过100必须有充分理由；来历不明或毫无用处的物件给0.5到2。宁可低估，不许高估。'
+                '为下面这些普通物品分别给出回收基准估值（美元）。',
+                '物品清单：',
+                list,
+                '输出 JSON：{"items":[{"name":"物品名（与清单逐字一致）","base":数字,"note":"一句话依据"}]}，清单里每件物品恰好一条，不要遗漏也不要编造清单外的物品。',
+                'base 为单件基准估值：常见日用品给1到20，做工考究或稀有的旧物给20到100，超过100必须有充分理由；来历不明或毫无用处的物件给0.5到2。宁可低估，不许高估。'
             ].join('\n');
-            const raw = await requestShopLlm(sys, user, { scene: 'identify', temperature: 0.2, maxTokens: 300 });
+            const raw = await requestShopLlm(sys, user, { scene: 'identify', temperature: 0.2, maxTokens: 1500 });
             const parsed = extractJsonLoose(raw);
-            const base = parsed ? Number(parsed.base) : NaN;
-            if (!Number.isFinite(base) || base <= 0) return null;
-            const reg = catalogRegisterMundane(cat, { name: row.name, base: base, note: parsed.note || '' });
-            if (!reg) return null;
-            row.itemId = reg.id;
-            row.price = sellPriceOfBase(reg.record.val.price);
-            row.tier = null; row.form = null; row.line = '';
-            return reg;
+            const byName = {};
+            if (parsed && Array.isArray(parsed.items)) {
+                parsed.items.forEach(it => { if (it && it.name != null) byName[String(it.name).replace(/\s+/g, '')] = it; });
+            }
+            let ok = 0, fail = 0;
+            targets.forEach(row => {
+                const hit = byName[String(row.name).replace(/\s+/g, '')];
+                const base = hit ? Number(hit.base) : NaN;
+                if (!Number.isFinite(base) || base <= 0) { fail++; return; }
+                const reg = catalogRegisterMundane(cat, { name: row.name, base: base, note: (hit && hit.note) || '' });
+                if (!reg) { fail++; return; }
+                row.itemId = reg.id;
+                row.price = sellPriceOfBase(reg.record.val.price);
+                row.tier = null; row.form = null; row.line = '';
+                row.note = '';
+                ok++;
+            });
+            return { ok: ok, fail: fail };
         }
 
         async function identifySellRow(row) {
@@ -8030,10 +8043,10 @@
             let cat;
             try { cat = await readCatalog(); } catch (e) { cat = normalizeCatalog(catalogMem); }
             try {
-                const reg = await appraiseRow(row, cat);
-                if (!reg) { showTopToast('估价失败：模型没有给出可用的估值，物品仍为待估价。', 6000); return; }
+                const res = await appraiseRows([row], cat);
+                if (!res.ok) { showTopToast('估价失败：模型没有给出可用的估值，物品仍为待估价。', 6000); return; }
                 await writeCatalog(cat);
-                logShopEvent('add', `[估价] ${row.name} → 基准估值 $${reg.record.val.price.toFixed(2)}${reg.record.note ? `（${reg.record.note}）` : ''}`);
+                logShopEvent('add', `[估价] ${row.name} → 单件收购价 $${row.price.toFixed(2)}`);
                 renderSellPanel();
                 openSellDetail(row);
                 showTopToast(`估价完成：${row.name}，单件收购价 $${row.price.toFixed(2)}。`, 6000);
@@ -8191,17 +8204,14 @@
             try {
                 let cat;
                 try { cat = await readCatalog(); } catch (e) { cat = normalizeCatalog(catalogMem); }
-                for (let i = 0; i < targets.length; i++) {
-                    const row = targets[i];
-                    if (btn) btn.textContent = `估价中 ${i + 1}/${targets.length}…`;
-                    try {
-                        const reg = await appraiseRow(row, cat);
-                        if (reg) { ok++; delete sellState.appraisePicks[row.id]; }
-                        else fail++;
-                    } catch (e) { console.warn('[ShopBlock] 批量估价失败:', row.name, e); fail++; }
+                if (btn) btn.textContent = `估价中 ${targets.length} 件…`;
+                const res = await appraiseRows(targets, cat);
+                ok = res.ok; fail = res.fail;
+                targets.forEach(row => { if (row.price != null) delete sellState.appraisePicks[row.id]; });
+                if (ok) {
+                    logShopEvent('add', `[批量估价] 单次请求完成 ${ok} 件${fail ? `，失败 ${fail} 件` : ''}`);
+                    try { await writeCatalog(cat); } catch (e) { console.warn('[ShopBlock] 批量估价写盘失败:', e); }
                 }
-                try { await writeCatalog(cat); } catch (e) { console.warn('[ShopBlock] 批量估价写盘失败:', e); }
-                if (ok) logShopEvent('add', `[批量估价] 完成 ${ok} 件${fail ? `，失败 ${fail} 件` : ''}`);
             } finally {
                 appraiseInFlight = false;
                 renderSellPanel();
