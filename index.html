@@ -2144,12 +2144,9 @@
                 align-content: stretch;
                 align-items: stretch;
             }
-            /* 展台拉伸对齐货柜：货柜 4 列下内容更高，展台跟随拉高。
-               立绘 80% 填充（cover 裁黑边、贴底居中），顶部留白对齐气泡。
-               max-height 兜底：出售网格列高大于旧列表，不钳住的话立绘随右栏
-               无限拉高再被 cover 裁切，表现为「出售时立绘异常放大」。 */
-            .blacksmith-stage { min-height: 300px; height: 100%; max-height: 480px; }
-            .blacksmith-img { max-height: none; height: 80%; width: 80%; object-fit: cover; object-position: center top; }
+            /* 展台面板随栏拉伸（仅框架），立绘本身保持基础样式（contain，最高 380px）——
+               与货架内容解耦：买/卖、商品多少都不影响立绘大小。 */
+            .blacksmith-stage { min-height: 300px; }
 
             /* 顶栏：宽度紧张时换行，防胶囊按钮被横向裁掉 */
             header { flex-wrap: wrap; gap: 8px 12px; }
@@ -8022,6 +8019,7 @@
                 parsed.items.forEach(it => { if (it && it.name != null) byName[String(it.name).replace(/\s+/g, '')] = it; });
             }
             let ok = 0, fail = 0;
+            const results = [];
             targets.forEach(row => {
                 const hit = byName[String(row.name).replace(/\s+/g, '')];
                 const base = hit ? Number(hit.base) : NaN;
@@ -8033,8 +8031,9 @@
                 row.tier = null; row.form = null; row.line = '';
                 row.note = '';
                 ok++;
+                results.push({ name: row.name, price: row.price, note: (hit && hit.note) || '' });
             });
-            return { ok: ok, fail: fail };
+            return { ok: ok, fail: fail, results: results };
         }
 
         async function identifySellRow(row) {
@@ -8052,7 +8051,9 @@
                 logShopEvent('add', `[估价] ${row.name} → 单件收购价 $${row.price.toFixed(2)}`);
                 renderSellPanel();
                 openSellDetail(row);
-                showTopToast(`估价完成：${row.name}，单件收购价 $${row.price.toFixed(2)}。`, 6000);
+                const keeper = shopState ? shopState.keeper : '店主';
+                const relaid = res.results[0] || { name: row.name, price: row.price, note: '东西还行' };
+                showKeeperDialogue(keeper, `（拿起${row.name}端详片刻）${relaid.note || '东西还行'}——$${relaid.price.toFixed(2)}，我收这个价。`, true);
             } catch (e) {
                 console.warn('[ShopBlock] 估价请求失败:', e);
                 showTopToast('估价失败：模型未返回可用结果，该物品仍为待估价。', 6000);
@@ -8203,23 +8204,28 @@
             if (!targets.length) return;
             appraiseInFlight = true;
             const btn = document.getElementById('btnAppraiseChecked');
-            let ok = 0, fail = 0;
+            let res = null;
             try {
                 let cat;
                 try { cat = await readCatalog(); } catch (e) { cat = normalizeCatalog(catalogMem); }
                 if (btn) btn.textContent = `估价中 ${targets.length} 件…`;
-                const res = await appraiseRows(targets, cat);
-                ok = res.ok; fail = res.fail;
+                res = await appraiseRows(targets, cat);
                 targets.forEach(row => { if (row.price != null) delete sellState.appraisePicks[row.id]; });
-                if (ok) {
-                    logShopEvent('add', `[批量估价] 单次请求完成 ${ok} 件${fail ? `，失败 ${fail} 件` : ''}`);
+                if (res.ok) {
+                    logShopEvent('add', `[批量估价] 单次请求完成 ${res.ok} 件${res.fail ? `，失败 ${res.fail} 件` : ''}`);
                     try { await writeCatalog(cat); } catch (e) { console.warn('[ShopBlock] 批量估价写盘失败:', e); }
                 }
             } finally {
                 appraiseInFlight = false;
                 renderSellPanel();
             }
-            showTopToast(`估价完成：成功 ${ok} 件${fail ? `，失败 ${fail} 件` : ''}。`, 6000);
+            const keeper = shopState ? shopState.keeper : '店主';
+            if (res && res.ok) {
+                // 店主口吻转述模型给出的估价依据，替代干巴巴的系统 toast
+                const lines = res.results.map(r => `「${r.name}」${r.note || '东西还行'}——$${r.price.toFixed(2)}。`).join('');
+                showKeeperDialogue(keeper, `（把物件一件件摆上柜台，逐件端详）${lines}还有别的要出手吗？`, true);
+            }
+            if (res && res.fail) showTopToast(`估价完成：成功 ${res.ok} 件${res.fail ? `，失败 ${res.fail} 件` : ''}。`, 6000);
         }
 
         // 出售结算：买卖分单、不做混合抵扣；整单超过店主现金即拒绝，不自动部分成交
