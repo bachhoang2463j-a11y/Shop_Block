@@ -473,6 +473,55 @@ window.alert = function () {}; window.confirm = function () { return true; };
     assert(dealTests.nocashMention, 'nocash 台词提示词含现金不足事实（实际 ' + dealTests.nocashMention + '）');
     assert(dealTests.fallbackClean, 'LLM 无 deal 字段 → 回退掷骰不崩溃且落地合法（实际 ' + dealTests.fallbackClean + '）');
 
+    log('== 13. 内置弹药行情表：固定回收 + 上架底价 + 砍价基准 ==');
+    const ammoTests = await shopEval(`(async function () {
+        var out = {};
+        // A. 匹配：规范化去空白 + 全关键词子串
+        out.m32 = !!matchAmmoFloor('.32子弹');
+        out.m577 = !!matchAmmoFloor('.577号子弹');
+        out.m38 = !!matchAmmoFloor('.38 S&W:80子弹');
+        out.mSlug = !!matchAmmoFloor('12号独头弹');
+        out.mTank = !!matchAmmoFloor('反坦克子弹');
+        out.mMiss = matchAmmoFloor('.32口径手枪');
+        // B. 回收：命中表 → 固定 buy 价，绕过目录与估价
+        var cat = normalizeCatalog(catalogMem);
+        var row = { name: '.32子弹', owner: '测试', ownerKind: 'char', count: 1 };
+        await priceSellRow(row, cat);
+        out.buy32 = row.price;
+        out.floor32 = row.listBase;
+        out.note32 = row.note;
+        var rowTank = { name: '反坦克子弹', owner: '测试', ownerKind: 'char', count: 1 };
+        await priceSellRow(rowTank, cat);
+        out.buyTank = rowTank.price;
+        // C. 上架：AI 开价低于 floor → 程序抬到 floor
+        var before = shopState.items.length;
+        var r1 = applyAddCommand({ cmd: 'add', category: '弹药', name: '.32子弹', price: '0.05美元', count: 10, unit: '发', desc: '测试' });
+        out.clampedPrice = r1.ok ? r1.item.price : null;
+        out.clampedText = r1.ok ? r1.item.priceText : null;
+        // D. 砍价基准：listBase 优先（ref=0.5 → ask 0.25 落 r=0.5 必成）
+        var realRandom = Math.random;
+        Math.random = function () { return 0.99; };
+        try { out.dealRef = resolveSellBargain({ name: '.32子弹', price: 0.2, listBase: 0.5, sellDealCount: 0 }, 0.25).branch; }
+        finally { Math.random = realRandom; }
+        // 清理测试数据
+        if (shopState.items.length > before) {
+            shopState.items.length = before;
+            shopState.categories = shopState.categories.filter(c => c !== '弹药');
+            buildCategoryTabs();
+            renderCabinet();
+        }
+        return out;
+    })()`);
+    assert(ammoTests.m32 && ammoTests.m577 && ammoTests.m38 && ammoTests.mSlug && ammoTests.mTank, '行情表命中：.32/.577号/.38S&W/12号独头弹/反坦克子弹全命中');
+    assert(!ammoTests.mMiss, '非弹药名不命中（实际 ' + ammoTests.mMiss + '）');
+    assert(ammoTests.buy32 === 0.2, '.32子弹固定回收价 $0.20（实际 ' + ammoTests.buy32 + '）');
+    assert(ammoTests.floor32 === 0.5, '.32子弹行情底价 $0.50（实际 ' + ammoTests.floor32 + '）');
+    assert(ammoTests.note32 === '按行情表固定价回收', '回收口径注明行情表（实际 ' + ammoTests.note32 + '）');
+    assert(ammoTests.buyTank === 10, '反坦克子弹固定回收价 $10（实际 ' + ammoTests.buyTank + '）');
+    assert(ammoTests.clampedPrice === 0.5, 'AI 上架 $0.05 → 抬到行情底价 $0.50（实际 ' + ammoTests.clampedPrice + '）');
+    assert(ammoTests.clampedText === '0.50美元', '抬价后价格文本同步（实际 ' + ammoTests.clampedText + '）');
+    assert(ammoTests.dealRef === 'accept', '砍价基准用行情底价（ref=0.5，ask 0.25 必成）（实际 ' + ammoTests.dealRef + '）');
+
     finish();
     } finally {
         if (running) running = false;

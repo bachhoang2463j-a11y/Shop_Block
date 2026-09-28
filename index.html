@@ -4610,6 +4610,10 @@
             if (!name || !category) return { ok: false, reason: '商品名或类目为空' };
             const price = parsePriceString(cmd.price);
             if (!isFinite(price) || price <= 0) return { ok: false, reason: '价格必须为正数' };
+            // 内置行情底价：AI 给这些弹药定的售价不得低于行情 floor，低于则程序抬到 floor
+            const ammoSpec = matchAmmoFloor(name);
+            const effPrice = (ammoSpec && price < ammoSpec.floor) ? ammoSpec.floor : price;
+            const priceClamped = ammoSpec && price < ammoSpec.floor;
 
             if (!ADD_PERMISSIVE) {
                 const anchors = PORTRAIT_ANCHOR[shopState.portrait] || PORTRAIT_ANCHOR['占卜商妇'];
@@ -4622,14 +4626,15 @@
             // 去重：已存在同名商品则更新，不额外占用正式模式频率
             const existing = shopState.items.find(i => i.name === name);
             if (existing) {
-                existing.price = price;
-                existing.priceText = String(cmd.price || `${price.toFixed(2)}美元`);
+                existing.price = effPrice;
+                existing.priceText = String(cmd.price || `${effPrice.toFixed(2)}美元`);
+                if (priceClamped) existing.priceText = `${effPrice.toFixed(2)}美元`;
                 if (cmd.desc) existing.quote = String(cmd.desc).trim();
                 if (parsed.emoji !== '📦') existing.emoji = parsed.emoji;
                 existing.category = category;
                 renderCabinet();
                 updateCartUI();
-                logShopEvent('add', `[上架] ${name} 已更新（${category} · $${price.toFixed(2)}）`, { item: name });
+                logShopEvent('add', `[上架] ${name} 已更新（${category} · $${effPrice.toFixed(2)}）`, { item: name });
                 return { ok: true, updated: true, item: existing };
             }
 
@@ -4637,7 +4642,7 @@
                 const sameCat = shopState.items.filter(i => i.category === category);
                 if (sameCat.length) {
                     const avg = sameCat.reduce((s, i) => s + i.price, 0) / sameCat.length;
-                    if (price < avg * 0.05) return { ok: false, reason: `价格 $${price} 低于同类均价 $${avg.toFixed(2)} 的 5%` };
+                    if (effPrice < avg * 0.05) return { ok: false, reason: `价格 $${effPrice} 低于同类均价 $${avg.toFixed(2)} 的 5%` };
                 }
             }
 
@@ -4647,8 +4652,8 @@
                 id: maxId + 1,
                 name,
                 category,
-                price,
-                priceText: String(cmd.price || `${price.toFixed(2)}美元`),
+                price: effPrice,
+                priceText: priceClamped ? `${effPrice.toFixed(2)}美元` : String(cmd.price || `${effPrice.toFixed(2)}美元`),
                 emoji: parsed.emoji !== '📦' ? parsed.emoji : '🆕',
                 isStackable: isFinite(count) && count > 1,
                 stock: isFinite(count) && count > 0 ? count : 1,
@@ -4664,7 +4669,7 @@
             buildCategoryTabs();
             renderCabinet();
             updateCartUI();
-            logShopEvent('add', `[上架] ${name}（${category} · $${price.toFixed(2)}）`, { item: name });
+            logShopEvent('add', `[上架] ${name}（${category} · $${effPrice.toFixed(2)}${priceClamped ? '，按行情底价修正' : ''}）`, { item: name });
             return { ok: true, updated: false, item };
         }
 
@@ -4913,6 +4918,30 @@
         // 回收价：基准估值的四成（不设防套利上限——低买高卖是允许的玩法）
         function sellPriceOfBase(base) {
             return roundMoney((Number(base) || 0) * 0.4);
+        }
+
+        // ====================================================
+        // 内置弹药行情表（1926 年代偏远离岸小镇口径）：历史上手枪弹零售仅 3-5 美分/发、
+        // 霰弹 2-3 美分、.303 澳洲俱乐部价约 5.4 美分/发（£2 5s/100）、.577 Nitro 大猎弹
+        // 约 25-50 美分/发；禁酒令年代偏远小镇供货紧张，零售取数倍溢价。
+        //   floor = 货架出售底价：AI 上架这些弹药时价格不得低于 floor（程序强制抬到 floor）
+        //   buy   = 固定回收价：命中表的物品不走 LLM 估价/四成折算，直接按 buy 回收
+        // 匹配：名称去空白后子串包含全部关键词；新增弹药直接加行。
+        // ====================================================
+        const AMMO_PRICE_FLOOR = [
+            { keys: ['.32', '子弹'], floor: 0.50, buy: 0.20 },
+            { keys: ['.38', '子弹'], floor: 0.50, buy: 0.20 },
+            { keys: ['.45', '子弹'], floor: 0.60, buy: 0.25 },
+            { keys: ['12号', '独头弹'], floor: 0.90, buy: 0.40 },
+            { keys: ['12号', '鹿弹'], floor: 0.80, buy: 0.35 },
+            { keys: ['.577', '子弹'], floor: 2.50, buy: 1.20 },
+            { keys: ['反坦克', '子弹'], floor: 18.00, buy: 10.00 }
+        ];
+
+        function matchAmmoFloor(name) {
+            const n = String(name || '').replace(/\s+/g, '');
+            if (!n) return null;
+            return AMMO_PRICE_FLOOR.find(e => e.keys.every(k => n.includes(k))) || null;
         }
 
         // ====================================================
@@ -7826,6 +7855,17 @@
 
         // 估价：目录既有记录 → 正文战斗定义桥 → 本店同名价 → 待估价（绝不给 $0 充数）
         async function priceSellRow(row, cat) {
+            // 内置行情表最权威：命中弹药行情的物品直接固定回收价，绕过目录旧估价与 LLM
+            const ammo = matchAmmoFloor(row.name);
+            if (ammo) {
+                row.itemId = null;
+                row.price = ammo.buy;
+                row.listBase = ammo.floor;
+                row.tier = null; row.form = null; row.line = '';
+                row.note = '按行情表固定价回收';
+                return;
+            }
+            delete row.listBase;
             const hitId = Object.keys(cat.items).find(id => cat.items[id] && cat.items[id].name === row.name && cat.items[id].val);
             if (hitId) {
                 const rec = cat.items[hitId];
@@ -7988,7 +8028,8 @@
                 notes.push('可再次估价，或直接向店主开价');
             }
             else {
-                notes.push('基准估值 $' + roundMoney(row.price / 0.4).toFixed(2) + ' 的四成');
+                if (row.listBase != null) notes.push(`内置行情：出售底价 $${row.listBase.toFixed(2)} · 固定回收价`);
+                else notes.push('基准估值 $' + roundMoney(row.price / 0.4).toFixed(2) + ' 的四成');
                 if (row.price > sellState.keeperCash) notes.push(`店主现金不足（差额 $${(row.price - sellState.keeperCash).toFixed(2)}）`);
             }
             if (picked > 0) notes.push(`已选 ${picked} 件`);
@@ -8137,7 +8178,8 @@
         function resolveSellBargain(row, ask) {
             if ((row.sellDealCount || 0) >= 2) return { branch: 'exhausted' };
             if (sellState && ask > sellState.keeperCash) return { branch: 'nocash' };
-            const ref = (row.price != null && row.price > 0) ? roundMoney(row.price / 0.4) : null;
+            const ref = (row.listBase != null) ? roundMoney(row.listBase)
+                : (row.price != null && row.price > 0) ? roundMoney(row.price / 0.4) : null;
             if (ref == null) {
                 // 无判定价：店主无从估价——八成直接不识货，两成给个象征性低还价
                 return Math.random() < 0.8
@@ -8180,6 +8222,7 @@
                 tier = `${speaker}对「${row.name}」开出 $${ask.toFixed(2)} 的售价，这在你流动资金的一成以下${cashLine}，你依然需要扮演一个精明的商人，先确认值不值。${speaker}的理由充分的话，你可以不考虑店铺类型买来玩玩，你有还价的权利。`;
             }
             return `【开价判定】${tier}\n${said}\n` +
+                (row.listBase != null ? `该物品在你店内的行情底价为 $${row.listBase.toFixed(2)}（回收固定价 $${Number(row.price).toFixed(2)}）。\n` : '') +
                 `店铺类型：${(shopState && shopState.shopType) || '普通'}。结合世界观、你的店主人设、店铺类型、与${speaker}的好感档位综合裁定，并以你的口吻回应（1~2条dialogue，队友可插话），affection按对方言辞整体判定。\n` +
                 `额外输出 deal 字段：{"decision":"accept"|"counter"|"reject","counter":数字}。accept=按 $${ask.toFixed(2)} 收下；counter=你还一个价（counter 必填，单位美元）；reject=不收。decision 必须与你的台词一致。`;
         }
