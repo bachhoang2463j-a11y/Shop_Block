@@ -187,7 +187,12 @@ function measure(w) {
             cellW: cells.length ? Math.round(cells[0].getBoundingClientRect().width) : -1,
             stageH: stage ? Math.round(stage.getBoundingClientRect().height) : -1,
             imgH: img ? Math.round(img.getBoundingClientRect().height) : -1,
+            imgBottom: img ? Math.round(img.getBoundingClientRect().bottom) : -1,
+            stageBottom: stage ? Math.round(stage.getBoundingClientRect().bottom) : -1,
             cabSectionH: cabSection ? Math.round(cabSection.getBoundingClientRect().height) : -1,
+            cabH: cab ? Math.round(cab.getBoundingClientRect().height) : -1,
+            cabScrollable: cab ? cab.scrollHeight > cab.clientHeight + 1 : false,
+            mainH: main ? Math.round(main.getBoundingClientRect().height) : -1,
             consoleCols: cur ? getComputedStyle(cur).gridTemplateColumns.split(' ').length : -1,
             headerOverflowX: header ? header.scrollWidth - header.clientWidth : 999,
             cartOverflowX: cart ? cart.scrollWidth - cart.clientWidth : 999,
@@ -240,11 +245,12 @@ async function runFlow() {
         if (compact) {
             assert(g.mainLeftW >= 200 && g.mainLeftW <= 281, '[' + f.w + '] 左栏收窄 200–280px（实际 ' + g.mainLeftW + 'px，基线 430px）');
             assert(g.cabCols === 4, '[' + f.w + '] 货柜 4 列（实际 ' + g.cabCols + '，基线 5 列）');
+            // 矮视高契约（≤900 全部命中）：两栏拉伸等高，货柜吃剩余高度柜内滚
+            assert(g.cabMaxH === 'none', '[' + f.w + '] 货柜限高解除改 flex 自适应（实际 ' + g.cabMaxH + '）');
+            assert(g.cabH > 0 && g.cabH <= g.mainH, '[' + f.w + '] 货柜实高不超主区可视高（柜 ' + g.cabH + 'px / 主区 ' + g.mainH + 'px）');
             if (f.h > 720) {
-                assert(g.cabMaxH === '464px', '[' + f.w + '] 常规视高货柜可视高 464px（实际 ' + g.cabMaxH + '）');
                 assert(g.stageH >= 420, '[' + f.w + '] 常规视高立绘展台 ≥420px（实际 ' + g.stageH + 'px）');
             } else {
-                assert(parseFloat(g.cabMaxH) <= 464, '[' + f.w + '×' + f.h + '] 短视高货柜未超过 464px（实际 ' + g.cabMaxH + '）');
                 assert(g.stageH < 420, '[' + f.w + '×' + f.h + '] 短视高展台已收缩（实际 ' + g.stageH + 'px）');
             }
             assert(g.consoleCols === 2, '[' + f.w + '] 底栏仍左右横排（track 数 ' + g.consoleCols + '）');
@@ -252,11 +258,14 @@ async function runFlow() {
         } else if (zoom) {
             assert(g.mainLeftW >= 280 && g.mainLeftW <= 361, '[' + f.w + '] 高缩放左栏收窄 280–360px（实际 ' + g.mainLeftW + 'px）');
             assert(g.cabCols === 4, '[' + f.w + '] 高缩放货柜 4 列（实际 ' + g.cabCols + '，基线 5 列）');
-            assert(g.cabMaxH === '464px', '[' + f.w + '] 高缩放货柜可视高 464px（实际 ' + g.cabMaxH + '）');
-            // 立绘与货架内容解耦：展台只保底 min-height，立绘钳高 contain（≤380px），
-            // 不随货柜行数/买卖切换放大缩小（与 index.html 全屏 1280 档解耦一致）。
-            assert(g.stageH >= 300, '[' + f.w + '] 高缩放展台保底 ≥300px（实际 ' + g.stageH + 'px）');
-            assert(g.imgH > 0 && g.imgH <= 380, '[' + f.w + '] 高缩放立绘钳高 ≤380px 不随货柜放大（立绘 ' + g.imgH + 'px / 货柜区 ' + g.cabSectionH + 'px）');
+            // 矮视高契约：货柜 flex 自适应（解除 464 限高），左右两栏拉伸等高——
+            // 展台面板包满整列，下方不再露无框空区；立绘钳高 contain（≤380px）
+            // 不随货柜行数/买卖切换放大缩小。
+            assert(g.cabMaxH === 'none', '[' + f.w + '] 高缩放货柜限高解除改 flex 自适应（实际 ' + g.cabMaxH + '）');
+            assert(g.cabH > 0 && g.cabH <= g.mainH, '[' + f.w + '] 高缩放货柜实高不超主区可视高（柜 ' + g.cabH + 'px / 主区 ' + g.mainH + 'px）');
+            assert(Math.abs(g.stageH - g.cabSectionH) <= 4, '[' + f.w + '] 高缩放两栏等高（展台 ' + g.stageH + 'px / 货柜区 ' + g.cabSectionH + 'px）');
+            assert(g.imgH > 0 && g.imgH <= 380, '[' + f.w + '] 高缩放立绘钳高 ≤380px 不随货柜放大（立绘 ' + g.imgH + 'px）');
+            assert(g.imgBottom <= g.stageBottom + 2, '[' + f.w + '] 高缩放立绘贴底完整可见（底边 ' + g.imgBottom + ' / 展台底 ' + g.stageBottom + 'px）');
             assert(g.consoleCols === 2, '[' + f.w + '] 高缩放底栏仍左右横排（track 数 ' + g.consoleCols + '）');
             assert(g.tipHidden, '[' + f.w + '] 高缩放分类头操作提示已隐藏（只留重排按钮）');
         } else {
@@ -271,7 +280,11 @@ async function runFlow() {
         assert(g.cartOverflowX <= 1, '[' + f.w + '] 购物车面板无溢出（差 ' + g.cartOverflowX + 'px）');
         assert(g.bottomVisible, '[' + f.w + '×' + f.h + '] 底栏在组件视口内可见（底边 ' + g.bottomBottom + ' / 视高 ' + g.viewportH + '）');
         if (f.h <= 900) {
-            assert(g.mainOverflowY === 'auto', '[' + f.w + '×' + f.h + '] 主区使用内部纵向滚动兜底');
+            assert(g.mainOverflowY === 'auto', '[' + f.w + '×' + f.h + '] 主区保留纵向滚动兜底');
+        }
+        if (f.h >= 560 && f.tier !== 'base') {
+            assert(!g.mainScrollable, '[' + f.w + '×' + f.h + '] 主区无需整页滚动（两栏拉伸等高，柜内滚接管）');
+            assert(g.cabScrollable, '[' + f.w + '×' + f.h + '] 货柜内滚动接管超量商品（柜 ' + g.cabH + 'px，可滚）');
         }
         assert(g.cellW >= 70, '[' + f.w + '] 货架格宽 ' + g.cellW + 'px ≥70（不挤压商品名）');
     }
